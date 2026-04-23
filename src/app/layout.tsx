@@ -15,6 +15,8 @@ export const metadata: Metadata = {
   description: 'Enterprise-grade labour, site, and material management for contractors.',
 }
 
+export const dynamic = 'force-dynamic'
+
 export default function RootLayout({
   children,
 }: Readonly<{
