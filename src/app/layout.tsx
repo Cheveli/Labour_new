@@ -1,14 +1,18 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Outfit } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 
-const inter = Inter({ subsets: ['latin'] })
+const font = Outfit({ 
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-sans'
+})
 
 export const metadata: Metadata = {
-  title: 'Contractor Management | ProBuild',
-  description: 'ProBuild Contractor Labour and Project Management System',
+  title: 'Labourly Pro | Contractor Management System',
+  description: 'Enterprise-grade labour, site, and material management for contractors.',
 }
 
 export default function RootLayout({
@@ -17,8 +21,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={inter.className} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={font.variable}>
+      <body className="antialiased" suppressHydrationWarning>
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
@@ -26,7 +30,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {children}
-          <Toaster position="top-right" richColors />
+          <Toaster position="top-right" richColors closeButton />
         </ThemeProvider>
       </body>
     </html>

@@ -2,7 +2,9 @@
 
 import React, { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { cn } from '@/lib/utils'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Table, 
   TableBody, 
@@ -11,324 +13,320 @@ import {
   TableHeader, 
   TableRow 
 } from '@/components/ui/table'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger 
-} from '@/components/ui/dialog'
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { 
-  Plus, 
-  Search, 
-  Edit2, 
-  Trash2, 
-  Phone, 
-  User, 
-  Loader2,
-  MoreVertical,
-  MessageCircle
-} from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Loader2, Users, HardHat, Phone, TrendingDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuTrigger 
-} from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 
-export default function LabourPage() {
+export default function WorkersPage() {
   const [labourers, setLabourers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [editingWorker, setEditingWorker] = useState<any>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [workerToDelete, setWorkerToDelete] = useState<string | null>(null)
+  
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
-    gender: 'male',
-    type: 'labour',
-    daily_rate: ''
+    gender: 'Male',
+    type: 'Mistry (Skilled)',
+    daily_rate: '1300'
   })
+  
   const supabase = createClient()
 
   useEffect(() => {
-    fetchLabour()
+    fetchData()
   }, [])
 
-  async function fetchLabour() {
+  async function fetchData() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('labour')
-      .select('*')
-      .order('name')
-    
-    if (error) {
-      toast.error('Failed to fetch labour')
-    } else {
-      setLabourers(data || [])
-    }
+    const { data: labData } = await supabase.from('labour').select('*').order('name')
+    setLabourers(labData || [])
     setLoading(false)
   }
 
-  const handleAddLabour = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
-    
-    const { data, error } = await supabase
-      .from('labour')
-      .insert([{
-        ...formData,
-        daily_rate: parseFloat(formData.daily_rate)
-      }])
-      .select()
+    if (!formData.name) {
+      toast.error('Name is required')
+      return
+    }
+
+    setSaving(true)
+    const { error } = await supabase.from('labour').insert([{
+      ...formData,
+      daily_rate: parseFloat(formData.daily_rate || '0')
+    }])
 
     if (error) {
       toast.error(error.message)
     } else {
-      toast.success('Labour added successfully')
-      setIsAddDialogOpen(false)
-      setFormData({ name: '', phone: '', gender: 'male', type: 'labour', daily_rate: '' })
-      fetchLabour()
+      toast.success('Worker added successfully')
+      setFormData({ name: '', phone: '', gender: 'Male', type: 'Mistry (Skilled)', daily_rate: '1300' })
+      setDialogOpen(false)
+      fetchData()
     }
-    setLoading(false)
+    setSaving(false)
   }
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to delete this worker?')) {
-      const { error } = await supabase.from('labour').delete().eq('id', id)
-      if (error) {
-        toast.error('Failed to delete')
-      } else {
-        toast.success('Deleted successfully')
-        fetchLabour()
-      }
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formData.name || !editingWorker) {
+      toast.error('Name is required')
+      return
     }
+
+    setSaving(true)
+    const { error } = await supabase
+      .from('labour')
+      .update({
+        ...formData,
+        daily_rate: parseFloat(formData.daily_rate || '0')
+      })
+      .eq('id', editingWorker.id)
+
+    if (error) {
+      toast.error(error.message)
+    } else {
+      toast.success('Worker updated successfully')
+      setFormData({ name: '', phone: '', gender: 'Male', type: 'Mistry (Skilled)', daily_rate: '1300' })
+      setEditingWorker(null)
+      setDialogOpen(false)
+      fetchData()
+    }
+    setSaving(false)
   }
 
-  const filteredLabourers = labourers.filter(l => 
-    l.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    l.phone.includes(searchTerm)
-  )
+  const handleEdit = (worker: any) => {
+    setEditingWorker(worker)
+    setFormData({
+      name: worker.name,
+      phone: worker.phone || '',
+      gender: worker.gender || 'Male',
+      type: worker.type,
+      daily_rate: worker.daily_rate.toString()
+    })
+    setDialogOpen(true)
+  }
 
-  const getTypeColor = (type: string) => {
-    switch(type) {
-      case 'mistry': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-      case 'helper': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-      default: return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+  const handleDeleteClick = (id: string) => {
+    setWorkerToDelete(id)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!workerToDelete) return
+
+    const { error } = await supabase.from('labour').delete().eq('id', workerToDelete)
+    if (error) {
+      toast.error(error.message)
+    } else {
+      toast.success('Worker deleted successfully')
+      fetchData()
     }
+    setDeleteDialogOpen(false)
+    setWorkerToDelete(null)
+  }
+
+  const handleDialogClose = () => {
+    setDialogOpen(false)
+    setEditingWorker(null)
+    setFormData({ name: '', phone: '', gender: 'Male', type: 'Mistry (Skilled)', daily_rate: '1300' })
+  }
+
+  const handleTypeChange = (value: string) => {
+    const rates: any = {
+      'Mistry (Skilled)': '1300',
+      'Labour (Women)': '800',
+      'Parakadu (Helper)': '1000'
+    }
+    const genders: any = {
+      'Mistry (Skilled)': 'Male',
+      'Labour (Women)': 'Female',
+      'Parakadu (Helper)': 'Male'
+    }
+    setFormData({ 
+      ...formData, 
+      type: value,
+      daily_rate: rates[value] || '0',
+      gender: genders[value] || 'Male'
+    })
   }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Labour Management</h1>
-          <p className="text-gray-500">Track and manage your workforce directory.</p>
+          <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white uppercase leading-none">Workers</h1>
+          <p className="mt-2 text-zinc-500 font-medium">Manage workers and set per-day salary.</p>
         </div>
-        
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger render={
-            <Button className="bg-blue-600 hover:bg-blue-700 h-11 px-6 rounded-xl shadow-lg shadow-blue-100 dark:shadow-none">
-              <Plus className="mr-2 h-5 w-5" /> Add New Worker
-            </Button>
-          } />
-          <DialogContent className="sm:max-w-[500px] rounded-xl p-8 border-none shadow-2xl overflow-hidden bg-white dark:bg-zinc-950">
-            <DialogHeader className="mb-6">
-              <DialogTitle className="text-2xl font-bold text-blue-600">Register New Labour</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleAddLabour} className="space-y-5">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-700 dark:text-zinc-300">Full Name</label>
-                <Input 
-                  placeholder="e.g. Ramesh Kumar" 
-                  value={formData.name}
-                  onChange={e => setFormData({...formData, name: e.target.value})}
-                  required
-                  className="rounded-xl h-11"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-zinc-300">Phone</label>
-                  <Input 
-                    placeholder="9876543210" 
-                    value={formData.phone}
-                    onChange={e => setFormData({...formData, phone: e.target.value})}
-                    required
-                    className="rounded-xl h-11"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-zinc-300">Daily Rate (₹)</label>
-                  <Input 
-                    type="number"
-                    placeholder="800" 
-                    value={formData.daily_rate}
-                    onChange={e => setFormData({...formData, daily_rate: e.target.value})}
-                    required
-                    className="rounded-xl h-11"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-zinc-300">Gender</label>
-                  <Select onValueChange={(v: string | null) => setFormData({...formData, gender: (v as any) || 'male'})} defaultValue="male">
-                    <SelectTrigger className="rounded-xl h-11">
-                      <SelectValue placeholder="Select" />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl border-none shadow-xl">
-                      <SelectItem value="male">Male</SelectItem>
-                      <SelectItem value="female">Female</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-zinc-300">Type</label>
-                  <Select onValueChange={(v: string | null) => setFormData({...formData, type: (v as any) || 'labour'})} defaultValue="labour">
-                    <SelectTrigger className="rounded-xl h-11">
-                      <SelectValue placeholder="Select" />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl border-none shadow-xl">
-                      <SelectItem value="mistry">Mistry (Skilled)</SelectItem>
-                      <SelectItem value="labour">Labour (Women)</SelectItem>
-                      <SelectItem value="helper">Helper (Pararak)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <Button type="submit" disabled={loading} className="w-full bg-blue-600 h-12 rounded-xl text-lg mt-4">
-                {loading ? <Loader2 className="animate-spin" /> : 'Register Worker'}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Button 
+          className="bg-[#00A3FF] hover:bg-[#0092E6] text-white rounded-xl font-bold uppercase tracking-tight gap-2 px-8 shadow-lg shadow-blue-500/20"
+          onClick={() => setDialogOpen(true)}
+        >
+          <Plus size={18} /> Add Worker
+        </Button>
       </div>
 
-      <Card className="border-none shadow-xl shadow-gray-100 dark:shadow-none bg-white dark:bg-black overflow-hidden">
-        <CardHeader className="border-b border-gray-50 dark:border-zinc-900 pb-6">
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <Input 
-              placeholder="Search by name or phone..." 
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="pl-10 h-10 bg-gray-50 dark:bg-zinc-900 border-none rounded-xl"
-            />
-          </div>
+      {/* Workers Table */}
+      <Card className="border-none shadow-2xl bg-[#111827] text-white rounded-2xl overflow-hidden">
+        <CardHeader className="p-8 border-b border-zinc-800">
+           <CardTitle className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">All Workers</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50/50 dark:bg-zinc-900/50 border-none">
-                <TableHead className="w-[300px] py-4">Worker Detail</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Daily Rate</TableHead>
-                <TableHead className="text-right px-6">Actions</TableHead>
+            <TableHeader className="bg-[#0F172A]">
+              <TableRow className="border-zinc-800 hover:bg-[#0F172A]">
+                <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Name</TableHead>
+                <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Phone</TableHead>
+                <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Gender</TableHead>
+                <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Type</TableHead>
+                <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Per-day</TableHead>
+                <TableHead className="text-right px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              <AnimatePresence>
-                {loading ? (
-                  Array(5).fill(0).map((_, i) => (
-                    <TableRow key={i}>
-                      <TableCell colSpan={5} className="h-16 animate-pulse bg-gray-50/20 dark:bg-zinc-900/20" />
-                    </TableRow>
-                  ))
-                ) : filteredLabourers.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="h-64 text-center text-gray-500">
-                      No labourers found.
+              {loading ? (
+                Array(5).fill(0).map((_, i) => (
+                  <TableRow key={i} className="animate-pulse border-zinc-800">
+                    <TableCell colSpan={6} className="h-16 px-8 bg-zinc-800/10"></TableCell>
+                  </TableRow>
+                ))
+              ) : labourers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-24 text-center text-zinc-500">No workers found</TableCell>
+                </TableRow>
+              ) : (
+                labourers.map((worker) => (
+                  <TableRow key={worker.id} className="border-zinc-800 transition-colors hover:bg-white/5 group">
+                    <TableCell className="px-8 py-5 font-bold text-white text-sm">{worker.name}</TableCell>
+                    <TableCell className="py-5 font-bold text-zinc-500 text-xs tracking-tight">{worker.phone || '—'}</TableCell>
+                    <TableCell className="py-5 font-bold text-zinc-500 text-xs">{worker.gender || '—'}</TableCell>
+                    <TableCell className="py-5 font-bold text-zinc-500 text-xs">{worker.type}</TableCell>
+                    <TableCell className="py-5 font-black text-[#00A3FF] text-[13px]">₹ {worker.daily_rate.toFixed(2)}</TableCell>
+                    <TableCell className="text-right px-8 py-5 space-x-2">
+                       <Button 
+                         variant="outline" 
+                         size="sm" 
+                         className="h-8 border-zinc-800 bg-[#1F2937] text-white px-3 font-bold text-[10px] uppercase tracking-tighter"
+                         onClick={() => handleEdit(worker)}
+                        >
+                         Edit
+                       </Button>
+                       <Button 
+                         variant="outline" 
+                         size="sm" 
+                         className="h-8 border-zinc-800 bg-[#1F2937] text-red-500 px-3 font-bold text-[10px] uppercase tracking-tighter"
+                         onClick={() => handleDeleteClick(worker.id)}
+                        >
+                         Delete
+                       </Button>
                     </TableCell>
                   </TableRow>
-                ) : (
-                  filteredLabourers.map((worker) => (
-                    <motion.tr 
-                      key={worker.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="group hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-colors"
-                    >
-                      <TableCell className="py-4 font-medium px-6">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 dark:from-zinc-800 dark:to-zinc-700 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold">
-                            {worker.name.charAt(0)}
-                          </div>
-                          <div>
-                            <p className="font-bold text-gray-900 dark:text-zinc-100">{worker.name}</p>
-                            <p className="text-xs text-gray-500 dark:text-zinc-400 capitalize">{worker.gender}</p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2 text-gray-600 dark:text-zinc-400">
-                          <Phone size={14} className="text-blue-500" />
-                          {worker.phone}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className={cn("rounded-lg font-medium", getTypeColor(worker.type))}>
-                          {worker.type}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-bold text-gray-900 dark:text-white">
-                        ₹{worker.daily_rate}
-                      </TableCell>
-                      <TableCell className="text-right px-6">
-                         <div className="flex justify-end gap-2">
-                           <Button 
-                             variant="ghost" 
-                             size="icon" 
-                             className="h-8 w-8 text-blue-600 hover:bg-blue-50"
-                             onClick={() => {
-                               const message = `Payment Summary for ${worker.name}:\nDaily Rate: ₹${worker.daily_rate}\nType: ${worker.type}`
-                               window.open(`https://wa.me/${worker.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(message)}`)
-                             }}
-                            >
-                             <MessageCircle size={18} />
-                           </Button>
-                           <DropdownMenu>
-                             <DropdownMenuTrigger render={
-                               <Button variant="ghost" size="icon" className="h-8 w-8">
-                                 <MoreVertical size={18} />
-                                </Button>
-                             } />
-                             <DropdownMenuContent align="end" className="rounded-xl border-none shadow-xl bg-white dark:bg-zinc-900">
-                               <DropdownMenuItem className="gap-2">
-                                 <Edit2 size={16} /> Edit Profile
-                               </DropdownMenuItem>
-                               <DropdownMenuItem 
-                                 className="gap-2 text-red-500 hover:text-red-600 focus:text-red-600"
-                                 onClick={() => handleDelete(worker.id)}
-                                >
-                                 <Trash2 size={16} /> Delete Worker
-                               </DropdownMenuItem>
-                             </DropdownMenuContent>
-                           </DropdownMenu>
-                         </div>
-                      </TableCell>
-                    </motion.tr>
-                  ))
-                )}
-              </AnimatePresence>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      {/* Add/Edit Worker Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={handleDialogClose}>
+        <DialogContent className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingWorker ? 'Edit Worker' : 'Add Worker'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={editingWorker ? handleUpdate : handleCreate} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Full name</label>
+              <Input 
+                placeholder="Enter full name" 
+                value={formData.name}
+                onChange={e => setFormData({...formData, name: e.target.value})}
+                required
+                className="h-12"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Phone (optional)</label>
+              <Input 
+                placeholder="Mobile number" 
+                value={formData.phone}
+                onChange={e => setFormData({...formData, phone: e.target.value})}
+                className="h-12"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Gender</label>
+              <Select onValueChange={(v) => setFormData({...formData, gender: v || 'Male'})} value={formData.gender}>
+                <SelectTrigger className="h-12">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Male">Male</SelectItem>
+                  <SelectItem value="Female">Female</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Worker type</label>
+              <Select onValueChange={(v) => handleTypeChange(v || 'Mistry (Skilled)')} value={formData.type}>
+                <SelectTrigger className="h-12">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Mistry (Skilled)">Mistry (Skilled) - ₹1300/day</SelectItem>
+                  <SelectItem value="Labour (Women)">Labour (Women) - ₹800/day</SelectItem>
+                  <SelectItem value="Parakadu (Helper)">Parakadu (Helper) - ₹1000/day</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Per-day salary</label>
+              <Input 
+                placeholder="Daily rate" 
+                type="number"
+                value={formData.daily_rate}
+                onChange={e => setFormData({...formData, daily_rate: e.target.value})}
+                className="h-12"
+              />
+              <p className="text-[9px] font-medium text-zinc-500 italic mt-1 leading-tight">You can override the default rate here.</p>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={handleDialogClose}>Cancel</Button>
+              <Button type="submit" disabled={saving} className="bg-[#00A3FF] hover:bg-[#0092E6]">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : editingWorker ? 'Update' : 'Add Worker'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Delete Worker</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this worker? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteConfirm}>Delete Worker</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

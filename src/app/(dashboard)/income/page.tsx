@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Table, 
   TableBody, 
@@ -13,44 +13,25 @@ import {
   TableHeader, 
   TableRow 
 } from '@/components/ui/table'
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger 
-} from '@/components/ui/dialog'
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from '@/components/ui/select'
-import { 
-  Plus, 
-  Search, 
-  TrendingUp, 
-  Filter,
-  Loader2,
-  Trash2,
-  Download
-} from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Plus, Search, TrendingUp, Calendar, Briefcase, Loader2, DollarSign, History } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
-import { motion, AnimatePresence } from 'framer-motion'
 
 export default function IncomePage() {
   const [income, setIncome] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  
   const [formData, setFormData] = useState({
     project_id: '',
     amount: '',
-    source: '',
-    date: format(new Date(), 'yyyy-MM-dd')
+    date: format(new Date(), 'yyyy-MM-dd'),
+    notes: ''
   })
+  
   const supabase = createClient()
 
   useEffect(() => {
@@ -59,18 +40,21 @@ export default function IncomePage() {
 
   async function fetchData() {
     setLoading(true)
-    const { data: incomeData } = await supabase.from('income').select('*, projects(name)').order('date', { ascending: false })
-    const { data: projectData } = await supabase.from('projects').select('*').order('name')
-    
-    setIncome(incomeData || [])
-    setProjects(projectData || [])
+    const { data: incData } = await supabase.from('income').select('*, projects(name)').order('date', { ascending: false })
+    const { data: projData } = await supabase.from('projects').select('*').order('name')
+    setIncome(incData || [])
+    setProjects(projData || [])
     setLoading(false)
   }
 
-  const handleAdd = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
-    
+    if (!formData.project_id || !formData.amount) {
+      toast.error('Project and Amount are required')
+      return
+    }
+
+    setSaving(true)
     const { error } = await supabase.from('income').insert([{
       ...formData,
       amount: parseFloat(formData.amount)
@@ -80,166 +64,132 @@ export default function IncomePage() {
       toast.error(error.message)
     } else {
       toast.success('Income recorded')
-      setIsAddDialogOpen(false)
-      setFormData({ project_id: '', amount: '', source: '', date: format(new Date(), 'yyyy-MM-dd') })
+      setFormData({ project_id: '', amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' })
       fetchData()
     }
-    setLoading(false)
-  }
-
-  const handleDelete = async (id: string) => {
-    if (confirm('Delete this entry?')) {
-      const { error } = await supabase.from('income').delete().eq('id', id)
-      if (!error) fetchData()
-    }
+    setSaving(false)
   }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Revenue & Income</h1>
-          <p className="text-gray-500">Track all incoming payments from clients.</p>
+          <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white uppercase leading-none">Revenue</h1>
+          <p className="mt-2 text-zinc-500 font-medium">Record site-wide collections and progress payments.</p>
         </div>
-        
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger render={
-            <Button className="bg-emerald-600 hover:bg-emerald-700 h-11 px-6 rounded-xl shadow-lg shadow-emerald-100">
-              <Plus className="mr-2 h-5 w-5" /> Add Income Entry
-            </Button>
-          } />
-          <DialogContent className="rounded-3xl border-none shadow-2xl p-8 bg-white dark:bg-zinc-950">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-bold text-emerald-600">Register Revenue</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleAdd} className="space-y-5 pt-4">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Select Project</label>
-                <Select onValueChange={(v: string | null) => setFormData({...formData, project_id: v ?? ''})}>
-                  <SelectTrigger className="rounded-xl h-12">
-                    <SelectValue placeholder="Chose site..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold">Amount (₹)</label>
-                  <Input 
-                    type="number" 
-                    placeholder="25000" 
-                    value={formData.amount}
-                    onChange={e => setFormData({...formData, amount: e.target.value})}
-                    required
-                    className="rounded-xl h-12"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold">Date</label>
-                  <Input 
-                    type="date" 
-                    value={formData.date}
-                    onChange={e => setFormData({...formData, date: e.target.value})}
-                    className="rounded-xl h-12"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Source/Client</label>
-                <Input 
-                  placeholder="e.g. Client Payment, Milestone 1" 
-                  value={formData.source}
-                  onChange={e => setFormData({...formData, source: e.target.value})}
-                  required
-                  className="rounded-xl h-12"
-                />
-              </div>
-
-              <Button type="submit" disabled={loading} className="w-full bg-emerald-600 hover:bg-emerald-700 h-12 rounded-xl text-lg mt-4">
-                {loading ? <Loader2 className="animate-spin" /> : 'Record Income'}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Button className="bg-[#059669] hover:bg-[#047857] text-white rounded-xl font-bold uppercase tracking-tight gap-2 px-8 shadow-lg shadow-emerald-500/20">
+          <TrendingUp size={18} /> New Collection
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <SummaryCard 
-          title="Total Income" 
-          value={`₹${income.reduce((acc, i) => acc + Number(i.amount), 0).toLocaleString()}`} 
-          icon={<TrendingUp className="text-emerald-500" />}
-        />
-        <div className="lg:col-span-2">
-          <Card className="border-none shadow-xl bg-emerald-600/10 text-emerald-700 rounded-3xl h-full flex items-center p-8 gap-6 border-dashed border-2 border-emerald-200">
-             <div className="p-4 bg-emerald-600 text-white rounded-2xl">
-               <Download size={24} />
-             </div>
-             <div>
-               <h4 className="font-extrabold text-xl">Monthly Reports</h4>
-               <p className="text-emerald-600/80">Generate and download financial summaries.</p>
-             </div>
-             <Button variant="outline" className="ml-auto bg-white rounded-xl border-none shadow-sm hover:bg-emerald-50">Export PDF</Button>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* LEFT: History */}
+        <div className="lg:col-span-8">
+          <Card className="border-none shadow-2xl bg-[#111827] text-white rounded-2xl overflow-hidden min-h-full">
+            <CardHeader className="p-8 border-b border-zinc-800">
+               <CardTitle className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">Collection Ledger</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader className="bg-[#0F172A]">
+                  <TableRow className="border-zinc-800 hover:bg-[#0F172A]">
+                    <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
+                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Project</TableHead>
+                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 text-right">Amount Received</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    Array(5).fill(0).map((_, i) => (
+                      <TableRow key={i} className="animate-pulse border-zinc-800">
+                        <TableCell colSpan={3} className="h-16 px-8 bg-zinc-800/10"></TableCell>
+                      </TableRow>
+                    ))
+                  ) : income.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={3} className="py-24 text-center">
+                        <div className="flex flex-col items-center gap-4 text-zinc-600">
+                            <History size={48} className="opacity-10" />
+                            <p className="text-sm font-bold uppercase tracking-widest">No income record history</p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    income.map((item) => (
+                      <TableRow key={item.id} className="border-zinc-800 transition-colors hover:bg-white/5">
+                        <TableCell className="px-8 py-5 font-bold text-gray-400 text-xs">
+                          {format(new Date(item.date), 'MMM dd, yyyy')}
+                        </TableCell>
+                        <TableCell className="py-5 font-bold text-white text-sm lowercase">{item.projects?.name}</TableCell>
+                        <TableCell className="py-5 text-right px-8 font-black text-[#059669] text-lg">₹ {item.amount.toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
           </Card>
         </div>
-      </div>
 
-      <Card className="border-none shadow-xl bg-white dark:bg-black rounded-3xl overflow-hidden">
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50/50 dark:bg-zinc-900/50">
-                <TableHead className="px-6 py-4">Date</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead className="text-right px-6">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {income.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="h-64 text-center text-gray-400">No income records found.</TableCell>
-                </TableRow>
-              ) : (
-                income.map(item => (
-                  <TableRow key={item.id} className="group">
-                    <TableCell className="px-6 py-4 font-medium">{format(new Date(item.date), 'MMM dd, yyyy')}</TableCell>
-                    <TableCell className="font-bold">{item.projects?.name}</TableCell>
-                    <TableCell className="text-gray-500">{item.source}</TableCell>
-                    <TableCell className="font-black text-emerald-600 font-mono text-lg">₹{item.amount}</TableCell>
-                    <TableCell className="text-right px-6">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleDelete(item.id)}>
-                        <Trash2 size={16} />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
+        {/* RIGHT: Add Form */}
+        <div className="lg:col-span-4">
+           <Card className="border-none shadow-2xl bg-[#111827] text-white rounded-2xl overflow-hidden p-8">
+              <h3 className="text-lg font-black uppercase tracking-tight mb-8">Record collection</h3>
+              <form onSubmit={handleCreate} className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Select Site</label>
+                  <Select onValueChange={(v: string | null) => setFormData({...formData, project_id: v ?? ''})} value={formData.project_id}>
+                    <SelectTrigger className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold">
+                      <SelectValue placeholder="Chose site" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#111827] border-zinc-800 text-white rounded-xl">
+                      {projects.map(p => (
+                        <SelectItem key={p.id} value={p.id} className="py-3 font-bold hover:bg-zinc-800">{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-function SummaryCard({ title, value, icon }: any) {
-  return (
-    <Card className="border-none shadow-xl bg-white dark:bg-black rounded-3xl">
-      <CardContent className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">{title}</p>
-          <div className="p-2 bg-gray-50 dark:bg-zinc-900 rounded-lg">{icon}</div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Amount Received (₹)</label>
+                  <Input 
+                    placeholder="Enter amount" 
+                    type="number"
+                    value={formData.amount}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, amount: e.target.value})}
+                    className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white"
+                  />
+                  <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mt-1">Confirmed collection</p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Collection Date</label>
+                  <Input 
+                    type="date"
+                    value={formData.date}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, date: e.target.value})}
+                    className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white px-4"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Notes (optional)</label>
+                  <Textarea 
+                    placeholder="Reference, receipt no etc." 
+                    value={formData.notes}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({...formData, notes: e.target.value})}
+                    className="bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white p-4"
+                  />
+                </div>
+
+                <Button type="submit" disabled={saving} className="w-full h-14 bg-[#059669] hover:bg-[#047857] text-white rounded-xl font-black uppercase tracking-tight text-lg shadow-xl shadow-emerald-500/20">
+                  {saving ? <Loader2 className="animate-spin mr-2" /> : null}
+                  Record Entry
+                </Button>
+              </form>
+           </Card>
         </div>
-        <h3 className="text-3xl font-black text-gray-900 dark:text-white">{value}</h3>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }

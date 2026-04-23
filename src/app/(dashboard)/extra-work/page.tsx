@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Table, 
   TableBody, 
@@ -13,36 +13,21 @@ import {
   TableHeader, 
   TableRow 
 } from '@/components/ui/table'
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger 
-} from '@/components/ui/dialog'
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from '@/components/ui/select'
-import { 
-  Plus, 
-  Zap, 
-  Construction,
-  Loader2,
-  Trash2,
-  Calendar
-} from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Zap, Plus, Search, Loader2, Calendar, Briefcase, History, Star, FileText, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import * as XLSX from 'xlsx'
 
 export default function ExtraWorkPage() {
-  const [extraWork, setExtraWork] = useState<any[]>([])
+  const [tasks, setTasks] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  
   const [formData, setFormData] = useState({
     project_id: '',
     work_name: '',
@@ -50,6 +35,7 @@ export default function ExtraWorkPage() {
     date: format(new Date(), 'yyyy-MM-dd'),
     notes: ''
   })
+  
   const supabase = createClient()
 
   useEffect(() => {
@@ -58,18 +44,21 @@ export default function ExtraWorkPage() {
 
   async function fetchData() {
     setLoading(true)
-    const { data: ewData } = await supabase.from('extra_work').select('*, projects(name)').order('date', { ascending: false })
-    const { data: projectData } = await supabase.from('projects').select('*').order('name')
-    
-    setExtraWork(ewData || [])
-    setProjects(projectData || [])
+    const { data: workData } = await supabase.from('extra_work').select('*, projects(name)').order('date', { ascending: false })
+    const { data: projData } = await supabase.from('projects').select('*').order('name')
+    setTasks(workData || [])
+    setProjects(projData || [])
     setLoading(false)
   }
 
-  const handleAdd = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
-    
+    if (!formData.project_id || !formData.work_name || !formData.amount) {
+      toast.error('All required fields are needed')
+      return
+    }
+
+    setSaving(true)
     const { error } = await supabase.from('extra_work').insert([{
       ...formData,
       amount: parseFloat(formData.amount)
@@ -78,155 +67,213 @@ export default function ExtraWorkPage() {
     if (error) {
       toast.error(error.message)
     } else {
-      toast.success('Extra work recorded')
-      setIsAddDialogOpen(false)
+      toast.success('Extra task recorded')
       setFormData({ project_id: '', work_name: '', amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' })
       fetchData()
     }
-    setLoading(false)
+    setSaving(false)
+  }
+
+  const exportPDF = () => {
+    const doc = new jsPDF()
+    
+    doc.setFontSize(18)
+    doc.text('Extra Work Report', 14, 20)
+    
+    doc.setFontSize(10)
+    doc.text(`Generated: ${format(new Date(), 'MMM dd, yyyy')}`, 14, 28)
+
+    const tableData = tasks.map((row, idx) => [
+      idx + 1,
+      row.date,
+      row.projects?.name || 'N/A',
+      row.work_name,
+      `Rs. ${Number(row.amount).toLocaleString()}`,
+      row.notes || '-'
+    ])
+
+    autoTable(doc, {
+      startY: 35,
+      head: [['#', 'Date', 'Project', 'Work Description', 'Amount', 'Notes']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
+      styles: { fontSize: 9 }
+    })
+
+    doc.save(`extra-work-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`)
+    toast.success('PDF exported successfully')
+  }
+
+  const exportExcel = () => {
+    const worksheetData = [
+      ['Extra Work Report'],
+      [`Generated: ${format(new Date(), 'MMM dd, yyyy')}`],
+      [],
+      ['#', 'Date', 'Project', 'Work Description', 'Amount', 'Notes']
+    ]
+
+    tasks.forEach((row, idx) => {
+      worksheetData.push([
+        idx + 1,
+        row.date,
+        row.projects?.name || 'N/A',
+        row.work_name,
+        Number(row.amount),
+        row.notes || '-'
+      ])
+    })
+
+    const ws = XLSX.utils.aoa_to_sheet(worksheetData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Extra Work Report')
+    XLSX.writeFile(wb, `extra-work-report-${format(new Date(), 'yyyy-MM-dd')}.xlsx`)
+    toast.success('Excel exported successfully')
   }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Extra Work & Lumpsum</h1>
-          <p className="text-gray-500">Track specialized tasks like Centering, Slab, etc.</p>
+          <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white uppercase leading-none">Extra Tasks</h1>
+          <p className="mt-2 text-zinc-500 font-medium">Record lumpsum payments for extra works and ad-hoc tasks.</p>
         </div>
-        
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger render={
-            <Button className="bg-purple-600 hover:bg-purple-700 h-11 px-6 rounded-xl shadow-lg shadow-purple-100">
-              <Plus className="mr-2 h-5 w-5" /> Record Extra Work
-            </Button>
-          } />
-          <DialogContent className="rounded-xl border-none shadow-2xl p-8 bg-white dark:bg-zinc-950">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-bold text-purple-600 flex items-center gap-2">
-                <Zap size={24} /> Lumpsum Task
-              </DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleAdd} className="space-y-5 pt-4">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Select Project</label>
-                <Select onValueChange={(v: string | null) => setFormData({...formData, project_id: v ?? ''})}>
-                  <SelectTrigger className="rounded-xl h-12">
-                    <SelectValue placeholder="Project site" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Work Name / Task</label>
-                <Input 
-                  placeholder="e.g. Roof Slab Casting, Plumbing Lumpsum" 
-                  value={formData.work_name}
-                  onChange={e => setFormData({...formData, work_name: e.target.value})}
-                  required
-                  className="rounded-xl h-12"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold">Amount (₹)</label>
-                  <Input 
-                    type="number" 
-                    placeholder="15000" 
-                    value={formData.amount}
-                    onChange={e => setFormData({...formData, amount: e.target.value})}
-                    required
-                    className="rounded-xl h-12"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold">Date</label>
-                  <Input 
-                    type="date" 
-                    value={formData.date}
-                    onChange={e => setFormData({...formData, date: e.target.value})}
-                    className="rounded-xl h-12"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Notes (Optional)</label>
-                <Input 
-                  placeholder="Any specific details..." 
-                  value={formData.notes}
-                  onChange={e => setFormData({...formData, notes: e.target.value})}
-                  className="rounded-xl h-12"
-                />
-              </div>
-
-              <Button type="submit" disabled={loading} className="w-full bg-purple-600 hover:bg-purple-700 h-12 rounded-xl text-lg mt-4">
-                {loading ? <Loader2 className="animate-spin" /> : 'Record Task'}
+        <div className="flex items-center gap-3">
+          {tasks.length > 0 && (
+            <>
+              <Button onClick={exportPDF} variant="outline" className="border-zinc-800 bg-[#1F2937] text-gray-300 rounded-xl font-bold uppercase tracking-tight px-6 gap-2">
+                <FileText size={16} /> Export PDF
               </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <SummaryCard 
-          title="Total Lumpsum" 
-          value={`₹${extraWork.reduce((acc, ew) => acc + Number(ew.amount), 0).toLocaleString()}`} 
-          icon={<Construction className="text-purple-500" />}
-        />
-        <SummaryCard 
-          title="Tasks Completed" 
-          value={extraWork.length.toString()} 
-          icon={<Zap className="text-yellow-500" />}
-        />
-      </div>
-
-      <Card className="border-none shadow-xl bg-white dark:bg-black rounded-3xl overflow-hidden">
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50/50 dark:bg-zinc-900/50">
-                <TableHead className="px-6 py-4">Work Name</TableHead>
-                <TableHead>Project Site</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead className="text-right px-6">Notes</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {extraWork.map(ew => (
-                <TableRow key={ew.id} className="group">
-                  <TableCell className="px-6 py-4 font-bold text-gray-900 dark:text-zinc-100">{ew.work_name}</TableCell>
-                  <TableCell className="font-medium text-blue-600">{ew.projects?.name}</TableCell>
-                  <TableCell className="text-xs text-gray-500">{format(new Date(ew.date), 'MMM dd, yyyy')}</TableCell>
-                  <TableCell className="font-black text-purple-600 text-lg">₹{ew.amount?.toLocaleString()}</TableCell>
-                  <TableCell className="text-right px-6 text-gray-400 text-xs italic">{ew.notes || '-'}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function SummaryCard({ title, value, icon }: any) {
-  return (
-    <Card className="border-none shadow-xl bg-white dark:bg-black rounded-3xl">
-      <CardContent className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{title}</p>
-          <div className="p-2 bg-gray-50 dark:bg-zinc-900 rounded-lg">{icon}</div>
+              <Button onClick={exportExcel} variant="outline" className="border-zinc-800 bg-[#1F2937] text-gray-300 rounded-xl font-bold uppercase tracking-tight px-6 gap-2">
+                <Download size={16} /> Export Excel
+              </Button>
+            </>
+          )}
+          <Button className="bg-[#4F46E5] hover:bg-[#4338CA] text-white rounded-xl font-bold uppercase tracking-tight gap-2 px-8 shadow-lg shadow-indigo-500/20">
+            <Star size={18} /> Add Extra Task
+          </Button>
         </div>
-        <h3 className="text-2xl font-black text-gray-900 dark:text-white">{value}</h3>
-      </CardContent>
-    </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* LEFT: Task History */}
+        <div className="lg:col-span-8">
+          <Card className="border-none shadow-2xl bg-[#111827] text-white rounded-2xl overflow-hidden min-h-full">
+            <CardHeader className="p-8 border-b border-zinc-800">
+               <CardTitle className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">Historical Tasks</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader className="bg-[#0F172A]">
+                  <TableRow className="border-zinc-800 hover:bg-[#0F172A]">
+                    <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
+                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Site/Project</TableHead>
+                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Task Name</TableHead>
+                    <TableHead className="text-right px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Valuation</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    Array(5).fill(0).map((_, i) => (
+                      <TableRow key={i} className="animate-pulse border-zinc-800">
+                        <TableCell colSpan={4} className="h-16 px-8 bg-zinc-800/10"></TableCell>
+                      </TableRow>
+                    ))
+                  ) : tasks.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="py-24 text-center">
+                        <div className="flex flex-col items-center gap-4 text-zinc-600">
+                            <Zap size={48} className="opacity-10" />
+                            <p className="text-sm font-bold uppercase tracking-widest">No extra task history</p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    tasks.map((task) => (
+                      <TableRow key={task.id} className="border-zinc-800 transition-colors hover:bg-white/5">
+                        <TableCell className="px-8 py-5 font-bold text-gray-400 text-xs">
+                          {format(new Date(task.date), 'MMM dd, yyyy')}
+                        </TableCell>
+                        <TableCell className="py-5 font-bold text-white text-sm lowercase">{task.projects?.name}</TableCell>
+                        <TableCell className="py-5 font-black text-xs text-gray-300 uppercase tracking-tighter">{task.work_name}</TableCell>
+                        <TableCell className="py-5 text-right px-8 font-black text-indigo-400 text-sm">₹ {task.amount.toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* RIGHT: Add Form */}
+        <div className="lg:col-span-4">
+           <Card className="border-none shadow-2xl bg-[#111827] text-white rounded-2xl overflow-hidden p-8">
+              <h3 className="text-lg font-black uppercase tracking-tight mb-8">Record workload</h3>
+              <form onSubmit={handleCreate} className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Select Site</label>
+                  <Select onValueChange={(v: string | null) => setFormData({...formData, project_id: v ?? ''})} value={formData.project_id}>
+                    <SelectTrigger className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold">
+                      <SelectValue placeholder="Execution site" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#111827] border-zinc-800 text-white rounded-xl">
+                      {projects.map(p => (
+                        <SelectItem key={p.id} value={p.id} className="py-3 font-bold hover:bg-zinc-800">{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Work Title / Description</label>
+                  <Input 
+                    placeholder="e.g. Wall Piling, Foundation etc." 
+                    value={formData.work_name}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, work_name: e.target.value})}
+                    className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Amount (₹)</label>
+                  <Input 
+                    placeholder="Lumpsum amount" 
+                    type="number"
+                    value={formData.amount}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, amount: e.target.value})}
+                    className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Execution Date</label>
+                  <Input 
+                    type="date"
+                    value={formData.date}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, date: e.target.value})}
+                    className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white px-4"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Notes (optional)</label>
+                  <Textarea 
+                    placeholder="Specific details about the extra work" 
+                    value={formData.notes}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({...formData, notes: e.target.value})}
+                    className="bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white p-4"
+                  />
+                </div>
+
+                <Button type="submit" disabled={saving} className="w-full h-14 bg-[#4F46E5] hover:bg-[#4338CA] text-white rounded-xl font-black uppercase tracking-tight text-lg shadow-xl shadow-indigo-500/20">
+                  {saving ? <Loader2 className="animate-spin mr-2" /> : null}
+                  Record Task
+                </Button>
+              </form>
+           </Card>
+        </div>
+      </div>
+    </div>
   )
 }

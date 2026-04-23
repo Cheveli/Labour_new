@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Calendar } from '@/components/ui/calendar'
 import { 
   Select, 
   SelectContent, 
@@ -13,106 +12,112 @@ import {
   SelectValue 
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
 import { 
   Loader2, 
   Calendar as CalendarIcon, 
   Save, 
   Users, 
-  Briefcase 
+  Briefcase,
+  Clock,
+  Search,
+  Filter,
+  CheckCircle2,
+  Table as TableIcon
 } from 'lucide-react'
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from '@/components/ui/table'
+import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
-import { 
-  Popover, 
-  PopoverContent, 
-  PopoverTrigger 
-} from '@/components/ui/popover'
+import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
 export default function AttendancePage() {
-  const [date, setDate] = useState<Date>(new Date())
+  const [date, setDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
   const [projects, setProjects] = useState<any[]>([])
   const [labourers, setLabourers] = useState<any[]>([])
+  const [records, setRecords] = useState<any[]>([])
+  
+  const [selectedWorkerId, setSelectedWorkerId] = useState<string>('')
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')
-  const [attendance, setAttendance] = useState<Record<string, number>>({}) // labour_id -> days_worked
+  const [status, setStatus] = useState<string>('1') // 1 = Full Day, 0.5 = Half Day
+  const [overtimeHours, setOvertimeHours] = useState<string>('0')
+  const [overtimeAmount, setOvertimeAmount] = useState<string>('0')
+  const [customRate, setCustomRate] = useState<string>('')
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  
   const supabase = createClient()
 
   useEffect(() => {
     fetchData()
   }, [])
 
-  useEffect(() => {
-    if (selectedProjectId && date) {
-      fetchExistingAttendance()
-    }
-  }, [selectedProjectId, date])
-
   async function fetchData() {
     setLoading(true)
     const { data: projData } = await supabase.from('projects').select('*').order('name')
     const { data: labData } = await supabase.from('labour').select('*').order('name')
+    const { data: attData } = await supabase.from('attendance').select('*, labour(name), projects(name)').order('date', { ascending: false }).limit(20)
     
     setProjects(projData || [])
     setLabourers(labData || [])
+    setRecords(attData || [])
     setLoading(false)
   }
 
-  async function fetchExistingAttendance() {
-    const formattedDate = format(date, 'yyyy-MM-dd')
-    const { data, error } = await supabase
-      .from('attendance')
-      .select('labour_id, days_worked')
-      .eq('project_id', selectedProjectId)
-      .eq('date', formattedDate)
-    
-    if (error) {
-       toast.error('Failed to fetch existing attendance')
-       return
-    }
-
-    const newAttendance: Record<string, number> = {}
-    data?.forEach(record => {
-      newAttendance[record.labour_id] = Number(record.days_worked)
-    })
-    setAttendance(newAttendance)
-  }
-
-  const handleAttendanceChange = (labourId: string, value: number) => {
-    setAttendance(prev => ({
-      ...prev,
-      [labourId]: value
-    }))
-  }
-
-  const handleSave = async () => {
-    if (!selectedProjectId) {
-      toast.error('Please select a project first')
+  const handleMarkAttendance = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedWorkerId || !selectedProjectId) {
+      toast.error('Worker and Project are required')
       return
     }
 
     setSaving(true)
-    const formattedDate = format(date, 'yyyy-MM-dd')
-    const records = Object.entries(attendance)
-      .filter(([_, val]) => val > 0)
-      .map(([labourId, val]) => ({
-        labour_id: labourId,
-        project_id: selectedProjectId,
-        date: formattedDate,
-        days_worked: val
-      }))
-
     try {
-      // Use upsert to handle updates if records already exist
-      // Note: We need a unique constraint on (labour_id, project_id, date) in Supabase
+      // Check for duplicate attendance
+      const { data: existing } = await supabase
+        .from('attendance')
+        .select('id')
+        .eq('labour_id', selectedWorkerId)
+        .eq('project_id', selectedProjectId)
+        .eq('date', date)
+        .single()
+
+      if (existing) {
+        toast.error('Attendance already marked for this worker on this date and project')
+        setSaving(false)
+        return
+      }
+
       const { error } = await supabase
         .from('attendance')
-        .upsert(records, { onConflict: 'labour_id, project_id, date' })
+        .insert([{
+          labour_id: selectedWorkerId,
+          project_id: selectedProjectId,
+          date: date,
+          days_worked: parseFloat(status),
+          overtime_hours: parseFloat(overtimeHours || '0'),
+          overtime_amount: parseFloat(overtimeAmount || '0'),
+          custom_rate: customRate ? parseFloat(customRate) : null
+        }])
 
       if (error) throw error
-      toast.success('Attendance saved successfully')
+      toast.success('Attendance marked successfully')
+      // Reset form
+      setSelectedWorkerId('')
+      setSelectedProjectId('')
+      setStatus('1')
+      setOvertimeHours('0')
+      setOvertimeAmount('0')
+      setCustomRate('')
+      fetchData() // Refresh list
     } catch (error: any) {
       toast.error(error.message)
     } finally {
@@ -120,172 +125,204 @@ export default function AttendancePage() {
     }
   }
 
+  const handleWorkerChange = (value: string) => {
+    setSelectedWorkerId(value)
+    const worker = labourers.find(l => l.id === value)
+    if (worker) {
+      setCustomRate(worker.daily_rate.toString())
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Daily Attendance</h1>
-          <p className="text-gray-500">Select a project and date to mark attendance.</p>
-        </div>
-        
-        <Button 
-          onClick={handleSave} 
-          disabled={saving || !selectedProjectId}
-          className="bg-blue-600 hover:bg-blue-700 h-11 px-8 rounded-xl shadow-lg shadow-blue-100 dark:shadow-none min-w-[150px]"
-        >
-          {saving ? <Loader2 className="animate-spin mr-2" /> : <Save className="mr-2 h-5 w-5" />}
-          Save Changes
-        </Button>
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white uppercase leading-none">Attendance</h1>
+        <p className="mt-2 text-zinc-500 font-medium">Mark daily attendance for workers on projects.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Configuration Sidebar */}
-        <div className="space-y-6">
-          <Card className="border-none shadow-xl shadow-gray-100 dark:shadow-none bg-white dark:bg-black rounded-3xl overflow-hidden">
-            <CardHeader className="bg-blue-600 text-white p-6">
-              <CardTitle className="text-xl flex items-center gap-2">
-                <CalendarIcon size={20} />
-                Configuration
-              </CardTitle>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* LEFT: Mark Attendance Form */}
+        <div className="lg:col-span-4">
+          <Card className="border-none shadow-2xl bg-[#111827] text-white rounded-2xl overflow-hidden">
+            <CardHeader className="p-8 border-b border-zinc-800">
+               <CardTitle className="text-lg font-black uppercase tracking-tight">Mark Attendance</CardTitle>
             </CardHeader>
-            <CardContent className="p-6 space-y-6">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-700 dark:text-zinc-300">Select Date</label>
-                <div className="flex flex-col gap-2">
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={(d) => d && setDate(d)}
-                    className="rounded-xl border border-gray-100 dark:border-zinc-800"
+            <CardContent className="p-8">
+              <form onSubmit={handleMarkAttendance} className="space-y-6">
+                {/* Worker Select */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Worker</label>
+                  <Select onValueChange={(v) => handleWorkerChange(v || '')} value={selectedWorkerId}>
+                    <SelectTrigger className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold">
+                      <SelectValue placeholder="Select worker" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#111827] border-zinc-800 text-white rounded-xl">
+                      {labourers.map(l => (
+                        <SelectItem key={l.id} value={l.id} className="py-3 font-bold hover:bg-zinc-800">{l.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Custom Rate */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Daily Rate (₹)</label>
+                  <Input 
+                    type="number"
+                    value={customRate}
+                    onChange={(e) => setCustomRate(e.target.value)}
+                    className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white"
                   />
-                  <div 
-                    className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-blue-600 dark:text-blue-400 text-sm font-bold text-center"
-                    suppressHydrationWarning
-                  >
-                    {format(date, 'EEEE, MMM dd, yyyy')}
+                  <p className="text-[9px] font-medium text-zinc-500 italic mt-1 leading-tight">Override default rate for this entry.</p>
+                </div>
+
+                {/* Project Select */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Project</label>
+                  <Select onValueChange={(v: string | null) => setSelectedProjectId(v ?? '')} value={selectedProjectId}>
+                    <SelectTrigger className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold">
+                      <SelectValue placeholder="Select project" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#111827] border-zinc-800 text-white rounded-xl">
+                      {projects.map(p => (
+                        <SelectItem key={p.id} value={p.id} className="py-3 font-bold hover:bg-zinc-800">{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Date Input */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Date</label>
+                  <Input 
+                    type="date"
+                    value={date}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDate(e.target.value)}
+                    className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white px-4"
+                  />
+                </div>
+
+                {/* Status Select */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Status</label>
+                  <Select onValueChange={(v: string | null) => setStatus(v ?? '1')} value={status}>
+                    <SelectTrigger className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#111827] border-zinc-800 text-white rounded-xl">
+                      <SelectItem value="1" className="py-3 font-bold">Full Day</SelectItem>
+                      <SelectItem value="0.5" className="py-3 font-bold">Half Day</SelectItem>
+                      <SelectItem value="0" className="py-3 font-bold">Absent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Overtime Fields (Optional) */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest leading-none">Overtime Hours (optional)</label>
+                    <Input 
+                      type="number"
+                      value={overtimeHours}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOvertimeHours(e.target.value)}
+                      className="h-12 bg-[#030712] border-zinc-800 rounded-xl font-bold text-white"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest leading-none">Overtime Amount (optional)</label>
+                    <Input 
+                      type="number"
+                      value={overtimeAmount}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOvertimeAmount(e.target.value)}
+                      className="h-12 bg-[#030712] border-zinc-800 rounded-xl font-bold text-white"
+                    />
                   </div>
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-700 dark:text-zinc-300 flex items-center gap-2">
-                  <Briefcase size={16} />
-                  Project Site
-                </label>
-                <Select onValueChange={(v: string | null) => setSelectedProjectId(v ?? '')} value={selectedProjectId}>
-                  <SelectTrigger className="rounded-xl h-12 bg-gray-50 dark:bg-zinc-900 border-none">
-                    <SelectValue placeholder="Select Project" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl border-none shadow-xl">
-                    {projects.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                <Button 
+                  type="submit" 
+                  disabled={saving} 
+                  className="w-full h-14 bg-[#00A3FF] hover:bg-[#0092E6] text-white rounded-xl font-black uppercase tracking-tight text-lg shadow-xl shadow-blue-500/20"
+                >
+                  {saving ? <Loader2 className="animate-spin mr-2" /> : null}
+                  Mark Attendance
+                </Button>
+              </form>
             </CardContent>
           </Card>
         </div>
 
-        {/* Attendance List */}
-        <div className="lg:col-span-2">
-          <Card className="border-none shadow-xl shadow-gray-100 dark:shadow-none bg-white dark:bg-black rounded-3xl overflow-hidden">
-            <CardHeader className="border-b border-gray-50 dark:border-zinc-900 p-6 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-xl flex items-center gap-2">
-                  <Users size={20} className="text-blue-600" />
-                  Workforce List
-                </CardTitle>
-                <CardDescription>Click on buttons to mark full or partial days.</CardDescription>
-              </div>
-              <Badge variant="secondary" className="px-4 py-1 rounded-full bg-blue-50 text-blue-600 border-none">
-                {labourers.length} Registered
-              </Badge>
+        {/* RIGHT: Attendance Records List */}
+        <div className="lg:col-span-8">
+          <Card className="border-none shadow-2xl bg-[#111827] text-white rounded-2xl overflow-hidden h-full">
+            <CardHeader className="p-8 border-b border-zinc-800 flex flex-row items-center justify-between">
+               <CardTitle className="text-lg font-black uppercase tracking-tight">Attendance Records</CardTitle>
+               <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 bg-[#0F172A] border border-zinc-800 rounded-xl px-4 py-2 text-xs font-bold">
+                    <span className="text-zinc-500">16-04-2026</span>
+                    <span className="text-zinc-600 font-medium italic">to</span>
+                    <span className="text-zinc-200">23-04-2026</span>
+                    <CalendarIcon size={14} className="text-[#00A3FF] ml-1" />
+                  </div>
+               </div>
             </CardHeader>
             <CardContent className="p-0">
-              {loading ? (
-                <div className="p-12 flex flex-col items-center gap-4 text-gray-400">
-                  <Loader2 className="animate-spin h-8 w-8" />
-                  <p>Loading workforce...</p>
-                </div>
-              ) : labourers.length === 0 ? (
-                <div className="p-12 text-center text-gray-500">
-                  No labourers registered yet.
-                </div>
-              ) : !selectedProjectId ? (
-                <div className="p-12 text-center text-gray-500 flex flex-col items-center gap-3">
-                  <Briefcase size={48} className="text-gray-200" />
-                  <p>Please select a project to start marking attendance.</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-50 dark:divide-zinc-900">
-                  {labourers.map((worker) => (
-                    <div 
-                      key={worker.id} 
-                      className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors hover:bg-gray-50/50 dark:hover:bg-zinc-900/50"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 dark:from-zinc-800 dark:to-zinc-700 flex items-center justify-center text-blue-600 font-bold text-lg">
-                          {worker.name.charAt(0)}
-                        </div>
-                        <div>
-                          <p className="font-bold text-gray-900 dark:text-zinc-100">{worker.name}</p>
-                          <p className="text-xs text-gray-500 capitalize">{worker.type} • ₹{worker.daily_rate}/day</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <AttendanceButton 
-                          active={attendance[worker.id] === 0 || !attendance[worker.id]} 
-                          onClick={() => handleAttendanceChange(worker.id, 0)}
-                          label="Absent"
-                          color="gray"
-                        />
-                         <AttendanceButton 
-                          active={attendance[worker.id] === 0.5} 
-                          onClick={() => handleAttendanceChange(worker.id, 0.5)}
-                          label="Half Day"
-                          color="orange"
-                        />
-                        <AttendanceButton 
-                          active={attendance[worker.id] === 1} 
-                          onClick={() => handleAttendanceChange(worker.id, 1)}
-                          label="Full Day"
-                          color="blue"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-zinc-800 hover:bg-[#111827]">
+                    <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
+                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Worker</TableHead>
+                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Project</TableHead>
+                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 text-center">Status</TableHead>
+                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 text-center">Overtime</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    Array(5).fill(0).map((_, i) => (
+                      <TableRow key={i} className="animate-pulse border-zinc-800">
+                        <TableCell colSpan={5} className="h-16 px-8 bg-zinc-800/10"></TableCell>
+                      </TableRow>
+                    ))
+                  ) : records.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-24 text-center">
+                         <div className="flex flex-col items-center gap-4 text-zinc-500">
+                            <TableIcon size={48} className="opacity-10" />
+                            <p className="text-sm font-bold uppercase tracking-widest">No matching records</p>
+                         </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    records.map((rec) => (
+                      <TableRow key={rec.id} className="border-zinc-800 transition-colors hover:bg-white/5">
+                        <TableCell className="px-8 py-5 font-bold text-zinc-400">
+                          {format(new Date(rec.date), 'M/d/yyyy')}
+                        </TableCell>
+                        <TableCell className="py-5 font-bold text-white capitalize">{rec.labour?.name}</TableCell>
+                        <TableCell className="py-5 font-bold text-zinc-500 lowercase">{rec.projects?.name}</TableCell>
+                        <TableCell className="py-5 text-center">
+                          <Badge className={cn(
+                            "rounded-full px-4 py-1 font-black text-[9px] uppercase tracking-tighter border-none",
+                            rec.days_worked === 1 ? "bg-emerald-500/20 text-emerald-400" : 
+                            rec.days_worked === 0.5 ? "bg-amber-500/20 text-amber-400" : "bg-red-500/20 text-red-500"
+                          )}>
+                            {rec.days_worked === 1 ? 'Full Day' : rec.days_worked === 0.5 ? 'Half Day' : 'Absent'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-5 text-center font-bold text-zinc-500">
+                          {rec.overtime_hours > 0 ? `${rec.overtime_hours} hrs` : '—'}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </div>
       </div>
     </div>
-  )
-}
-
-function AttendanceButton({ active, onClick, label, color }: any) {
-  const getStyles = () => {
-    if (!active) return "bg-gray-100/50 text-gray-400 hover:bg-gray-100 dark:bg-zinc-900 dark:text-zinc-500"
-    
-    switch(color) {
-      case 'orange': return "bg-orange-500 text-white shadow-lg shadow-orange-100 dark:shadow-none"
-      case 'blue': return "bg-blue-600 text-white shadow-lg shadow-blue-100 dark:shadow-none"
-      default: return "bg-gray-600 text-white shadow-md dark:bg-zinc-700"
-    }
-  }
-
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 min-w-[90px]",
-        getStyles()
-      )}
-    >
-      {label}
-    </button>
   )
 }
