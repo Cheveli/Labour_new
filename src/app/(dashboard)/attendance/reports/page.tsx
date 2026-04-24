@@ -284,15 +284,17 @@ export default function ReportsPage() {
     
     // Summary Boxes
     const boxW = 45, boxH = 20
+    const isNeg = (summary.netPayable || 0) < 0
     const boxes = [
       { l: 'Gross Amount', v: `Rs. ${(summary.totalWages + summary.totalOTAmount || 0).toLocaleString()}` },
       { l: 'Advances', v: `Rs. ${(summary.totalAdvances || 0).toLocaleString()}` },
-      { l: 'NET PAYABLE', v: `Rs. ${(summary.netPayable || 0).toLocaleString()}`, hi: true }
+      { l: isNeg ? 'WORKER OWES' : 'NET PAYABLE', v: `Rs. ${Math.abs(summary.netPayable || 0).toLocaleString()}`, hi: true }
     ]
     
     boxes.forEach((b, i) => {
       const bx = 14 + (i * (boxW + 2))
-      if (b.hi) { doc.setFillColor(...PDF_COLORS.BLUE); doc.setTextColor(255, 255, 255) }
+      if (b.hi && isNeg) { doc.setFillColor(...PDF_COLORS.RED); doc.setTextColor(255, 255, 255) }
+      else if (b.hi) { doc.setFillColor(...PDF_COLORS.BLUE); doc.setTextColor(255, 255, 255) }
       else { doc.setFillColor(240, 245, 255); doc.setTextColor(...PDF_COLORS.NAVY) }
       doc.roundedRect(bx, finalY, boxW, boxH, 1, 1, 'F')
       doc.setFontSize(7); doc.text(b.l, bx + boxW / 2, finalY + 6, { align: 'center' })
@@ -301,7 +303,7 @@ export default function ReportsPage() {
 
     doc.setTextColor(...PDF_COLORS.NAVY)
     doc.setFontSize(8); doc.text('Amount in Words:', 14, finalY + boxH + 8)
-    doc.setFont('helvetica', 'italic'); doc.text(numberToWords(summary.netPayable), 42, finalY + boxH + 8)
+    doc.setFont('helvetica', 'italic'); doc.text(numberToWords(Math.abs(summary.netPayable || 0)), 42, finalY + boxH + 8)
 
     // Dynamic Footer positioning
     doc.setFillColor(...PDF_COLORS.NAVY)

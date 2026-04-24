@@ -30,7 +30,7 @@ import {
   Download,
   User
 } from 'lucide-react'
-import { format, eachDayOfInterval, parseISO } from 'date-fns'
+import { format, eachDayOfInterval, parseISO, startOfWeek, endOfWeek } from 'date-fns'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
@@ -85,8 +85,10 @@ export default function PaymentsPage() {
 
   useEffect(() => { 
     fetchData() 
-    setStartDate(format(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
-    setEndDate(format(new Date(), 'yyyy-MM-dd'))
+    // Default to current week: Sunday to Saturday
+    const now = new Date()
+    setStartDate(format(startOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd'))
+    setEndDate(format(endOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd'))
   }, [])
 
   const handlePreview = async (e: React.FormEvent) => {
@@ -187,7 +189,7 @@ export default function PaymentsPage() {
     try {
       const { error } = await supabase.from('payments').insert([{
         labour_id: previewData.worker.id,
-        amount: Math.max(0, previewData.totalPayable - (parseFloat(advanceAmount || '0') || 0)),
+        amount: previewData.totalPayable - (parseFloat(advanceAmount || '0') || 0),
         date: format(new Date(), 'yyyy-MM-dd'),
         payment_type: paymentType,
         notes: paymentNotes || null
@@ -265,18 +267,20 @@ export default function PaymentsPage() {
     })
 
     const tableEndY = (doc as any).lastAutoTable.finalY + 8
-    const netPayable = Math.max(0, totalPayable - (receiptData.advanceDeducted || 0))
+    const netPayable = totalPayable - (receiptData.advanceDeducted || 0)
+    const isNegative = netPayable < 0
 
     const summaryBoxes = [
       { label: 'Gross Amount', value: `Rs.${totalPayable.toLocaleString()}` },
       { label: 'Deduction', value: `Rs.${(receiptData.advanceDeducted || 0).toLocaleString()}` },
-      { label: 'NET PAYABLE', value: `Rs.${netPayable.toLocaleString()}`, hi: true }
+      { label: isNegative ? 'WORKER OWES' : 'NET PAYABLE', value: `Rs.${isNegative ? Math.abs(netPayable).toLocaleString() : netPayable.toLocaleString()}`, hi: true }
     ]
     
     const bW = 60, bH = 20
     summaryBoxes.forEach((b, i) => {
       const bx = 14 + (i * (bW + 2))
-      if (b.hi) { doc.setFillColor(...PDF_COLORS.BLUE); doc.setTextColor(255, 255, 255) }
+      if (b.hi && isNegative) { doc.setFillColor(...PDF_COLORS.RED); doc.setTextColor(255, 255, 255) }
+      else if (b.hi) { doc.setFillColor(...PDF_COLORS.BLUE); doc.setTextColor(255, 255, 255) }
       else { doc.setFillColor(235, 242, 255); doc.setTextColor(...PDF_COLORS.NAVY) }
       doc.roundedRect(bx, tableEndY, bW, bH, 1, 1, 'F')
       doc.setFontSize(7); doc.text(b.label, bx + bW / 2, tableEndY + 6, { align: 'center' })
@@ -285,7 +289,7 @@ export default function PaymentsPage() {
 
     doc.setTextColor(...PDF_COLORS.NAVY)
     doc.setFontSize(8); doc.text('Amount in Words:', 14, tableEndY + bH + 8)
-    doc.setFont('helvetica', 'italic'); doc.text(numberToWords(netPayable), 42, tableEndY + bH + 8)
+    doc.setFont('helvetica', 'italic'); doc.text(numberToWords(Math.abs(netPayable)), 42, tableEndY + bH + 8)
 
     // Footer
     doc.setFillColor(...PDF_COLORS.NAVY)
@@ -324,7 +328,8 @@ export default function PaymentsPage() {
         const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(fileName)
         const gross = receiptData.totalPayable
         const ded = parseFloat(advanceAmount || '0') || 0
-        const netAmt = Math.max(0, gross - ded)
+        const netAmt = gross - ded
+        const netLabel = netAmt < 0 ? `*Worker Owes: Rs. ${Math.abs(netAmt).toLocaleString()}*` : `*Net Payable: Rs. ${netAmt.toLocaleString()}*`
         const message = `*SS CONSTRUCTIONS - Payment Receipt*\n\n` +
                         `Receipt No: ${receiptData.receiptNo}\n` +
                         `Worker: ${receiptData.worker.name}\n` +
@@ -332,7 +337,7 @@ export default function PaymentsPage() {
                         `Gross Amount: Rs. ${gross.toLocaleString()}\n` +
                         `Deduction: Rs. ${ded.toLocaleString()}\n` +
                         `--------------------------\n` +
-                        `*Net Payable: Rs. ${netAmt.toLocaleString()}*\n\n` +
+                        `${netLabel}\n\n` +
                         `View Digital Receipt:\n${publicUrl}\n\n` +
                         `THANK YOU!`
         const encodedMessage = encodeURIComponent(message)
@@ -627,9 +632,19 @@ export default function PaymentsPage() {
                              style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }}
                            />
                         </div>
-                       <div className="space-y-1 col-span-2 bg-[#0d1018] p-4 rounded-xl border border-blue-500/30">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Net Payable (After Deduction)</p>
-                          <p className="text-3xl font-black text-blue-400">₹ {Math.max(0, previewData.totalPayable - (parseFloat(advanceAmount || '0') || 0)).toFixed(2)}</p>
+                       <div className={cn("space-y-1 col-span-2 p-4 rounded-xl border", 
+                          (previewData.totalPayable - (parseFloat(advanceAmount || '0') || 0)) < 0 
+                            ? "bg-red-950/30 border-red-500/30" 
+                            : "bg-[#0d1018] border-blue-500/30"
+                       )}>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                            {(previewData.totalPayable - (parseFloat(advanceAmount || '0') || 0)) < 0 ? 'Worker Owes Us' : 'Net Payable (After Deduction)'}
+                          </p>
+                          <p className={cn("text-3xl font-black", 
+                            (previewData.totalPayable - (parseFloat(advanceAmount || '0') || 0)) < 0 ? "text-red-500" : "text-blue-400"
+                          )}>
+                            ₹ {(previewData.totalPayable - (parseFloat(advanceAmount || '0') || 0)).toFixed(2)}
+                          </p>
                        </div>
                     </div>
 
@@ -782,10 +797,16 @@ export default function PaymentsPage() {
                        <span>- Rs. {(parseFloat(advanceAmount || '0') || 0).toLocaleString()}</span>
                      </div>
                    )}
-                   <div className="flex justify-between font-bold text-lg text-blue-600">
-                      <span>NET PAYABLE</span>
-                      <span>Rs. {Math.max(0, receiptData.totalPayable - (parseFloat(advanceAmount || '0') || 0)).toLocaleString()}</span>
-                   </div>
+                   {(() => {
+                     const net = receiptData.totalPayable - (parseFloat(advanceAmount || '0') || 0)
+                     const isNeg = net < 0
+                     return (
+                       <div className={cn("flex justify-between font-bold text-lg", isNeg ? "text-red-500" : "text-blue-600")}>
+                         <span>{isNeg ? 'WORKER OWES' : 'NET PAYABLE'}</span>
+                         <span>{isNeg ? `-` : ''}Rs. {Math.abs(net).toLocaleString()}</span>
+                       </div>
+                     )
+                   })()}
                    
                    <div className="text-center pt-4 border-t border-zinc-200 dark:border-zinc-800">
                       <p className="text-lg font-bold">THANK YOU!</p>
