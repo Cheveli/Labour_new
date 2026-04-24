@@ -1,10 +1,7 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import React, { useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { 
   Table, 
   TableBody, 
@@ -13,12 +10,9 @@ import {
   TableHeader, 
   TableRow 
 } from '@/components/ui/table'
-import { Plus, Edit2, Trash2, Loader2, Settings2 } from 'lucide-react'
-import { toast } from 'sonner'
-import { motion } from 'framer-motion'
 
 export default function LabourTypesPage() {
-  const [loading, setLoading] = useState(true)
+  const [loading] = useState(false)
   
   const fixedTypes = [
     { code: 'MISTRY', display_name: 'Mistry (Skilled)', default_rate: 1300, gender: 'Male' },
@@ -26,16 +20,12 @@ export default function LabourTypesPage() {
     { code: 'PARAKADU', display_name: 'Parakadu (Helper)', default_rate: 1000, gender: 'Male' },
   ]
 
-  useEffect(() => {
-    setLoading(false)
-  }, [])
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white uppercase leading-none">Labour Types</h1>
-          <p className="mt-2 text-zinc-500 font-medium">Fixed labour types with default per-day salaries. These cannot be modified.</p>
+          <h1 className="text-2xl font-black text-white tracking-tight">Labour Types</h1>
+          <p className="mt-1 text-sm text-zinc-500">Fixed labour types with default per-day salaries. These cannot be modified.</p>
         </div>
       </div>
 
@@ -75,8 +65,8 @@ export default function LabourTypesPage() {
         </CardContent>
       </Card>
 
-      <Card className="border-none shadow-xl bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 rounded-2xl p-6">
-        <p className="text-sm font-bold text-amber-800 dark:text-amber-200">
+      <Card className="border-none shadow-xl bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 rounded-2xl p-6">
+        <p className="text-sm font-bold text-blue-800 dark:text-blue-200">
           Note: These types cannot be modified. Default rates can be overridden during attendance/payment entry.
         </p>
       </Card>

@@ -41,10 +41,6 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
-  useEffect(() => {
-    fetchProjectDetails()
-  }, [id])
-
   async function fetchProjectDetails() {
     setLoading(true)
     
@@ -60,6 +56,9 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
     setExtraWork(extra || [])
     setLoading(false)
   }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => { fetchProjectDetails() }, [id])
 
   if (loading) return (
     <div className="h-[80vh] flex items-center justify-center">

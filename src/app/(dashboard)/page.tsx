@@ -2,323 +2,212 @@
 
 import React, { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { 
-  Users, 
-  Briefcase, 
-  DollarSign, 
-  TrendingUp, 
-  Calendar,
-  Wallet,
-  ArrowUpRight,
-  TrendingDown,
-  Package,
-  Activity,
-  Zap,
-  ChevronRight
-} from 'lucide-react'
-import { motion } from 'framer-motion'
-import { Button } from '@/components/ui/button'
+import { Users, CalendarCheck, Wallet, Package, TrendingUp, Briefcase } from 'lucide-react'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+} from 'recharts'
+import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns'
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState({
-    totalLabour: 0,
-    totalProjects: 0,
-    totalRevenue: 0,
-    totalLabourCost: 0,
-    totalMaterialCost: 0,
-    netCash: 0
-  })
+  const [stats, setStats] = useState({ totalProjects: 0, totalRevenue: 0, totalLabourCost: 0, totalMaterialCost: 0, netCash: 0 })
   const [loading, setLoading] = useState(true)
-  const [labourCostModalOpen, setLabourCostModalOpen] = useState(false)
-  const [materialCostModalOpen, setMaterialCostModalOpen] = useState(false)
-  const [labourCostBreakdown, setLabourCostBreakdown] = useState<any[]>([])
-  const [materialCostBreakdown, setMaterialCostBreakdown] = useState<any[]>([])
+  const [monthlyData, setMonthlyData] = useState<any[]>([])
+  const [projectCosts, setProjectCosts] = useState<any[]>([])
   const supabase = createClient()
-
-  useEffect(() => {
-    fetchStats()
-  }, [])
 
   async function fetchStats() {
     try {
-      const { count: labourCount } = await supabase.from('labour').select('*', { count: 'exact', head: true })
       const { count: projectCount } = await supabase.from('projects').select('*', { count: 'exact', head: true })
-      
-      // INCOMING: Total Revenue (only from income table - money received from clients)
-      const { data: incomeData } = await supabase.from('income').select('amount')
-      const totalRevenue = incomeData?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0
-      
-      // OUTGOING: Total Labour Cost (payments to workers)
-      const { data: paymentData } = await supabase.from('payments').select('amount')
-      const totalLabourCost = paymentData?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0
-
-      // OUTGOING: Total Material Cost (materials purchased)
-      const { data: materialData } = await supabase.from('materials').select('total_amount')
-      const totalMaterialCost = materialData?.reduce((acc, curr) => acc + Number(curr.total_amount || 0), 0) || 0
-      
-      // OUTGOING: Extra Work Cost (additional work expenses)
+      const { data: incomeData } = await supabase.from('income').select('amount, date')
+      const { data: paymentData } = await supabase.from('payments').select('amount, date')
+      const { data: materialData } = await supabase.from('materials').select('total_amount, date')
       const { data: extraWorkData } = await supabase.from('extra_work').select('amount')
-      const totalExtraWorkCost = extraWorkData?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0
-      
-      // Net Cash = Revenue - (Labour + Material + Extra Work)
-      const totalExpenses = totalLabourCost + totalMaterialCost + totalExtraWorkCost
-      const netCash = totalRevenue - totalExpenses
+      const { data: projectsData } = await supabase.from('projects').select('id, name')
 
-      setStats({
-        totalLabour: labourCount || 0,
-        totalProjects: projectCount || 0,
-        totalRevenue,
-        totalLabourCost,
-        totalMaterialCost,
-        netCash
+      const totalRevenue = incomeData?.reduce((a, c) => a + Number(c.amount), 0) || 0
+      const totalLabourCost = paymentData?.reduce((a, c) => a + Number(c.amount), 0) || 0
+      const totalMaterialCost = materialData?.reduce((a, c) => a + Number(c.total_amount || 0), 0) || 0
+      const totalExtraWork = extraWorkData?.reduce((a, c) => a + Number(c.amount), 0) || 0
+      const netCash = totalRevenue - (totalLabourCost + totalMaterialCost + totalExtraWork)
+
+      setStats({ totalProjects: projectCount || 0, totalRevenue, totalLabourCost, totalMaterialCost, netCash })
+
+      // Build last-6-months monthly data
+      const months = Array.from({ length: 6 }, (_, i) => {
+        const d = subMonths(new Date(), 5 - i)
+        return { key: format(d, 'yyyy-MM'), label: format(d, 'MMM'), start: format(startOfMonth(d), 'yyyy-MM-dd'), end: format(endOfMonth(d), 'yyyy-MM-dd') }
       })
-    } catch (error) {
-      console.error(error)
+      const monthly = months.map(m => ({
+        month: m.label,
+        Revenue: incomeData?.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.amount), 0) || 0,
+        Labour: paymentData?.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.amount), 0) || 0,
+        Material: materialData?.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.total_amount || 0), 0) || 0,
+      }))
+      setMonthlyData(monthly)
+
+      // Project-wise cost (payments + materials per project)
+      const { data: projPay } = await supabase.from('payments').select('amount, project_id')
+      const { data: projMat } = await supabase.from('materials').select('total_amount, project_id')
+      const costMap: Record<string, number> = {}
+      projPay?.forEach(p => { costMap[p.project_id] = (costMap[p.project_id] || 0) + Number(p.amount) })
+      projMat?.forEach(m => { costMap[m.project_id] = (costMap[m.project_id] || 0) + Number(m.total_amount || 0) })
+      const projCosts = (projectsData || [])
+        .map(p => ({ name: p.name.length > 12 ? p.name.slice(0, 12) + '…' : p.name, value: costMap[p.id] || 0 }))
+        .filter(p => p.value > 0)
+      setProjectCosts(projCosts)
+    } catch (err) {
+      console.error(err)
     } finally {
       setLoading(false)
     }
   }
 
-  const openLabourCostModal = async () => {
-    setLabourCostModalOpen(true)
-    // Fetch project-wise labour cost
-    const { data } = await supabase
-      .from('payments')
-      .select(`
-        amount,
-        labour_id,
-        labour(name),
-        projects(name)
-      `)
-      .order('created_at', { ascending: false })
-    setLabourCostBreakdown(data || [])
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => { fetchStats() }, [])
 
-  const openMaterialCostModal = async () => {
-    setMaterialCostModalOpen(true)
-    // Fetch project-wise material cost
-    const { data } = await supabase
-      .from('materials')
-      .select(`
-        total_amount,
-        name,
-        projects(name)
-      `)
-      .order('created_at', { ascending: false })
-    setMaterialCostBreakdown(data || [])
-  }
+  const PANEL = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
+  const GOLD = '#3b82f6'
+  const DIM = '#6b7280'
+  const CHART_COLORS = ['#3b82f6', '#22c55e', '#60a5fa', '#a78bfa', '#f87171']
+  const tooltipStyle = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '8px', color: '#f0f0f0', fontSize: 12 }
 
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1
-      }
-    }
-  }
-
-  const item = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0 }
-  }
+  const topCards = [
+    { label: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString()}`, icon: <TrendingUp size={18} color="#22c55e" />, bg: '#1a2a1a', color: '#22c55e' },
+    { label: 'Labour Cost', value: `₹${stats.totalLabourCost.toLocaleString()}`, icon: <Wallet size={18} color={GOLD} />, bg: '#2a1e10', color: GOLD },
+    { label: 'Material Cost', value: `₹${stats.totalMaterialCost.toLocaleString()}`, icon: <Package size={18} color="#60a5fa" />, bg: '#151e2e', color: '#60a5fa' },
+    { label: 'Active Sites', value: stats.totalProjects, icon: <Briefcase size={18} color="#a78bfa" />, bg: '#1e1a2e', color: '#a78bfa' },
+  ]
 
   return (
-    <div className="space-y-10 pb-10">
-      {/* Welcome Section */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-            <span className="text-xs font-black uppercase tracking-widest text-indigo-500">Live Dashboard</span>
-          </div>
-          <h1 className="text-4xl lg:text-5xl font-black tracking-tighter text-zinc-900 dark:text-white uppercase leading-none">
-            Analytics <span className="text-indigo-600">Overview</span>
-          </h1>
-          <p className="mt-4 text-zinc-500 font-medium max-w-md">
-            Manage your site operations, tracking labour, materials, and finances in real-time.
-          </p>
-        </motion.div>
-        
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="bg-white dark:bg-zinc-900 px-6 py-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 shadow-sm flex items-center gap-6"
-        >
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Active Sites</span>
-            <span className="text-2xl font-black text-indigo-600">{stats.totalProjects}</span>
-          </div>
-          <div className="w-px h-10 bg-zinc-100 dark:bg-zinc-800" />
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Workforce</span>
-            <span className="text-2xl font-black text-zinc-900 dark:text-white">{stats.totalLabour}</span>
-          </div>
-        </motion.div>
+    <div className="space-y-5 pb-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-black text-white tracking-tight">Overview</h1>
+        <p className="text-sm mt-0.5" style={{ color: DIM }}>Financial summary across all active sites.</p>
       </div>
 
-      {/* Primary Stats Grid */}
-      <motion.div 
-        variants={container}
-        initial="hidden"
-        animate="show"
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
-      >
-        <StatCard 
-          title="Total Revenue" 
-          value={`₹${stats.totalRevenue.toLocaleString()}`} 
-          icon={<TrendingUp className="text-emerald-500" />} 
-          color="emerald"
-          subtitle="Income + Extra Work"
-        />
-        <StatCard 
-          title="Total Labour Cost" 
-          value={`₹${stats.totalLabourCost.toLocaleString()}`} 
-          icon={<Wallet className="text-indigo-500" />} 
-          color="indigo"
-          subtitle="Click for breakdown"
-          onClick={openLabourCostModal}
-        />
-        <StatCard 
-          title="Total Material Cost" 
-          value={`₹${stats.totalMaterialCost.toLocaleString()}`} 
-          icon={<Package className="text-amber-500" />} 
-          color="amber"
-          subtitle="Click for breakdown"
-          onClick={openMaterialCostModal}
-        />
-        <StatCard 
-          title="Net Cash" 
-          value={`₹${stats.netCash.toLocaleString()}`} 
-          icon={<Activity className="text-blue-500" />} 
-          color="blue"
-          subtitle="Revenue - Costs"
-        />
-      </motion.div>
+      {/* Top 4 Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {topCards.map((c, i) => (
+          <div key={i} style={PANEL} className="p-5">
+            <div className="flex items-start justify-between mb-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: DIM }}>{c.label}</p>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.bg }}>{c.icon}</div>
+            </div>
+            <p className="text-2xl font-black" style={{ color: c.color }}>{loading ? '—' : c.value}</p>
+          </div>
+        ))}
+      </div>
 
-      {/* Main Content Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Sidebar Column */}
-        <div className="space-y-8">
-           <Card className="border-none bg-indigo-600 rounded-3xl text-white p-8 relative overflow-hidden group">
-              <Zap className="absolute top-[-20px] right-[-20px] w-48 h-48 text-white/5 rotate-12 group-hover:rotate-0 transition-transform duration-700" />
-              <h3 className="text-2xl font-black uppercase tracking-tighter mb-2 relative z-10">Quick Actions</h3>
-              <p className="text-indigo-100 text-sm font-medium mb-8 relative z-10">Frequently used operations.</p>
-              
-              <div className="space-y-3 relative z-10">
-                 <QuickActionLink href="/attendance" label="Mark Attendance" icon={<Calendar />} />
-                 <QuickActionLink href="/labour" label="Add New Worker" icon={<Users />} />
-                 <QuickActionLink href="/payments" label="Record Payout" icon={<Wallet />} />
-                 <QuickActionLink href="/materials" label="Update Stock" icon={<Package />} />
-              </div>
-           </Card>
+      {/* Charts Row 1: Monthly Revenue Trend + Labour vs Material */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Monthly Revenue Trend */}
+        <div style={PANEL} className="p-5">
+          <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Monthly Revenue Trend</p>
+          <ResponsiveContainer width="100%" height={180}>
+            <AreaChart data={monthlyData} margin={{ top: 4, right: 8, bottom: 0, left: -10 }}>
+              <defs>
+                <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e2435" />
+              <XAxis dataKey="month" tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}K`} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Revenue']} />
+              <Area type="monotone" dataKey="Revenue" stroke="#22c55e" fill="url(#revGrad)" strokeWidth={2} dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Labour vs Material Cost */}
+        <div style={PANEL} className="p-5">
+          <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Labour vs Material Cost</p>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={monthlyData} margin={{ top: 4, right: 8, bottom: 0, left: -10 }} barSize={10}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e2435" />
+              <XAxis dataKey="month" tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}K`} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v: any, name: any) => [`₹${Number(v).toLocaleString()}`, name]} />
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10, color: DIM }} />
+              <Bar dataKey="Labour" fill={GOLD} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="Material" fill="#60a5fa" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Labour Cost Breakdown Modal */}
-      <Dialog open={labourCostModalOpen} onOpenChange={setLabourCostModalOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Labour Cost Breakdown</DialogTitle>
-            <DialogDescription>Project-wise and payment details</DialogDescription>
-          </DialogHeader>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Worker</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {labourCostBreakdown.map((payment, idx) => (
-                <TableRow key={idx}>
-                  <TableCell>{payment.labour?.name || 'N/A'}</TableCell>
-                  <TableCell>{payment.projects?.name || 'N/A'}</TableCell>
-                  <TableCell className="text-right font-bold">₹{Number(payment.amount).toLocaleString()}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </DialogContent>
-      </Dialog>
+      {/* Charts Row 2: Project Cost Distribution + Monthly Cash Flow + Quick Actions */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Project-wise Cost Distribution */}
+        <div style={PANEL} className="p-5">
+          <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Project Cost Distribution</p>
+          {projectCosts.length === 0 ? (
+            <div className="h-[160px] flex items-center justify-center text-xs" style={{ color: DIM }}>No project data</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={160}>
+              <PieChart>
+                <Pie data={projectCosts} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} innerRadius={30} paddingAngle={3}>
+                  {projectCosts.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                </Pie>
+                <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Cost']} />
+                <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10, color: DIM }} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
 
-      {/* Material Cost Breakdown Modal */}
-      <Dialog open={materialCostModalOpen} onOpenChange={setMaterialCostModalOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Material Cost Breakdown</DialogTitle>
-            <DialogDescription>Project-wise material expenses</DialogDescription>
-          </DialogHeader>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Material</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {materialCostBreakdown.map((material, idx) => (
-                <TableRow key={idx}>
-                  <TableCell>{material.name}</TableCell>
-                  <TableCell>{material.projects?.name || 'N/A'}</TableCell>
-                  <TableCell className="text-right font-bold">₹{Number(material.total_amount).toLocaleString()}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </DialogContent>
-      </Dialog>
+        {/* Monthly Cash Flow */}
+        <div style={PANEL} className="p-5">
+          <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Monthly Cash Flow</p>
+          <ResponsiveContainer width="100%" height={160}>
+            <AreaChart data={monthlyData.map(m => ({ ...m, Net: m.Revenue - m.Labour - m.Material }))} margin={{ top: 4, right: 8, bottom: 0, left: -10 }}>
+              <defs>
+                <linearGradient id="netGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={GOLD} stopOpacity={0.3} />
+                  <stop offset="95%" stopColor={GOLD} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e2435" />
+              <XAxis dataKey="month" tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}K`} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Net Cash']} />
+              <Area type="monotone" dataKey="Net" stroke={GOLD} fill="url(#netGrad)" strokeWidth={2} dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Quick Actions */}
+        <div style={PANEL} className="p-5">
+          <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Quick Actions</p>
+          <div className="space-y-2">
+            {[
+              { href: '/labour', label: 'Add Worker', icon: <Users size={14} /> },
+              { href: '/attendance', label: 'Mark Attendance', icon: <CalendarCheck size={14} /> },
+              { href: '/materials', label: 'Add Material', icon: <Package size={14} /> },
+              { href: '/payments', label: 'Create Payment', icon: <Wallet size={14} /> },
+              { href: '/income', label: 'Record Revenue', icon: <TrendingUp size={14} /> },
+            ].map(a => (
+              <Link key={a.href} href={a.href}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-zinc-300 hover:text-white transition-all"
+                style={{ backgroundColor: '#1a1f2e' }}
+              >
+                <span style={{ color: GOLD }}>{a.icon}</span>
+                {a.label}
+              </Link>
+            ))}
+          </div>
+          <div className="mt-4 pt-4 border-t" style={{ borderColor: '#1e2435' }}>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: DIM }}>Net Cash</p>
+            <p className="text-xl font-black" style={{ color: stats.netCash >= 0 ? '#22c55e' : '#ef4444' }}>
+              {loading ? '—' : `₹${stats.netCash.toLocaleString()}`}
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
-  )
-}
-
-function StatCard({ title, value, icon, color, subtitle, onClick }: any) {
-  return (
-    <motion.div 
-      variants={{
-        hidden: { opacity: 0, y: 10 },
-        show: { opacity: 1, y: 0 }
-      }}
-      onClick={onClick}
-      className={cn(
-        "bg-white dark:bg-zinc-950 p-6 rounded-3xl border border-zinc-50 dark:border-zinc-900/50 shadow-xl shadow-zinc-100/20 dark:shadow-none hover:border-indigo-200 dark:hover:border-indigo-900/40 transition-all duration-300 group",
-        onClick && "cursor-pointer hover:shadow-2xl"
-      )}
-    >
-      <div className={cn(
-        "w-12 h-12 rounded-2xl flex items-center justify-center mb-6 transition-transform group-hover:rotate-12",
-        `bg-${color}-50 dark:bg-${color}-900/10`
-      )}>
-        {React.cloneElement(icon as React.ReactElement<any>, { size: 24 })}
-      </div>
-      <p className="text-xs font-black uppercase text-zinc-400 tracking-widest mb-1">{title}</p>
-      <h3 className="text-3xl font-black tracking-tighter text-zinc-900 dark:text-white mb-2">{value}</h3>
-      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-tighter">{subtitle}</p>
-    </motion.div>
-  )
-}
-
-function QuickActionLink({ href, label, icon }: any) {
-  return (
-    <Link 
-      href={href} 
-      className="flex items-center justify-between p-4 bg-white/10 hover:bg-white/20 border border-white/10 rounded-2xl transition-all group/link"
-    >
-      <div className="flex items-center gap-3">
-        {React.cloneElement(icon as React.ReactElement<any>, { size: 18, className: "text-indigo-200" })}
-        <span className="font-bold text-sm tracking-tight">{label}</span>
-      </div>
-      <ChevronRight size={14} className="opacity-0 group-hover/link:opacity-100 transition-opacity" />
-    </Link>
   )
 }

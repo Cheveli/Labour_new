@@ -18,13 +18,47 @@ function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   )
 }
 
-function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
+type SelectValueExtraProps = {
+  items?: Record<string, React.ReactNode>
+  placeholder?: React.ReactNode
+}
+
+function SelectValue({
+  className,
+  items,
+  placeholder,
+  children,
+  ...props
+}: Omit<SelectPrimitive.Value.Props, "children"> & SelectValueExtraProps & {
+  children?: SelectPrimitive.Value.Props["children"]
+}) {
+  // If items map is provided, auto-render label for the selected value
+  if (items) {
+    return (
+      <SelectPrimitive.Value
+        data-slot="select-value"
+        className={cn("flex flex-1 text-left", className)}
+        {...props}
+      >
+        {(value: unknown) => {
+          const key = value == null ? "" : String(value)
+          if (key && items[key] != null) return items[key] as React.ReactNode
+          return (
+            <span className="text-muted-foreground">{placeholder}</span>
+          )
+        }}
+      </SelectPrimitive.Value>
+    )
+  }
   return (
     <SelectPrimitive.Value
       data-slot="select-value"
       className={cn("flex flex-1 text-left", className)}
+      {...(placeholder !== undefined ? { placeholder } : {})}
       {...props}
-    />
+    >
+      {children as SelectPrimitive.Value.Props["children"]}
+    </SelectPrimitive.Value>
   )
 }
 
@@ -78,12 +112,12 @@ function SelectContent({
         align={align}
         alignOffset={alignOffset}
         alignItemWithTrigger={alignItemWithTrigger}
-        className="isolate z-50"
+        className="isolate z-[9999]"
       >
         <SelectPrimitive.Popup
           data-slot="select-content"
           data-align-trigger={alignItemWithTrigger}
-          className={cn("relative isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+          className={cn("relative isolate z-[9999] max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
           {...props}
         >
           <SelectScrollUpButton />

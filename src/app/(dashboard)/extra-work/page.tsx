@@ -135,21 +135,21 @@ export default function ExtraWorkPage() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white uppercase leading-none">Extra Tasks</h1>
-          <p className="mt-2 text-zinc-500 font-medium">Record lumpsum payments for extra works and ad-hoc tasks.</p>
+          <h1 className="text-2xl font-black text-white tracking-tight">Extra Tasks</h1>
+          <p className="mt-1 text-sm text-zinc-500">Record lumpsum payments for extra works and ad-hoc tasks.</p>
         </div>
         <div className="flex items-center gap-3">
           {tasks.length > 0 && (
             <>
-              <Button onClick={exportPDF} variant="outline" className="border-zinc-800 bg-[#1F2937] text-gray-300 rounded-xl font-bold uppercase tracking-tight px-6 gap-2">
+              <Button onClick={exportPDF} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-6 gap-2">
                 <FileText size={16} /> Export PDF
               </Button>
-              <Button onClick={exportExcel} variant="outline" className="border-zinc-800 bg-[#1F2937] text-gray-300 rounded-xl font-bold uppercase tracking-tight px-6 gap-2">
+              <Button onClick={exportExcel} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-6 gap-2">
                 <Download size={16} /> Export Excel
               </Button>
             </>
           )}
-          <Button className="bg-[#4F46E5] hover:bg-[#4338CA] text-white rounded-xl font-bold uppercase tracking-tight gap-2 px-8 shadow-lg shadow-indigo-500/20">
+          <Button className="btn-construction rounded-xl font-bold uppercase tracking-tight gap-2 px-8">
             <Star size={18} /> Add Extra Task
           </Button>
         </div>
@@ -158,17 +158,18 @@ export default function ExtraWorkPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* LEFT: Task History */}
         <div className="lg:col-span-8">
-          <Card className="border-none shadow-2xl bg-[#111827] text-white rounded-2xl overflow-hidden min-h-full">
+          <Card className="panel-elevated text-white rounded-2xl overflow-hidden min-h-full">
             <CardHeader className="p-8 border-b border-zinc-800">
                <CardTitle className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">Historical Tasks</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
-                <TableHeader className="bg-[#0F172A]">
-                  <TableRow className="border-zinc-800 hover:bg-[#0F172A]">
+                <TableHeader className="bg-zinc-900/80">
+                  <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
                     <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
                     <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Site/Project</TableHead>
                     <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Task Name</TableHead>
+                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Remarks</TableHead>
                     <TableHead className="text-right px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Valuation</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -176,12 +177,12 @@ export default function ExtraWorkPage() {
                   {loading ? (
                     Array(5).fill(0).map((_, i) => (
                       <TableRow key={i} className="animate-pulse border-zinc-800">
-                        <TableCell colSpan={4} className="h-16 px-8 bg-zinc-800/10"></TableCell>
+                        <TableCell colSpan={5} className="h-16 px-8 bg-zinc-800/10"></TableCell>
                       </TableRow>
                     ))
                   ) : tasks.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="py-24 text-center">
+                      <TableCell colSpan={5} className="py-24 text-center">
                         <div className="flex flex-col items-center gap-4 text-zinc-600">
                             <Zap size={48} className="opacity-10" />
                             <p className="text-sm font-bold uppercase tracking-widest">No extra task history</p>
@@ -196,7 +197,8 @@ export default function ExtraWorkPage() {
                         </TableCell>
                         <TableCell className="py-5 font-bold text-white text-sm lowercase">{task.projects?.name}</TableCell>
                         <TableCell className="py-5 font-black text-xs text-gray-300 uppercase tracking-tighter">{task.work_name}</TableCell>
-                        <TableCell className="py-5 text-right px-8 font-black text-indigo-400 text-sm">₹ {task.amount.toLocaleString()}</TableCell>
+                        <TableCell className="py-5 text-xs text-zinc-400 max-w-[220px] truncate">{task.notes || '—'}</TableCell>
+                        <TableCell className="py-5 text-right px-8 font-black text-blue-400 text-sm">₹ {task.amount.toLocaleString()}</TableCell>
                       </TableRow>
                     ))
                   )}
@@ -208,16 +210,16 @@ export default function ExtraWorkPage() {
 
         {/* RIGHT: Add Form */}
         <div className="lg:col-span-4">
-           <Card className="border-none shadow-2xl bg-[#111827] text-white rounded-2xl overflow-hidden p-8">
+           <Card className="panel-elevated text-white rounded-2xl overflow-hidden p-8">
               <h3 className="text-lg font-black uppercase tracking-tight mb-8">Record workload</h3>
               <form onSubmit={handleCreate} className="space-y-6">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Select Site</label>
                   <Select onValueChange={(v: string | null) => setFormData({...formData, project_id: v ?? ''})} value={formData.project_id}>
-                    <SelectTrigger className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold">
-                      <SelectValue placeholder="Execution site" />
+                    <SelectTrigger className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold">
+                      <SelectValue placeholder="Execution site" items={Object.fromEntries(projects.map(p => [p.id, p.name]))} />
                     </SelectTrigger>
-                    <SelectContent className="bg-[#111827] border-zinc-800 text-white rounded-xl">
+                    <SelectContent className="bg-zinc-950 border-zinc-800 text-white rounded-xl">
                       {projects.map(p => (
                         <SelectItem key={p.id} value={p.id} className="py-3 font-bold hover:bg-zinc-800">{p.name}</SelectItem>
                       ))}
@@ -231,7 +233,7 @@ export default function ExtraWorkPage() {
                     placeholder="e.g. Wall Piling, Foundation etc." 
                     value={formData.work_name}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, work_name: e.target.value})}
-                    className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white"
+                    className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
                   />
                 </div>
 
@@ -242,7 +244,7 @@ export default function ExtraWorkPage() {
                     type="number"
                     value={formData.amount}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, amount: e.target.value})}
-                    className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white"
+                    className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
                   />
                 </div>
 
@@ -252,7 +254,7 @@ export default function ExtraWorkPage() {
                     type="date"
                     value={formData.date}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, date: e.target.value})}
-                    className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white px-4"
+                    className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
                   />
                 </div>
 
@@ -262,11 +264,11 @@ export default function ExtraWorkPage() {
                     placeholder="Specific details about the extra work" 
                     value={formData.notes}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({...formData, notes: e.target.value})}
-                    className="bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white p-4"
+                    className="bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white p-4"
                   />
                 </div>
 
-                <Button type="submit" disabled={saving} className="w-full h-14 bg-[#4F46E5] hover:bg-[#4338CA] text-white rounded-xl font-black uppercase tracking-tight text-lg shadow-xl shadow-indigo-500/20">
+                <Button type="submit" disabled={saving} className="w-full h-14 btn-construction rounded-xl font-black uppercase tracking-tight text-lg">
                   {saving ? <Loader2 className="animate-spin mr-2" /> : null}
                   Record Task
                 </Button>

@@ -25,14 +25,10 @@ import {
   Loader2, 
   Wallet, 
   Plus, 
-  ChevronRight, 
   Calendar,
-  AlertCircle,
   FileText,
-  User,
-  Clock,
-  Briefcase,
-  Table as TableIcon
+  Download,
+  User
 } from 'lucide-react'
 import { format, eachDayOfInterval, parseISO } from 'date-fns'
 import { toast } from 'sonner'
@@ -41,13 +37,25 @@ import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import * as XLSX from 'xlsx'
+
+import { 
+  drawPremiumHeader, 
+  drawPremiumFooter, 
+  PDF_COLORS, 
+  numberToWords 
+} from '@/lib/report-utils'
+
+
+
+// using numberToWords from report-utils
 
 export default function PaymentsPage() {
   const [labourers, setLabourers] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>('')
-  const [startDate, setStartDate] = useState<string>(format(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
-  const [endDate, setEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const [startDate, setStartDate] = useState<string>('')
+  const [endDate, setEndDate] = useState<string>('')
   
   const [loading, setLoading] = useState(true)
   const [calculating, setCalculating] = useState(false)
@@ -60,12 +68,11 @@ export default function PaymentsPage() {
   const [showReceipt, setShowReceipt] = useState(false)
   const [receiptData, setReceiptData] = useState<any>(null)
   const [receiptLoading, setReceiptLoading] = useState(false)
+  const [advanceAmount, setAdvanceAmount] = useState<string>('0')
+  const [paymentType, setPaymentType] = useState<string>('REGULAR')
+  const [paymentNotes, setPaymentNotes] = useState<string>('')
   
   const supabase = createClient()
-
-  useEffect(() => {
-    fetchData()
-  }, [])
 
   async function fetchData() {
     setLoading(true)
@@ -75,6 +82,12 @@ export default function PaymentsPage() {
     setProjects(projData || [])
     setLoading(false)
   }
+
+  useEffect(() => { 
+    fetchData() 
+    setStartDate(format(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
+    setEndDate(format(new Date(), 'yyyy-MM-dd'))
+  }, [])
 
   const handlePreview = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -114,16 +127,39 @@ export default function PaymentsPage() {
       
       const totalPayable = wageAmount + totalOvertimeAmount
 
+      // AUTO-DETECT ADVANCES: Fetch all payments of type 'ADVANCE' in this range for this worker
+      const { data: advanceData } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('labour_id', selectedWorkerId)
+        .eq('payment_type', 'ADVANCE')
+        .gte('date', startDate)
+        .lte('date', endDate)
+      
+      const attAdvances = attData?.reduce((acc, curr) => acc + Number(curr.advance_amount || 0), 0) || 0
+      const payAdvances = advanceData?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0
+      setAdvanceAmount((attAdvances + payAdvances).toString())
+
       // Generate daily breakdown for ALL days in range (even if absent)
       const days = eachDayOfInterval({ start: parseISO(startDate), end: parseISO(endDate) })
       const breakdown = days.map(day => {
         const dateStr = format(day, 'yyyy-MM-dd')
         const att = attData?.find(a => a.date === dateStr)
+        const daysWorked = att ? Number(att.days_worked) : 0
+        const rate = att?.custom_rate ? Number(att.custom_rate) : Number(worker.daily_rate)
+        const baseWage = daysWorked * rate
+        const otHours = att ? Number(att.overtime_hours || 0) : 0
+        const otAmount = att ? Number(att.overtime_amount || 0) : 0
         return {
           date: dateStr,
           project: att?.projects?.name || '—',
           status: att ? (att.days_worked === 1 ? 'PRESENT' : att.days_worked === 0.5 ? 'HALF_DAY' : 'ABSENT') : 'ABSENT',
-          amount: att ? (Number(att.days_worked) * Number(worker.daily_rate)) + Number(att.overtime_amount) : 0
+          daysWorked,
+          baseWage,
+          overtimeHours: otHours,
+          overtimeAmount: otAmount,
+          notes: att?.notes || '',
+          amount: baseWage + otAmount
         }
       })
 
@@ -151,8 +187,10 @@ export default function PaymentsPage() {
     try {
       const { error } = await supabase.from('payments').insert([{
         labour_id: previewData.worker.id,
-        amount: previewData.totalPayable,
-        date: format(new Date(), 'yyyy-MM-dd')
+        amount: Math.max(0, previewData.totalPayable - (parseFloat(advanceAmount || '0') || 0)),
+        date: format(new Date(), 'yyyy-MM-dd'),
+        payment_type: paymentType,
+        notes: paymentNotes || null
       }])
 
       if (error) throw error
@@ -160,6 +198,8 @@ export default function PaymentsPage() {
       // Prepare receipt data
       setReceiptData({
         ...previewData,
+        advanceDeducted: parseFloat(advanceAmount || '0'),
+        paymentType,
         period: `${startDate} to ${endDate}`,
         date: format(new Date(), 'yyyy-MM-dd'),
         receiptNo: `REC-${Math.floor(100000 + Math.random() * 900000)}`
@@ -167,7 +207,7 @@ export default function PaymentsPage() {
       
       toast.success('Payment recorded successfully')
       setIsPreviewMode(false)
-      setShowReceipt(true) // Show the receipt modal
+      setShowReceipt(true)
     } catch (error: any) {
       toast.error(error.message)
     } finally {
@@ -176,89 +216,82 @@ export default function PaymentsPage() {
   }
 
   const generateThermalPDF = async () => {
-    if (!receiptData) return
+    if (!receiptData) return null
+    const { worker, totalDays, totalOvertimeHours, totalOvertimeAmount, totalPayable, breakdown, receiptNo, date } = receiptData
     
-    const { worker, totalDays, totalPayable, breakdown, period, receiptNo, date } = receiptData
-    
-    // Thermal paper is narrow. We use 80mm width.
+    // Calculate Dynamic Height
+    const tableHeight = (breakdown.length + 1) * 8
+    const requiredHeight = 44 + 10 + 15 + tableHeight + 40 + 20
+    const pageHeight = Math.max(297, requiredHeight)
+
     const doc = new jsPDF({
+      orientation: 'p',
       unit: 'mm',
-      format: [80, 200]
+      format: [210, pageHeight]
+    })
+    
+    drawPremiumHeader(doc, 'LABOUR WEEKLY REPORT', '(INDIVIDUAL)')
+    
+    const infoY = 54
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8)
+    doc.text('Worker Name', 14, infoY); doc.setFont('helvetica', 'normal'); doc.text(`: ${worker.name}`, 40, infoY)
+    doc.setFont('helvetica', 'bold'); doc.text('Role', 14, infoY + 6); doc.setFont('helvetica', 'normal'); doc.text(`: ${worker.type || 'N/A'}`, 40, infoY + 6)
+    
+    doc.setFont('helvetica', 'bold'); doc.text('Date Range', 110, infoY)
+    doc.setFont('helvetica', 'normal'); doc.text(`: ${receiptData.period}`, 140, infoY)
+    doc.setFont('helvetica', 'bold'); doc.text('Receipt No', 110, infoY + 6)
+    doc.setFont('helvetica', 'normal'); doc.text(`: ${receiptNo}`, 140, infoY + 6)
+
+    const tableBody = breakdown.map((row: any) => [
+      format(new Date(row.date), 'EEEE (dd MMM)'),
+      row.status,
+      `Rs. ${row.baseWage || 0}`,
+      row.overtimeHours || 0,
+      `Rs. ${row.overtimeAmount || 0}`,
+      `Rs. ${row.amount || 0}`,
+      row.notes || '-'
+    ])
+
+    autoTable(doc, {
+      startY: infoY + 14,
+      head: [['Day', 'Status', 'Basic Wage', 'OT Hrs', 'OT Amount', 'Total', 'Remarks']],
+      body: tableBody,
+      theme: 'grid',
+      headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: 8 },
+      bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 8 },
+      alternateRowStyles: { fillColor: PDF_COLORS.LIGHT },
+      styles: { cellPadding: 2.5 }
     })
 
-    const width = 80
-    let currY = 10
+    const tableEndY = (doc as any).lastAutoTable.finalY + 8
+    const netPayable = Math.max(0, totalPayable - (receiptData.advanceDeducted || 0))
 
-    // Header - Thermal Style
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(14)
-    doc.text('CASH RECEIPT', width / 2, currY, { align: 'center' })
-    currY += 8
-
-    doc.setFontSize(8)
-    doc.text('SS CONSTRUCTIONS', width / 2, currY, { align: 'center' })
-    currY += 4
-    doc.setFont('helvetica', 'normal')
-    doc.text('Boduppal, Hyderabad', width / 2, currY, { align: 'center' })
-    currY += 4
-    doc.text('Phone: 9849678296', width / 2, currY, { align: 'center' })
-    currY += 6
-
-    // Separator
-    doc.setLineDashPattern([1, 1], 0)
-    doc.line(5, currY, 75, currY)
-    currY += 5
-
-    // Details
-    doc.setFontSize(7)
-    doc.text(`Date: ${date}`, 5, currY)
-    doc.text(`Receipt: ${receiptNo}`, 45, currY)
-    currY += 4
-    doc.text(`Manager: Cheveli Somaiah`, 5, currY)
-    doc.text(`Worker: ${worker.name}`, 45, currY)
-    currY += 4
-    doc.text(`Period: ${period}`, 5, currY)
-    currY += 6
-
-    // Table Header
-    doc.line(5, currY, 75, currY)
-    currY += 4
-    doc.setFont('helvetica', 'bold')
-    doc.text('Description', 5, currY)
-    doc.text('Amount', 75, currY, { align: 'right' })
-    currY += 3
-    doc.line(5, currY, 75, currY)
-    currY += 5
-
-    // Table Body
-    doc.setFont('helvetica', 'normal')
-    breakdown.filter((r: any) => r.status !== 'ABSENT').forEach((row: any) => {
-      doc.text(`${row.date} (${row.status.slice(0,1)})`, 5, currY)
-      doc.text(`Rs. ${row.amount.toLocaleString()}`, 75, currY, { align: 'right' })
-      currY += 4
-      if (currY > 180) doc.addPage()
+    const summaryBoxes = [
+      { label: 'Gross Amount', value: `Rs.${totalPayable.toLocaleString()}` },
+      { label: 'Deduction', value: `Rs.${(receiptData.advanceDeducted || 0).toLocaleString()}` },
+      { label: 'NET PAYABLE', value: `Rs.${netPayable.toLocaleString()}`, hi: true }
+    ]
+    
+    const bW = 60, bH = 20
+    summaryBoxes.forEach((b, i) => {
+      const bx = 14 + (i * (bW + 2))
+      if (b.hi) { doc.setFillColor(...PDF_COLORS.BLUE); doc.setTextColor(255, 255, 255) }
+      else { doc.setFillColor(235, 242, 255); doc.setTextColor(...PDF_COLORS.NAVY) }
+      doc.roundedRect(bx, tableEndY, bW, bH, 1, 1, 'F')
+      doc.setFontSize(7); doc.text(b.label, bx + bW / 2, tableEndY + 6, { align: 'center' })
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text(b.value, bx + bW / 2, tableEndY + 14, { align: 'center' })
     })
 
-    currY += 2
-    doc.line(5, currY, 75, currY)
-    currY += 5
-
-    // Totals
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(9)
-    doc.text('TOTAL', 5, currY)
-    doc.text(`Rs. ${totalPayable.toLocaleString()}`, 75, currY, { align: 'right' })
-    currY += 10
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.setFontSize(8); doc.text('Amount in Words:', 14, tableEndY + bH + 8)
+    doc.setFont('helvetica', 'italic'); doc.text(numberToWords(netPayable), 42, tableEndY + bH + 8)
 
     // Footer
-    doc.setFontSize(12)
-    doc.text('THANK YOU!', width / 2, currY, { align: 'center' })
-    currY += 8
-
-    // Fake Barcode Serial
-    doc.setFont('courier', 'normal')
-    doc.setFontSize(7)
-    doc.text(`#${receiptNo}${worker.id.slice(0,4)}#`, width / 2, currY, { align: 'center' })
+    doc.setFillColor(...PDF_COLORS.NAVY)
+    doc.rect(0, pageHeight - 14, 210, 14, 'F')
+    doc.setTextColor(180, 200, 240)
+    doc.setFontSize(7); doc.text(`Generated by SS CONSTRUCTIONS - Ph: 9849678296`, 105, pageHeight - 6, { align: 'center' })
 
     return doc
   }
@@ -289,7 +322,19 @@ export default function PaymentsPage() {
 
       if (!uploadError) {
         const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(fileName)
-        const message = `*SS Constructions - Receipt*\n\nReceipt No: ${receiptData.receiptNo}\nWorker: ${receiptData.worker.name}\nPeriod: ${receiptData.period}\n*Total Paid: Rs. ${receiptData.totalPayable.toLocaleString()}*\n\nView Digital Receipt:\n${publicUrl}\n\nTHANK YOU!`
+        const gross = receiptData.totalPayable
+        const ded = parseFloat(advanceAmount || '0') || 0
+        const netAmt = Math.max(0, gross - ded)
+        const message = `*SS CONSTRUCTIONS - Payment Receipt*\n\n` +
+                        `Receipt No: ${receiptData.receiptNo}\n` +
+                        `Worker: ${receiptData.worker.name}\n` +
+                        `Period: ${receiptData.period}\n\n` +
+                        `Gross Amount: Rs. ${gross.toLocaleString()}\n` +
+                        `Deduction: Rs. ${ded.toLocaleString()}\n` +
+                        `--------------------------\n` +
+                        `*Net Payable: Rs. ${netAmt.toLocaleString()}*\n\n` +
+                        `View Digital Receipt:\n${publicUrl}\n\n` +
+                        `THANK YOU!`
         const encodedMessage = encodeURIComponent(message)
         const phone = receiptData.worker.phone?.replace(/\D/g, '') || ''
         window.open(`https://wa.me/91${phone}?text=${encodedMessage}`, '_blank')
@@ -353,16 +398,73 @@ export default function PaymentsPage() {
     }
   }
 
+  const exportWeeklyPDF = () => {
+    const doc = new jsPDF()
+    drawPremiumHeader(doc, 'WEEKLY PAYMENT SUMMARY', '(PROJECT WISE)')
+    
+    let startY = 54
+    weeklyReportData.forEach(proj => {
+      if (startY > 250) {
+        doc.addPage()
+        startY = 20
+      }
+      
+      doc.setTextColor(...PDF_COLORS.NAVY)
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
+      doc.text(`PROJECT: ${proj.projectName.toUpperCase()}`, 14, startY)
+      
+      autoTable(doc, {
+        startY: startY + 4,
+        head: [['Worker', 'Date', 'Type', 'Amount']],
+        body: proj.payments.map((p: any) => [
+          p.labour?.name || 'N/A',
+          format(new Date(p.date), 'dd MMM yyyy'),
+          p.payment_type || 'REGULAR',
+          `Rs. ${Number(p.amount).toLocaleString()}`
+        ]),
+        theme: 'grid',
+        headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: 8 },
+        bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 8 },
+        alternateRowStyles: { fillColor: PDF_COLORS.LIGHT },
+        foot: [['', '', 'PROJECT TOTAL', `Rs. ${proj.totalAmount.toLocaleString()}`]],
+        footStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontStyle: 'bold', fontSize: 8 }
+      })
+      
+      startY = (doc as any).lastAutoTable.finalY + 12
+    })
+    
+    drawPremiumFooter(doc)
+    doc.save(`SS_Weekly_Payments_${startDate}.pdf`)
+    toast.success('PDF exported')
+  }
+
+  const exportWeeklyExcel = () => {
+    const rows: any[] = [['Weekly Payment Report'], [`Period: ${startDate} to ${endDate}`], []]
+    weeklyReportData.forEach(proj => {
+      rows.push([proj.projectName, '', `Total: ₹${proj.totalAmount.toLocaleString()}`])
+      rows.push(['Worker', 'Date', 'Amount'])
+      proj.payments.forEach((p: any) => {
+        rows.push([p.labour?.name || 'N/A', format(new Date(p.date), 'dd/MM/yyyy'), Number(p.amount)])
+      })
+      rows.push([])
+    })
+    const ws = XLSX.utils.aoa_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Weekly Report')
+    XLSX.writeFile(wb, `weekly-report-${startDate}-${endDate}.xlsx`)
+    toast.success('Excel exported')
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white uppercase leading-none">Payments</h1>
-          <p className="mt-2 text-zinc-500 font-medium italic">Create payments, preview calculations, and generate reports.</p>
+          <h1 className="text-2xl font-black text-white tracking-tight">Payments</h1>
+          <p className="mt-1 text-sm text-zinc-500">Create payments, preview calculations, and generate reports.</p>
         </div>
         <div className="flex items-center gap-3">
-           <Button className="bg-[#00A3FF] hover:bg-[#0092E6] text-white rounded-xl font-bold uppercase tracking-tight gap-2 px-6 shadow-lg shadow-blue-500/20">
+           <Button className="btn-construction rounded-xl font-bold uppercase tracking-tight gap-2 px-6">
              Individual Payment
            </Button>
            <Button 
@@ -378,7 +480,7 @@ export default function PaymentsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* LEFT: Calculation Form */}
         <div className="lg:col-span-4">
-          <Card className="border-none shadow-2xl bg-[#111827] text-white rounded-2xl overflow-hidden">
+          <Card className="panel-elevated text-white rounded-2xl overflow-hidden">
             <CardHeader className="p-8 border-b border-zinc-800">
                <CardTitle className="text-lg font-black uppercase tracking-tight">Create Payment</CardTitle>
             </CardHeader>
@@ -387,10 +489,10 @@ export default function PaymentsPage() {
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Worker</label>
                   <Select onValueChange={(v: string | null) => setSelectedWorkerId(v ?? '')} value={selectedWorkerId}>
-                    <SelectTrigger className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold">
-                      <SelectValue placeholder="Select worker" />
+                    <SelectTrigger className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold">
+                      <SelectValue placeholder="Select worker" items={Object.fromEntries(labourers.map(l => [l.id, `${l.name} (${l.type})`]))} />
                     </SelectTrigger>
-                    <SelectContent className="bg-[#111827] border-zinc-800 text-white rounded-xl">
+                    <SelectContent className="bg-zinc-950 border-zinc-800 text-white rounded-xl">
                       {labourers.map(l => (
                         <SelectItem key={l.id} value={l.id} className="py-3 font-bold hover:bg-zinc-800">
                           {l.name} ({l.type})
@@ -406,7 +508,7 @@ export default function PaymentsPage() {
                     type="date"
                     value={startDate}
                     onChange={e => setStartDate(e.target.value)}
-                    className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white px-4"
+                    className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
                   />
                 </div>
 
@@ -416,14 +518,14 @@ export default function PaymentsPage() {
                     type="date"
                     value={endDate}
                     onChange={e => setEndDate(e.target.value)}
-                    className="h-12 bg-[#0F172A] border-zinc-800 rounded-xl font-bold text-white px-4"
+                    className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
                   />
                 </div>
 
                 <Button 
                   type="submit" 
                   disabled={calculating} 
-                  className="w-full h-14 bg-[#00A3FF] hover:bg-[#0092E6] text-white rounded-xl font-black uppercase tracking-tight text-lg shadow-xl shadow-blue-500/20"
+                  className="w-full h-14 btn-construction rounded-xl font-black uppercase tracking-tight text-lg"
                 >
                   {calculating ? <Loader2 className="animate-spin mr-2" /> : null}
                   Preview
@@ -442,7 +544,7 @@ export default function PaymentsPage() {
                  initial={{ opacity: 0 }}
                  animate={{ opacity: 1 }}
                  exit={{ opacity: 0 }}
-                 className="flex flex-col items-center justify-center p-24 bg-[#111827] rounded-3xl text-zinc-600 border border-zinc-800 border-dashed h-full"
+                 className="flex flex-col items-center justify-center p-24 bg-zinc-900 rounded-3xl text-zinc-600 border border-zinc-800 border-dashed h-full"
                >
                   <FileText size={48} className="opacity-10 mb-4" />
                   <p className="font-bold uppercase tracking-widest text-sm italic">Select worker and dates to see preview</p>
@@ -454,7 +556,7 @@ export default function PaymentsPage() {
                  animate={{ opacity: 1, scale: 1 }}
                  className="space-y-6"
                >
-                 <Card className="border-none shadow-2xl bg-[#111827] text-white rounded-2xl overflow-hidden p-8">
+                 <Card className="panel-elevated text-white rounded-2xl overflow-hidden p-8">
                     <div className="flex items-center justify-between mb-8">
                        <h3 className="text-lg font-black uppercase tracking-tight">Payment Preview</h3>
                     </div>
@@ -463,7 +565,7 @@ export default function PaymentsPage() {
                        <div className="space-y-1">
                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Worker</p>
                           <p className="text-xl font-bold flex items-center gap-2">
-                             <User size={18} className="text-[#00A3FF]" />
+                             <User size={18} className="text-blue-400" />
                              {previewData.worker.name}
                           </p>
                        </div>
@@ -488,7 +590,46 @@ export default function PaymentsPage() {
                        </div>
                        <div className="space-y-1 bg-[#1F2937] p-4 rounded-xl border border-zinc-800">
                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Total Payable</p>
-                          <p className="text-2xl font-black text-[#00A3FF]">₹ {previewData.totalPayable.toFixed(2)}</p>
+                          <p className="text-2xl font-black text-blue-400">₹ {previewData.totalPayable.toFixed(2)}</p>
+                       </div>
+                        <div className="space-y-1">
+                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Advance / Deduction (₹)</p>
+                           <input
+                             type="number"
+                             value={advanceAmount}
+                             onChange={e => setAdvanceAmount(e.target.value)}
+                             placeholder="0"
+                             className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none"
+                             style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }}
+                           />
+                           <p className="text-[9px] text-zinc-500">Deducted from total. Leave 0 if no advance.</p>
+                        </div>
+                        <div className="space-y-1">
+                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Payment Type</p>
+                           <Select onValueChange={(v) => setPaymentType(v || 'REGULAR')} value={paymentType}>
+                              <SelectTrigger className="h-11 bg-[#0d1018] border-[#1e2435] rounded-xl font-bold text-white">
+                                 <SelectValue placeholder="Select type" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-[#111520] border-[#1e2435] text-white">
+                                 <SelectItem value="REGULAR">Regular Payment</SelectItem>
+                                 <SelectItem value="ADVANCE">Advance Given</SelectItem>
+                              </SelectContent>
+                           </Select>
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Payment Notes</p>
+                           <input
+                             type="text"
+                             value={paymentNotes}
+                             onChange={e => setPaymentNotes(e.target.value)}
+                             placeholder="e.g. Paid in cash, Part of week 2, etc."
+                             className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none"
+                             style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }}
+                           />
+                        </div>
+                       <div className="space-y-1 col-span-2 bg-[#0d1018] p-4 rounded-xl border border-blue-500/30">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Net Payable (After Deduction)</p>
+                          <p className="text-3xl font-black text-blue-400">₹ {Math.max(0, previewData.totalPayable - (parseFloat(advanceAmount || '0') || 0)).toFixed(2)}</p>
                        </div>
                     </div>
 
@@ -497,8 +638,8 @@ export default function PaymentsPage() {
                        <p className="text-xs font-black uppercase tracking-widest text-zinc-500">Daily Details</p>
                        <div className="rounded-xl border border-zinc-800 overflow-hidden">
                           <Table>
-                            <TableHeader className="bg-[#0F172A]">
-                              <TableRow className="border-zinc-800 hover:bg-[#0F172A]">
+                            <TableHeader className="bg-zinc-900/80">
+                              <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
                                 <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500">Date</TableHead>
                                 <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500">Project</TableHead>
                                 <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500 text-center">Status</TableHead>
@@ -530,7 +671,7 @@ export default function PaymentsPage() {
 
                     <Button 
                       onClick={handleCreatePayment}
-                      className="w-full h-14 bg-[#10B981] hover:bg-[#059669] text-white rounded-xl font-black uppercase tracking-tight text-lg mt-10 shadow-xl shadow-emerald-500/20"
+                      className="w-full h-14 btn-construction rounded-xl font-black uppercase tracking-tight text-lg mt-10"
                     >
                       {calculating ? <Loader2 className="animate-spin mr-2" /> : null}
                       Create Payment
@@ -544,43 +685,49 @@ export default function PaymentsPage() {
 
       {/* Weekly Report Modal */}
       <Dialog open={weeklyReportOpen} onOpenChange={setWeeklyReportOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogContent style={{ backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0' }} className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Weekly Payment Report</DialogTitle>
-            <DialogDescription>
-              Project-wise payment breakdown from {startDate} to {endDate}
+            <DialogTitle className="text-white">Weekly Payment Report</DialogTitle>
+            <DialogDescription style={{ color: '#6b7280' }}>
+              Project-wise breakdown · {startDate} → {endDate}
             </DialogDescription>
           </DialogHeader>
-          
+          {weeklyReportData.length > 0 && (
+            <div className="flex gap-2 pb-2 border-b" style={{ borderColor: '#1e2435' }}>
+              <button onClick={exportWeeklyPDF} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black uppercase" style={{ backgroundColor: '#1a1f2e', color: '#3b82f6', border: '1px solid #1e2435' }}>
+                <FileText size={12} /> Export PDF
+              </button>
+              <button onClick={exportWeeklyExcel} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black uppercase" style={{ backgroundColor: '#1a1f2e', color: '#60a5fa', border: '1px solid #1e2435' }}>
+                <Download size={12} /> Export Excel
+              </button>
+            </div>
+          )}
           {weeklyReportData.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-zinc-500">
-              <TableIcon size={48} className="opacity-10 mb-4" />
-              <p className="font-bold">No payments found for this period</p>
+            <div className="flex flex-col items-center justify-center py-12" style={{ color: '#6b7280' }}>
+              <p className="font-bold text-sm">No payments found for this period</p>
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-5">
               {weeklyReportData.map((project, idx) => (
-                <div key={idx} className="border rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-lg">{project.projectName}</h3>
-                    <span className="font-black text-[#00A3FF] text-xl">₹{project.totalAmount.toLocaleString()}</span>
+                <div key={idx} style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', borderRadius: '0.75rem' }} className="overflow-hidden">
+                  <div className="flex justify-between items-center px-4 py-3 border-b" style={{ borderColor: '#1e2435' }}>
+                    <p className="font-black text-white text-sm">{project.projectName}</p>
+                    <span className="font-black text-lg" style={{ color: '#3b82f6' }}>₹{project.totalAmount.toLocaleString()}</span>
                   </div>
                   <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Worker</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
+                    <TableHeader style={{ backgroundColor: '#111520' }}>
+                      <TableRow style={{ borderColor: '#1e2435' }}>
+                        <TableHead className="text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>Worker</TableHead>
+                        <TableHead className="text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>Date</TableHead>
+                        <TableHead className="text-right text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>Amount</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {project.payments.map((payment: any, pIdx: number) => (
-                        <TableRow key={pIdx}>
-                          <TableCell className="font-bold">{payment.labour?.name || 'N/A'}</TableCell>
-                          <TableCell>{format(new Date(payment.date), 'MMM dd, yyyy')}</TableCell>
-                          <TableCell className="capitalize">{payment.payment_type || 'N/A'}</TableCell>
-                          <TableCell className="text-right font-bold">₹{Number(payment.amount).toLocaleString()}</TableCell>
+                        <TableRow key={pIdx} style={{ borderColor: '#1e2435' }}>
+                          <TableCell className="font-bold text-white text-sm">{payment.labour?.name || 'N/A'}</TableCell>
+                          <TableCell className="text-xs" style={{ color: '#6b7280' }}>{format(new Date(payment.date), 'dd MMM yyyy')}</TableCell>
+                          <TableCell className="text-right font-black text-sm" style={{ color: '#3b82f6' }}>₹{Number(payment.amount).toLocaleString()}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -597,8 +744,8 @@ export default function PaymentsPage() {
           <div className="p-8 space-y-6">
             <div className="bg-white dark:bg-zinc-900 p-6 shadow-sm border border-dashed border-zinc-300 dark:border-zinc-800 rounded-lg font-mono text-sm space-y-4">
                <div className="text-center border-b border-zinc-200 dark:border-zinc-800 pb-4">
-                  <p className="font-bold text-lg">CASH RECEIPT</p>
-                  <p className="text-[10px] text-zinc-500">SS CONSTRUCTIONS</p>
+                  <p className="font-bold text-lg">PAYMENT RECEIPT</p>
+                  <p className="text-[10px] text-zinc-500">SRI SAI CONSTRUCTIONS</p>
                </div>
                
                {receiptData && (
@@ -626,8 +773,18 @@ export default function PaymentsPage() {
                    </div>
                    
                    <div className="flex justify-between font-bold text-lg pt-2">
-                      <span>TOTAL</span>
+                      <span>GROSS TOTAL</span>
                       <span>Rs. {receiptData.totalPayable.toLocaleString()}</span>
+                   </div>
+                   {(parseFloat(advanceAmount || '0') || 0) > 0 && (
+                     <div className="flex justify-between text-sm text-red-500">
+                       <span>Advance Deducted</span>
+                       <span>- Rs. {(parseFloat(advanceAmount || '0') || 0).toLocaleString()}</span>
+                     </div>
+                   )}
+                   <div className="flex justify-between font-bold text-lg text-blue-600">
+                      <span>NET PAYABLE</span>
+                      <span>Rs. {Math.max(0, receiptData.totalPayable - (parseFloat(advanceAmount || '0') || 0)).toLocaleString()}</span>
                    </div>
                    
                    <div className="text-center pt-4 border-t border-zinc-200 dark:border-zinc-800">
@@ -638,13 +795,12 @@ export default function PaymentsPage() {
                )}
             </div>
             
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
                <Button 
-                variant="outline" 
-                className="h-12 border-zinc-300 dark:border-zinc-800 rounded-xl font-bold uppercase tracking-tight"
+                className="h-12 btn-construction rounded-xl font-bold uppercase tracking-tight gap-2"
                 onClick={downloadReceipt}
                >
-                 Download
+                 <FileText size={18} /> Download Individual Weekly PDF
                </Button>
                <Button 
                 className="h-12 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold uppercase tracking-tight gap-2"
@@ -652,7 +808,7 @@ export default function PaymentsPage() {
                 disabled={receiptLoading}
                >
                  {receiptLoading ? <Loader2 className="animate-spin" size={18} /> : <FileText size={18} />}
-                 WhatsApp
+                 Share via WhatsApp
                </Button>
             </div>
           </div>

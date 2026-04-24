@@ -11,10 +11,49 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT;
 -- 2. Add gender to labour table
 ALTER TABLE labour ADD COLUMN IF NOT EXISTS gender TEXT;
 
--- 3. Add custom_rate to attendance table (for rate override)
-ALTER TABLE attendance ADD COLUMN IF NOT EXISTS custom_rate NUMERIC;
+-- 2b. Normalize and enforce gender values expected by app
+-- Repair historical rows where type/gender may be swapped or stored in legacy values
+UPDATE labour
+SET
+  type = CASE
+    WHEN LOWER(COALESCE(type, '')) IN ('male', 'female') AND LOWER(COALESCE(gender, '')) IN ('mistry', 'maistry', 'mistry (skilled)', 'labour (women)', 'parakadu', 'parakadu (helper)', 'helper') THEN
+      CASE
+        WHEN LOWER(COALESCE(gender, '')) IN ('mistry', 'maistry', 'mistry (skilled)') THEN 'Mistry (Skilled)'
+        WHEN LOWER(COALESCE(gender, '')) IN ('labour (women)') THEN 'Labour (Women)'
+        ELSE 'Parakadu (Helper)'
+      END
+    WHEN LOWER(COALESCE(type, '')) IN ('mistry', 'maistry', 'mistry (skilled)') THEN 'Mistry (Skilled)'
+    WHEN LOWER(COALESCE(type, '')) IN ('labour (women)') THEN 'Labour (Women)'
+    WHEN LOWER(COALESCE(type, '')) IN ('parakadu', 'parakadu (helper)', 'helper') THEN 'Parakadu (Helper)'
+    ELSE COALESCE(type, 'Mistry (Skilled)')
+  END,
+  gender = CASE
+    WHEN LOWER(COALESCE(type, '')) = 'female' THEN 'Female'
+    WHEN LOWER(COALESCE(type, '')) = 'male' THEN 'Male'
+    WHEN LOWER(COALESCE(gender, '')) IN ('female', 'f', 'woman', 'women') THEN 'Female'
+    WHEN LOWER(COALESCE(gender, '')) IN ('male', 'm', 'man', 'men') THEN 'Male'
+    WHEN LOWER(COALESCE(gender, '')) IN ('labour (women)') THEN 'Female'
+    ELSE 'Male'
+  END;
 
--- 4. Add total_amount to materials table (manual entry)
+UPDATE labour
+SET gender = CASE
+  WHEN LOWER(COALESCE(gender, '')) IN ('f', 'female', 'woman', 'women') THEN 'Female'
+  WHEN LOWER(COALESCE(gender, '')) IN ('m', 'male', 'man', 'men') THEN 'Male'
+  ELSE 'Male'
+END;
+
+ALTER TABLE labour DROP CONSTRAINT IF EXISTS labour_gender_check;
+ALTER TABLE labour ADD CONSTRAINT labour_gender_check CHECK (gender IN ('Male', 'Female'));
+
+-- 3. Add custom_rate and advance_amount to attendance table
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS custom_rate NUMERIC;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS advance_amount DECIMAL(12,2) DEFAULT 0;
+
+-- 4. Add notes and total_amount to materials table (manual entry)
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE income ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE materials ADD COLUMN IF NOT EXISTS notes TEXT;
 ALTER TABLE materials ADD COLUMN IF NOT EXISTS total_amount NUMERIC;
 
 -- 4b. Add missing columns to payments table
