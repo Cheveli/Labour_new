@@ -23,6 +23,9 @@ export default function LoginPage() {
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email,
+        options: {
+          shouldCreateUser: false,
+        },
       })
 
       if (error) throw error
@@ -63,6 +66,9 @@ export default function LoginPage() {
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email,
+        options: {
+          shouldCreateUser: false,
+        },
       })
       if (error) throw error
       toast.success('New OTP sent!')
