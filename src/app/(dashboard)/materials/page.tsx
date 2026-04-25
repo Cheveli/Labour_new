@@ -108,49 +108,80 @@ export default function MaterialsPage() {
                <CardTitle className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">Inventory History</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader className="bg-zinc-900/80">
-                  <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
-                    <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
-                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Project</TableHead>
-                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Material</TableHead>
-                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Qty</TableHead>
-                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Remarks</TableHead>
-                    <TableHead className="text-right px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Total Val</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    Array(5).fill(0).map((_, i) => (
-                      <TableRow key={i} className="animate-pulse border-zinc-800">
-                        <TableCell colSpan={6} className="h-16 px-8 bg-zinc-800/10"></TableCell>
-                      </TableRow>
-                    ))
-                  ) : materials.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="py-24 text-center">
-                        <div className="flex flex-col items-center gap-4 text-zinc-600">
-                            <Boxes size={48} className="opacity-10" />
-                            <p className="text-sm font-bold uppercase tracking-widest">No material history found</p>
-                        </div>
-                      </TableCell>
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader className="bg-zinc-900/80">
+                    <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
+                      <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Project</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Material</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Qty</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Remarks</TableHead>
+                      <TableHead className="text-right px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Total Val</TableHead>
                     </TableRow>
-                  ) : (
-                    materials.map((item) => (
-                      <TableRow key={item.id} className="border-zinc-800 transition-colors hover:bg-white/5">
-                        <TableCell className="px-8 py-5 font-bold text-gray-400 text-xs">
-                          {format(new Date(item.date), 'M/d/yyyy')}
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      Array(5).fill(0).map((_, i) => (
+                        <TableRow key={i} className="animate-pulse border-zinc-800">
+                          <TableCell colSpan={6} className="h-16 px-8 bg-zinc-800/10"></TableCell>
+                        </TableRow>
+                      ))
+                    ) : materials.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="py-24 text-center">
+                          <div className="flex flex-col items-center gap-4 text-zinc-600">
+                              <Boxes size={48} className="opacity-10" />
+                              <p className="text-sm font-bold uppercase tracking-widest">No material history found</p>
+                          </div>
                         </TableCell>
-                        <TableCell className="py-5 font-bold text-white text-sm lowercase">{item.projects?.name}</TableCell>
-                        <TableCell className="py-5 font-black text-gray-200 text-xs tracking-tight uppercase">{item.name}</TableCell>
-                        <TableCell className="py-5 font-bold text-zinc-500 text-xs">{item.quantity} {item.unit}</TableCell>
-                        <TableCell className="py-5 text-xs text-zinc-400 max-w-[220px] truncate">{item.notes || '—'}</TableCell>
-                        <TableCell className="py-5 text-right px-8 font-black text-white text-sm">₹ {item.total_amount?.toLocaleString() || item.total_cost?.toLocaleString()}</TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+                    ) : (
+                      materials.map((item) => (
+                        <TableRow key={item.id} className="border-zinc-800 transition-colors hover:bg-white/5">
+                          <TableCell className="px-8 py-5 font-bold text-gray-400 text-xs">
+                            {format(new Date(item.date), 'M/d/yyyy')}
+                          </TableCell>
+                          <TableCell className="py-5 font-bold text-white text-sm lowercase">{item.projects?.name}</TableCell>
+                          <TableCell className="py-5 font-black text-gray-200 text-xs tracking-tight uppercase">{item.name}</TableCell>
+                          <TableCell className="py-5 font-bold text-zinc-500 text-xs">{item.quantity} {item.unit}</TableCell>
+                          <TableCell className="py-5 text-xs text-zinc-400 max-w-[220px] truncate">{item.notes || '—'}</TableCell>
+                          <TableCell className="py-5 text-right px-8 font-black text-white text-sm">₹ {item.total_amount?.toLocaleString() || item.total_cost?.toLocaleString()}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile Cards */}
+              <div className="flex flex-col gap-3 p-4 md:hidden bg-[#05070B]">
+                {loading ? (
+                  Array(3).fill(0).map((_, i) => <div key={i} className="h-24 animate-pulse bg-zinc-900 rounded-xl" />)
+                ) : materials.length === 0 ? (
+                  <div className="flex flex-col items-center gap-4 text-zinc-600 py-10">
+                    <Boxes size={48} className="opacity-10" />
+                    <p className="text-sm font-bold uppercase tracking-widest">No material history found</p>
+                  </div>
+                ) : (
+                  materials.map((item) => (
+                    <div key={item.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-bold text-white text-sm">{item.projects?.name}</p>
+                          <p className="font-black text-gray-200 text-[10px] tracking-tight uppercase mt-0.5">{item.name}</p>
+                          <p className="text-[10px] font-bold text-gray-400 mt-1">{format(new Date(item.date), 'MMM dd, yyyy')}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-black text-white text-sm">₹ {item.total_amount?.toLocaleString() || item.total_cost?.toLocaleString()}</p>
+                          <p className="font-bold text-zinc-500 text-[10px] uppercase mt-0.5">{item.quantity} {item.unit}</p>
+                        </div>
+                      </div>
+                      {item.notes && <p className="text-xs text-zinc-400">{item.notes}</p>}
+                    </div>
+                  ))
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>

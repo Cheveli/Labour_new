@@ -105,16 +105,6 @@ export default function LoginPage() {
             Track projects, workforce, payments, and materials from one premium construction control room.
           </p>
 
-          <div className="mt-10 grid grid-cols-2 gap-3 max-w-md">
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4">
-              <p className="text-xs text-zinc-400 uppercase tracking-widest">Active Sites</p>
-              <p className="text-2xl font-black text-blue-400">12</p>
-            </div>
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4">
-              <p className="text-xs text-zinc-400 uppercase tracking-widest">Workforce</p>
-              <p className="text-2xl font-black text-emerald-400">128</p>
-            </div>
-          </div>
         </motion.div>
 
         <motion.div

@@ -227,46 +227,82 @@ export default function WorkersPage() {
         <div className="px-6 py-4 border-b" style={{ borderColor: '#1e2435' }}>
           <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>All Workers — {labourers.length} total</p>
         </div>
-        <Table>
-          <TableHeader style={{ backgroundColor: '#0d1018' }}>
-            <TableRow style={{ borderColor: '#1e2435' }}>
-              {['Worker', 'Phone', 'Role', 'Daily Wage', 'Status', 'Actions'].map(h => (
-                <TableHead key={h} className="py-3 px-4 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>{h}</TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              Array(4).fill(0).map((_, i) => (
-                <TableRow key={i} style={{ borderColor: '#1e2435' }}>
-                  <TableCell colSpan={6} className="h-14 animate-pulse" style={{ backgroundColor: '#1a1f2e' }} />
-                </TableRow>
-              ))
-            ) : labourers.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="py-16 text-center text-sm font-bold" style={{ color: DIM }}>No workers added yet</TableCell>
+        <div className="hidden md:block">
+          <Table>
+            <TableHeader style={{ backgroundColor: '#0d1018' }}>
+              <TableRow style={{ borderColor: '#1e2435' }}>
+                {['Worker', 'Phone', 'Role', 'Daily Wage', 'Status', 'Actions'].map(h => (
+                  <TableHead key={h} className="py-3 px-4 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>{h}</TableHead>
+                ))}
               </TableRow>
-            ) : (
-              labourers.map((worker) => (
-                <TableRow key={worker.id} style={{ borderColor: '#1e2435' }} className="transition-colors hover:bg-white/[0.02]">
-                  <TableCell className="px-4 py-4 font-bold text-white text-sm">{worker.name}</TableCell>
-                  <TableCell className="px-4 py-4 text-xs font-semibold" style={{ color: DIM }}>{worker.phone || '—'}</TableCell>
-                  <TableCell className="px-4 py-4 text-xs font-semibold" style={{ color: DIM }}>{worker.type}</TableCell>
-                  <TableCell className="px-4 py-4 text-sm font-black" style={{ color: GOLD }}>₹{worker.daily_rate}</TableCell>
-                  <TableCell className="px-4 py-4">
-                    <span className="px-2 py-1 rounded-lg text-[10px] font-black" style={{ backgroundColor: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>Active</span>
-                  </TableCell>
-                  <TableCell className="px-4 py-4">
-                    <div className="flex gap-2">
-                      <button onClick={() => handleEdit(worker)} className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Edit</button>
-                      <button onClick={() => handleDeleteClick(worker.id)} className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all" style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)' }}>Delete</button>
-                    </div>
-                  </TableCell>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                Array(4).fill(0).map((_, i) => (
+                  <TableRow key={i} style={{ borderColor: '#1e2435' }}>
+                    <TableCell colSpan={6} className="h-14 animate-pulse" style={{ backgroundColor: '#1a1f2e' }} />
+                  </TableRow>
+                ))
+              ) : labourers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-16 text-center text-sm font-bold" style={{ color: DIM }}>No workers added yet</TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                labourers.map((worker) => (
+                  <TableRow key={worker.id} style={{ borderColor: '#1e2435' }} className="transition-colors hover:bg-white/[0.02]">
+                    <TableCell className="px-4 py-4 font-bold text-white text-sm">{worker.name}</TableCell>
+                    <TableCell className="px-4 py-4 text-xs font-semibold" style={{ color: DIM }}>{worker.phone || '—'}</TableCell>
+                    <TableCell className="px-4 py-4 text-xs font-semibold" style={{ color: DIM }}>{worker.type}</TableCell>
+                    <TableCell className="px-4 py-4 text-sm font-black" style={{ color: GOLD }}>₹{worker.daily_rate}</TableCell>
+                    <TableCell className="px-4 py-4">
+                      <span className="px-2 py-1 rounded-lg text-[10px] font-black" style={{ backgroundColor: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>Active</span>
+                    </TableCell>
+                    <TableCell className="px-4 py-4">
+                      <div className="flex gap-2">
+                        <button onClick={() => handleEdit(worker)} className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Edit</button>
+                        <button onClick={() => handleDeleteClick(worker.id)} className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all" style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)' }}>Delete</button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {/* Mobile Cards */}
+        <div className="flex flex-col gap-3 p-4 md:hidden">
+          {loading ? (
+            Array(4).fill(0).map((_, i) => (
+              <div key={i} className="h-24 animate-pulse rounded-xl" style={{ backgroundColor: '#1a1f2e' }} />
+            ))
+          ) : labourers.length === 0 ? (
+            <div className="py-16 text-center text-sm font-bold" style={{ color: DIM }}>No workers added yet</div>
+          ) : (
+            labourers.map((worker) => (
+              <div key={worker.id} className="rounded-xl p-4 flex flex-col gap-4 border" style={{ backgroundColor: '#0d1018', borderColor: '#1e2435' }}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-white text-base">{worker.name}</p>
+                      <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase" style={{ backgroundColor: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>Active</span>
+                    </div>
+                    <p className="text-xs font-semibold mt-1" style={{ color: DIM }}>{worker.type}</p>
+                    {worker.phone && <p className="text-xs font-semibold mt-1" style={{ color: DIM }}>{worker.phone}</p>}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Daily Rate</p>
+                    <p className="font-black text-lg mt-0.5" style={{ color: GOLD }}>₹{worker.daily_rate}</p>
+                  </div>
+                </div>
+                <div className="flex gap-2 justify-end mt-2 pt-3 border-t" style={{ borderColor: '#1e2435' }}>
+                  <button onClick={() => handleEdit(worker)} className="flex-1 py-2 rounded-lg text-xs font-black uppercase transition-all" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Edit</button>
+                  <button onClick={() => handleDeleteClick(worker.id)} className="flex-1 py-2 rounded-lg text-xs font-black uppercase transition-all" style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)' }}>Delete</button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Add/Edit Worker Dialog */}

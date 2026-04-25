@@ -24,7 +24,7 @@ import {
   TableRow 
 } from '@/components/ui/table'
 import { toast } from 'sonner'
-import { addWeeks, format, endOfWeek, startOfWeek } from 'date-fns'
+import { addWeeks, format, endOfWeek, startOfWeek, eachDayOfInterval, parseISO } from 'date-fns'
 
 export default function AttendancePage() {
   const [date, setDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
@@ -282,54 +282,122 @@ export default function AttendancePage() {
                 </div>
               </div>
             </div>
-            <Table>
-              <TableHeader style={{ backgroundColor: '#0d1018' }}>
-                <TableRow style={{ borderColor: '#1e2435' }}>
-                  {['Date', 'Worker', 'Project', 'Status', 'Overtime', 'Adv', 'Remarks'].map(h => (
-                    <TableHead key={h} className="py-3 px-4 text-[10px] font-black uppercase tracking-widest text-center" style={{ color: DIM }}>{h}</TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  Array(5).fill(0).map((_, i) => (
-                    <TableRow key={i} style={{ borderColor: '#1e2435' }}>
-                      <TableCell colSpan={6} className="h-14 animate-pulse" style={{ backgroundColor: '#1a1f2e' }} />
-                    </TableRow>
-                  ))
-                ) : records.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="py-16 text-center">
-                      <div className="flex flex-col items-center gap-3">
-                        <TableIcon size={36} style={{ color: DIM, opacity: 0.3 }} />
-                        <p className="text-sm font-bold" style={{ color: DIM }}>No records found</p>
-                      </div>
-                    </TableCell>
+            <div className="hidden md:block overflow-x-auto">
+              <Table>
+                <TableHeader style={{ backgroundColor: '#0d1018' }}>
+                  <TableRow style={{ borderColor: '#1e2435' }}>
+                    <TableHead className="py-3 px-4 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Worker</TableHead>
+                    {eachDayOfInterval({ start: new Date(filterStart), end: new Date(filterEnd) }).map(d => (
+                      <TableHead key={d.toISOString()} className="py-3 px-2 text-[10px] font-black uppercase tracking-widest text-center" style={{ color: DIM }}>
+                        {format(d, 'EEE')}<br/><span className="text-[8px] font-normal">{format(d, 'dd MMM')}</span>
+                      </TableHead>
+                    ))}
                   </TableRow>
-                ) : (
-                  records.map((rec) => (
-                    <TableRow key={rec.id} style={{ borderColor: '#1e2435' }} className="hover:bg-white/[0.02] transition-colors">
-                      <TableCell className="px-4 py-4 text-xs font-semibold" style={{ color: DIM }}>{format(new Date(rec.date), 'MMM d, yyyy')}</TableCell>
-                      <TableCell className="px-4 py-4 font-bold text-white text-sm">{rec.labour?.name}</TableCell>
-                      <TableCell className="px-4 py-4 text-xs" style={{ color: DIM }}>{rec.projects?.name}</TableCell>
-                      <TableCell className="px-4 py-4 text-center">
-                        <Badge className={cn(
-                          "text-[8px] font-black px-2 py-0.5 border-none",
-                          rec.days_worked === 1 ? "bg-emerald-500/10 text-emerald-500" : 
-                          rec.days_worked === 0.5 ? "bg-amber-500/10 text-amber-500" : 
-                          "bg-red-500/10 text-red-500"
-                        )}>
-                          {rec.days_worked === 1 ? 'FULL' : rec.days_worked === 0.5 ? 'HALF' : 'ABSENT'}
-                        </Badge>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    Array(5).fill(0).map((_, i) => (
+                      <TableRow key={i} style={{ borderColor: '#1e2435' }}>
+                        <TableCell colSpan={8} className="h-14 animate-pulse" style={{ backgroundColor: '#1a1f2e' }} />
+                      </TableRow>
+                    ))
+                  ) : labourers.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="py-16 text-center">
+                        <div className="flex flex-col items-center gap-3">
+                          <TableIcon size={36} style={{ color: DIM, opacity: 0.3 }} />
+                          <p className="text-sm font-bold" style={{ color: DIM }}>No workers found</p>
+                        </div>
                       </TableCell>
-                      <TableCell className="px-4 py-4 text-xs font-bold text-center text-white">₹{rec.overtime_amount || 0}</TableCell>
-                      <TableCell className="px-4 py-4 text-xs font-bold text-center text-red-500">₹{rec.advance_amount || 0}</TableCell>
-                      <TableCell className="px-4 py-4 text-[10px] italic text-zinc-500 max-w-[120px] truncate">{rec.notes || '—'}</TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : (
+                    labourers.filter(worker => records.some(r => r.labour_id === worker.id)).map((worker) => {
+                      const workerRecords = records.filter(r => r.labour_id === worker.id)
+                      const weekDates = eachDayOfInterval({ start: new Date(filterStart), end: new Date(filterEnd) })
+                      
+                      return (
+                        <TableRow key={worker.id} style={{ borderColor: '#1e2435' }} className="hover:bg-white/[0.02] transition-colors">
+                          <TableCell className="px-4 py-4 font-bold text-white text-sm">
+                            {worker.name}
+                            <p className="text-[9px] text-zinc-500 font-normal mt-0.5">{worker.type || 'Worker'}</p>
+                          </TableCell>
+                          {weekDates.map(d => {
+                            const dateStr = format(d, 'yyyy-MM-dd')
+                            const rec = workerRecords.find(r => r.date === dateStr)
+                            const status = rec ? (rec.days_worked === 1 ? 'FULL' : rec.days_worked === 0.5 ? 'HALF' : 'ABSENT') : '-'
+                            
+                            return (
+                              <TableCell key={dateStr} className="px-2 py-4 text-center">
+                                {status === '-' ? (
+                                  <span className="text-zinc-600 font-black text-xs">—</span>
+                                ) : (
+                                  <Badge className={cn(
+                                    "text-[8px] font-black px-1.5 py-0.5 border-none",
+                                    status === 'FULL' ? "bg-emerald-500/10 text-emerald-500" : 
+                                    status === 'HALF' ? "bg-amber-500/10 text-amber-500" : 
+                                    "bg-red-500/10 text-red-500"
+                                  )}>
+                                    {status}
+                                  </Badge>
+                                )}
+                              </TableCell>
+                            )
+                          })}
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Mobile Cards */}
+            <div className="flex flex-col gap-3 p-4 md:hidden">
+              {loading ? (
+                Array(5).fill(0).map((_, i) => (
+                  <div key={i} className="h-24 animate-pulse rounded-xl" style={{ backgroundColor: '#1a1f2e' }} />
+                ))
+              ) : labourers.length === 0 ? (
+                <div className="py-16 text-center text-sm font-bold" style={{ color: DIM }}>No workers found</div>
+              ) : (
+                labourers.filter(worker => records.some(r => r.labour_id === worker.id)).map((worker) => {
+                  const workerRecords = records.filter(r => r.labour_id === worker.id)
+                  const weekDates = eachDayOfInterval({ start: new Date(filterStart), end: new Date(filterEnd) })
+                  
+                  return (
+                    <div key={worker.id} className="rounded-xl p-4 flex flex-col gap-3 border" style={{ backgroundColor: '#0d1018', borderColor: '#1e2435' }}>
+                      <div className="flex justify-between items-start border-b pb-2" style={{ borderColor: '#1e2435' }}>
+                        <div>
+                          <p className="font-bold text-white text-sm">{worker.name}</p>
+                          <p className="text-[9px] text-zinc-500 font-normal mt-0.5">{worker.type || 'Worker'}</p>
+                        </div>
+                      </div>
+                      <div className="flex justify-between mt-1">
+                        {weekDates.map(d => {
+                          const dateStr = format(d, 'yyyy-MM-dd')
+                          const rec = workerRecords.find(r => r.date === dateStr)
+                          const status = rec ? (rec.days_worked === 1 ? 'F' : rec.days_worked === 0.5 ? 'H' : 'A') : '-'
+                          
+                          return (
+                            <div key={dateStr} className="flex flex-col items-center">
+                              <p className="text-[8px] font-bold text-zinc-500 uppercase">{format(d, 'EE')}</p>
+                              <div className={cn("w-6 h-6 rounded flex items-center justify-center mt-1 text-[10px] font-black", 
+                                status === 'F' ? "bg-emerald-500/10 text-emerald-500" : 
+                                status === 'H' ? "bg-amber-500/10 text-amber-500" : 
+                                status === 'A' ? "bg-red-500/10 text-red-500" : 
+                                "text-zinc-600"
+                              )}>
+                                {status}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
           </div>
         </div>
       </div>

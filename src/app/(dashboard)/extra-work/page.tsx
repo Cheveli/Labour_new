@@ -101,7 +101,7 @@ export default function ExtraWorkPage() {
       styles: { fontSize: 9 }
     })
 
-    doc.save(`extra-work-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`)
+    doc.save(`Extra_Work_Report_${format(new Date(), 'dd-MMM-yyyy')}.pdf`)
     toast.success('PDF exported successfully')
   }
 
@@ -163,47 +163,75 @@ export default function ExtraWorkPage() {
                <CardTitle className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">Historical Tasks</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader className="bg-zinc-900/80">
-                  <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
-                    <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
-                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Site/Project</TableHead>
-                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Task Name</TableHead>
-                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Remarks</TableHead>
-                    <TableHead className="text-right px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Valuation</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    Array(5).fill(0).map((_, i) => (
-                      <TableRow key={i} className="animate-pulse border-zinc-800">
-                        <TableCell colSpan={5} className="h-16 px-8 bg-zinc-800/10"></TableCell>
-                      </TableRow>
-                    ))
-                  ) : tasks.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="py-24 text-center">
-                        <div className="flex flex-col items-center gap-4 text-zinc-600">
-                            <Zap size={48} className="opacity-10" />
-                            <p className="text-sm font-bold uppercase tracking-widest">No extra task history</p>
-                        </div>
-                      </TableCell>
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader className="bg-zinc-900/80">
+                    <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
+                      <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Site/Project</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Task Name</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Remarks</TableHead>
+                      <TableHead className="text-right px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Valuation</TableHead>
                     </TableRow>
-                  ) : (
-                    tasks.map((task) => (
-                      <TableRow key={task.id} className="border-zinc-800 transition-colors hover:bg-white/5">
-                        <TableCell className="px-8 py-5 font-bold text-gray-400 text-xs">
-                          {format(new Date(task.date), 'MMM dd, yyyy')}
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      Array(5).fill(0).map((_, i) => (
+                        <TableRow key={i} className="animate-pulse border-zinc-800">
+                          <TableCell colSpan={5} className="h-16 px-8 bg-zinc-800/10"></TableCell>
+                        </TableRow>
+                      ))
+                    ) : tasks.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="py-24 text-center">
+                          <div className="flex flex-col items-center gap-4 text-zinc-600">
+                              <Zap size={48} className="opacity-10" />
+                              <p className="text-sm font-bold uppercase tracking-widest">No extra task history</p>
+                          </div>
                         </TableCell>
-                        <TableCell className="py-5 font-bold text-white text-sm lowercase">{task.projects?.name}</TableCell>
-                        <TableCell className="py-5 font-black text-xs text-gray-300 uppercase tracking-tighter">{task.work_name}</TableCell>
-                        <TableCell className="py-5 text-xs text-zinc-400 max-w-[220px] truncate">{task.notes || '—'}</TableCell>
-                        <TableCell className="py-5 text-right px-8 font-black text-blue-400 text-sm">₹ {task.amount.toLocaleString()}</TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+                    ) : (
+                      tasks.map((task) => (
+                        <TableRow key={task.id} className="border-zinc-800 transition-colors hover:bg-white/5">
+                          <TableCell className="px-8 py-5 font-bold text-gray-400 text-xs">
+                            {format(new Date(task.date), 'MMM dd, yyyy')}
+                          </TableCell>
+                          <TableCell className="py-5 font-bold text-white text-sm lowercase">{task.projects?.name}</TableCell>
+                          <TableCell className="py-5 font-black text-xs text-gray-300 uppercase tracking-tighter">{task.work_name}</TableCell>
+                          <TableCell className="py-5 text-xs text-zinc-400 max-w-[220px] truncate">{task.notes || '—'}</TableCell>
+                          <TableCell className="py-5 text-right px-8 font-black text-blue-400 text-sm">₹ {task.amount.toLocaleString()}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile Cards */}
+              <div className="flex flex-col gap-3 p-4 md:hidden bg-[#05070B]">
+                {loading ? (
+                  Array(3).fill(0).map((_, i) => <div key={i} className="h-24 animate-pulse bg-zinc-900 rounded-xl" />)
+                ) : tasks.length === 0 ? (
+                  <div className="flex flex-col items-center gap-4 text-zinc-600 py-10">
+                    <Zap size={48} className="opacity-10" />
+                    <p className="text-sm font-bold uppercase tracking-widest">No extra task history</p>
+                  </div>
+                ) : (
+                  tasks.map((task) => (
+                    <div key={task.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-bold text-white text-sm">{task.projects?.name}</p>
+                          <p className="font-black text-gray-200 text-[10px] tracking-tight uppercase mt-0.5">{task.work_name}</p>
+                          <p className="text-[10px] font-bold text-gray-400 mt-1">{format(new Date(task.date), 'MMM dd, yyyy')}</p>
+                        </div>
+                        <p className="font-black text-blue-400 text-lg">₹ {task.amount.toLocaleString()}</p>
+                      </div>
+                      {task.notes && <p className="text-xs text-zinc-400">{task.notes}</p>}
+                    </div>
+                  ))
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>

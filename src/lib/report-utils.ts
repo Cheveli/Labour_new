@@ -14,7 +14,7 @@ export const PDF_COLORS = {
 }
 
 export const COMPANY_DETAILS = {
-  name: 'SS CONSTRUCTIONS',
+  name: 'SRI SAI CONSTRUCTIONS',
   tagline: 'BUILDING YOUR VISION',
   address: 'Boduppal, Hyderabad',
   contractor: 'Contractor: Cheveli Somaiah',
@@ -23,41 +23,39 @@ export const COMPANY_DETAILS = {
 
 export function drawPremiumHeader(doc: jsPDF, title: string, subtitle: string) {
   const W = doc.internal.pageSize.getWidth()
-  
+
   // Navy Header Box
   doc.setFillColor(...PDF_COLORS.NAVY)
   doc.rect(0, 0, W, 44, 'F')
-  
+
   // Company Logo/Name
   doc.setTextColor(255, 255, 255)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(18)
   doc.text(COMPANY_DETAILS.name, 14, 15)
-  
+
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.text(COMPANY_DETAILS.tagline, 14, 21)
   doc.text(COMPANY_DETAILS.address, 14, 27)
   doc.text(`${COMPANY_DETAILS.contractor}  |  Ph: ${COMPANY_DETAILS.phones}`, 14, 33)
-  
-  // Title Badge (Blue)
-  doc.setFillColor(...PDF_COLORS.BLUE)
-  doc.roundedRect(W - 74, 5, 60, 33, 2, 2, 'F')
+
+  // Report Title
   doc.setTextColor(255, 255, 255)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(10)
+  doc.setFontSize(12)
   const titleLines = title.split(' ')
   if (titleLines.length > 2) {
-    doc.text(titleLines.slice(0, 2).join(' '), W - 44, 15, { align: 'center' })
-    doc.text(titleLines.slice(2).join(' '), W - 44, 21, { align: 'center' })
+    doc.text(titleLines.slice(0, 2).join(' '), W - 14, 15, { align: 'right' })
+    doc.text(titleLines.slice(2).join(' '), W - 14, 21, { align: 'right' })
   } else {
-    doc.text(title, W - 44, 18, { align: 'center' })
+    doc.text(title, W - 14, 18, { align: 'right' })
   }
-  
+
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(8)
-  doc.text(subtitle, W - 44, 30, { align: 'center' })
-  
+  doc.setFontSize(9)
+  doc.text(subtitle, W - 14, 30, { align: 'right' })
+
   // Gold Strip
   doc.setFillColor(...PDF_COLORS.GOLD)
   doc.rect(0, 44, W, 3, 'F')
@@ -66,10 +64,10 @@ export function drawPremiumHeader(doc: jsPDF, title: string, subtitle: string) {
 export function drawPremiumFooter(doc: jsPDF) {
   const W = doc.internal.pageSize.getWidth()
   const H = doc.internal.pageSize.getHeight()
-  
+
   doc.setFillColor(...PDF_COLORS.NAVY)
   doc.rect(0, H - 14, W, 14, 'F')
-  
+
   doc.setTextColor(180, 200, 240)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)

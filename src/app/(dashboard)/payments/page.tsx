@@ -137,10 +137,29 @@ export default function PaymentsPage() {
         .eq('payment_type', 'ADVANCE')
         .gte('date', startDate)
         .lte('date', endDate)
+        .order('date', { ascending: true })
       
-      const attAdvances = attData?.reduce((acc, curr) => acc + Number(curr.advance_amount || 0), 0) || 0
-      const payAdvances = advanceData?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0
-      setAdvanceAmount((attAdvances + payAdvances).toString())
+      // Build detailed advance records with date, amount, and source
+      const advanceDetails: { date: string; amount: number; source: string }[] = []
+      
+      // Advances from attendance table (daily advance_amount field)
+      attData?.forEach(att => {
+        const amt = Number(att.advance_amount || 0)
+        if (amt > 0) {
+          advanceDetails.push({ date: att.date, amount: amt, source: 'Attendance' })
+        }
+      })
+      
+      // Advances from payments table (explicit ADVANCE payments)
+      advanceData?.forEach(pay => {
+        advanceDetails.push({ date: pay.date, amount: Number(pay.amount), source: 'Payment' })
+      })
+      
+      // Sort by date
+      advanceDetails.sort((a, b) => a.date.localeCompare(b.date))
+      
+      const totalAdvanceAmount = advanceDetails.reduce((acc, curr) => acc + curr.amount, 0)
+      setAdvanceAmount(totalAdvanceAmount.toString())
 
       // Generate daily breakdown for ALL days in range (even if absent)
       const days = eachDayOfInterval({ start: parseISO(startDate), end: parseISO(endDate) })
@@ -172,7 +191,8 @@ export default function PaymentsPage() {
         totalOvertimeAmount,
         wageAmount,
         totalPayable,
-        breakdown
+        breakdown,
+        advanceDetails
       })
       setIsPreviewMode(true)
     } catch (error: any) {
@@ -197,10 +217,11 @@ export default function PaymentsPage() {
 
       if (error) throw error
       
-      // Prepare receipt data
+      // Prepare receipt data (include advanceDetails for PDF/receipt/WhatsApp)
       setReceiptData({
         ...previewData,
         advanceDeducted: parseFloat(advanceAmount || '0'),
+        advanceDetails: previewData.advanceDetails || [],
         paymentType,
         period: `${startDate} to ${endDate}`,
         date: format(new Date(), 'yyyy-MM-dd'),
@@ -221,9 +242,11 @@ export default function PaymentsPage() {
     if (!receiptData) return null
     const { worker, totalDays, totalOvertimeHours, totalOvertimeAmount, totalPayable, breakdown, receiptNo, date } = receiptData
     
-    // Calculate Dynamic Height
+    // Calculate Dynamic Height (account for advance details table if present)
+    const advanceRows = (receiptData.advanceDetails || []).length
+    const advanceTableHeight = advanceRows > 0 ? (advanceRows + 2) * 8 + 16 : 0
     const tableHeight = (breakdown.length + 1) * 8
-    const requiredHeight = 44 + 10 + 15 + tableHeight + 40 + 20
+    const requiredHeight = 44 + 10 + 15 + tableHeight + advanceTableHeight + 40 + 20
     const pageHeight = Math.max(297, requiredHeight)
 
     const doc = new jsPDF({
@@ -266,10 +289,38 @@ export default function PaymentsPage() {
       styles: { cellPadding: 2.5 }
     })
 
-    const tableEndY = (doc as any).lastAutoTable.finalY + 8
+    let currentY = (doc as any).lastAutoTable.finalY + 8
     const netPayable = totalPayable - (receiptData.advanceDeducted || 0)
     const isNegative = netPayable < 0
 
+    // --- ADVANCE DETAILS TABLE (show date-wise advance breakdown in PDF) ---
+    const advDetails: { date: string; amount: number; source: string }[] = receiptData.advanceDetails || []
+    if (advDetails.length > 0) {
+      doc.setTextColor(...PDF_COLORS.NAVY)
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9)
+      doc.text('ADVANCE / DEDUCTION DETAILS', 14, currentY)
+      
+      autoTable(doc, {
+        startY: currentY + 4,
+        head: [['Date', 'Amount (Rs.)', 'Source']],
+        body: advDetails.map(adv => [
+          format(new Date(adv.date), 'dd MMM yyyy (EEEE)'),
+          `Rs. ${adv.amount.toLocaleString()}`,
+          adv.source
+        ]),
+        foot: [['', `Total: Rs. ${(receiptData.advanceDeducted || 0).toLocaleString()}`, '']],
+        theme: 'grid',
+        headStyles: { fillColor: [220, 53, 69] as any, textColor: 255, fontStyle: 'bold', fontSize: 8 },
+        bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 8 },
+        footStyles: { fillColor: [220, 53, 69] as any, textColor: 255, fontStyle: 'bold', fontSize: 8 },
+        alternateRowStyles: { fillColor: [255, 240, 240] as any },
+        styles: { cellPadding: 2.5 }
+      })
+      
+      currentY = (doc as any).lastAutoTable.finalY + 8
+    }
+
+    // --- SUMMARY BOXES ---
     const summaryBoxes = [
       { label: 'Gross Amount', value: `Rs.${totalPayable.toLocaleString()}` },
       { label: 'Deduction', value: `Rs.${(receiptData.advanceDeducted || 0).toLocaleString()}` },
@@ -282,14 +333,14 @@ export default function PaymentsPage() {
       if (b.hi && isNegative) { doc.setFillColor(...PDF_COLORS.RED); doc.setTextColor(255, 255, 255) }
       else if (b.hi) { doc.setFillColor(...PDF_COLORS.BLUE); doc.setTextColor(255, 255, 255) }
       else { doc.setFillColor(235, 242, 255); doc.setTextColor(...PDF_COLORS.NAVY) }
-      doc.roundedRect(bx, tableEndY, bW, bH, 1, 1, 'F')
-      doc.setFontSize(7); doc.text(b.label, bx + bW / 2, tableEndY + 6, { align: 'center' })
-      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text(b.value, bx + bW / 2, tableEndY + 14, { align: 'center' })
+      doc.roundedRect(bx, currentY, bW, bH, 1, 1, 'F')
+      doc.setFontSize(7); doc.text(b.label, bx + bW / 2, currentY + 6, { align: 'center' })
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text(b.value, bx + bW / 2, currentY + 14, { align: 'center' })
     })
 
     doc.setTextColor(...PDF_COLORS.NAVY)
-    doc.setFontSize(8); doc.text('Amount in Words:', 14, tableEndY + bH + 8)
-    doc.setFont('helvetica', 'italic'); doc.text(numberToWords(Math.abs(netPayable)), 42, tableEndY + bH + 8)
+    doc.setFontSize(8); doc.text('Amount in Words:', 14, currentY + bH + 8)
+    doc.setFont('helvetica', 'italic'); doc.text(numberToWords(Math.abs(netPayable)), 42, currentY + bH + 8)
 
     // Footer
     doc.setFillColor(...PDF_COLORS.NAVY)
@@ -303,7 +354,9 @@ export default function PaymentsPage() {
   const downloadReceipt = async () => {
     const doc = await generateThermalPDF()
     if (doc) {
-      doc.save(`${receiptData.receiptNo}.pdf`)
+      const safeName = receiptData.worker.name.replace(/[^a-zA-Z0-9]/g, '_')
+      const safePeriod = receiptData.period.replace(/[^a-zA-Z0-9]/g, '_')
+      doc.save(`${safeName}-${safePeriod}-Payment.pdf`)
       toast.success('Receipt downloaded')
     }
   }
@@ -330,12 +383,24 @@ export default function PaymentsPage() {
         const ded = parseFloat(advanceAmount || '0') || 0
         const netAmt = gross - ded
         const netLabel = netAmt < 0 ? `*Worker Owes: Rs. ${Math.abs(netAmt).toLocaleString()}*` : `*Net Payable: Rs. ${netAmt.toLocaleString()}*`
+        
+        // Build advance detail lines for WhatsApp message
+        const advDetails: { date: string; amount: number; source: string }[] = receiptData.advanceDetails || []
+        let advanceLines = ''
+        if (advDetails.length > 0) {
+          advanceLines = `\n📌 *Advance Details:*\n`
+          advDetails.forEach((adv: any) => {
+            advanceLines += `  • ${format(new Date(adv.date), 'dd MMM yyyy')} — Rs. ${adv.amount.toLocaleString()}\n`
+          })
+          advanceLines += `  *Total Deduction: Rs. ${ded.toLocaleString()}*\n`
+        }
+        
         const message = `*SS CONSTRUCTIONS - Payment Receipt*\n\n` +
                         `Receipt No: ${receiptData.receiptNo}\n` +
                         `Worker: ${receiptData.worker.name}\n` +
                         `Period: ${receiptData.period}\n\n` +
                         `Gross Amount: Rs. ${gross.toLocaleString()}\n` +
-                        `Deduction: Rs. ${ded.toLocaleString()}\n` +
+                        (advDetails.length > 0 ? advanceLines : `Deduction: Rs. ${ded.toLocaleString()}\n`) +
                         `--------------------------\n` +
                         `${netLabel}\n\n` +
                         `View Digital Receipt:\n${publicUrl}\n\n` +
@@ -439,7 +504,7 @@ export default function PaymentsPage() {
     })
     
     drawPremiumFooter(doc)
-    doc.save(`SS_Weekly_Payments_${startDate}.pdf`)
+    doc.save(`Payments_Report_${format(new Date(startDate), 'dd-MMM')}_to_${format(new Date(endDate), 'dd-MMM-yyyy')}.pdf`)
     toast.success('PDF exported')
   }
 
@@ -651,7 +716,8 @@ export default function PaymentsPage() {
                     {/* Daily Breakdown Table */}
                     <div className="mt-10 space-y-4">
                        <p className="text-xs font-black uppercase tracking-widest text-zinc-500">Daily Details</p>
-                       <div className="rounded-xl border border-zinc-800 overflow-hidden">
+                       {/* Desktop Table */}
+                       <div className="hidden md:block rounded-xl border border-zinc-800 overflow-hidden">
                           <Table>
                             <TableHeader className="bg-zinc-900/80">
                               <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
@@ -681,6 +747,24 @@ export default function PaymentsPage() {
                               ))}
                             </TableBody>
                           </Table>
+                       </div>
+
+                       {/* Mobile Cards */}
+                       <div className="grid grid-cols-1 gap-3 md:hidden">
+                         {previewData.breakdown.map((row: any, idx: number) => (
+                           <div key={idx} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+                             <div className="flex items-center justify-between">
+                               <p className="text-xs font-bold text-zinc-400">{row.date}</p>
+                               <Badge className={cn("px-3 py-0.5 rounded text-[8px] font-black uppercase border-none", row.status === 'ABSENT' ? "bg-red-500/20 text-red-500" : "bg-emerald-500/20 text-emerald-400")}>
+                                 {row.status}
+                               </Badge>
+                             </div>
+                             <div className="flex items-center justify-between">
+                               <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 truncate max-w-[60%]">{row.project}</p>
+                               <p className="text-sm font-black text-blue-400">₹ {row.amount.toLocaleString()}</p>
+                             </div>
+                           </div>
+                         ))}
                        </div>
                     </div>
 
@@ -729,24 +813,39 @@ export default function PaymentsPage() {
                     <p className="font-black text-white text-sm">{project.projectName}</p>
                     <span className="font-black text-lg" style={{ color: '#3b82f6' }}>₹{project.totalAmount.toLocaleString()}</span>
                   </div>
-                  <Table>
-                    <TableHeader style={{ backgroundColor: '#111520' }}>
-                      <TableRow style={{ borderColor: '#1e2435' }}>
-                        <TableHead className="text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>Worker</TableHead>
-                        <TableHead className="text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>Date</TableHead>
-                        <TableHead className="text-right text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>Amount</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {project.payments.map((payment: any, pIdx: number) => (
-                        <TableRow key={pIdx} style={{ borderColor: '#1e2435' }}>
-                          <TableCell className="font-bold text-white text-sm">{payment.labour?.name || 'N/A'}</TableCell>
-                          <TableCell className="text-xs" style={{ color: '#6b7280' }}>{format(new Date(payment.date), 'dd MMM yyyy')}</TableCell>
-                          <TableCell className="text-right font-black text-sm" style={{ color: '#3b82f6' }}>₹{Number(payment.amount).toLocaleString()}</TableCell>
+                  <div className="hidden md:block">
+                    <Table>
+                      <TableHeader style={{ backgroundColor: '#111520' }}>
+                        <TableRow style={{ borderColor: '#1e2435' }}>
+                          <TableHead className="text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>Worker</TableHead>
+                          <TableHead className="text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>Date</TableHead>
+                          <TableHead className="text-right text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>Amount</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {project.payments.map((payment: any, pIdx: number) => (
+                          <TableRow key={pIdx} style={{ borderColor: '#1e2435' }}>
+                            <TableCell className="font-bold text-white text-sm">{payment.labour?.name || 'N/A'}</TableCell>
+                            <TableCell className="text-xs" style={{ color: '#6b7280' }}>{format(new Date(payment.date), 'dd MMM yyyy')}</TableCell>
+                            <TableCell className="text-right font-black text-sm" style={{ color: '#3b82f6' }}>₹{Number(payment.amount).toLocaleString()}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Mobile Cards for Ledger */}
+                  <div className="flex flex-col gap-2 p-4 md:hidden bg-[#111520]">
+                    {project.payments.map((payment: any, pIdx: number) => (
+                      <div key={pIdx} className="bg-[#1a2030] border border-[#1e2435] rounded-xl p-4 flex justify-between items-center">
+                        <div>
+                          <p className="text-sm font-bold text-white">{payment.labour?.name || 'N/A'}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{format(new Date(payment.date), 'dd MMM yyyy')}</p>
+                        </div>
+                        <p className="text-sm font-black text-blue-400">₹{Number(payment.amount).toLocaleString()}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -792,9 +891,23 @@ export default function PaymentsPage() {
                       <span>Rs. {receiptData.totalPayable.toLocaleString()}</span>
                    </div>
                    {(parseFloat(advanceAmount || '0') || 0) > 0 && (
-                     <div className="flex justify-between text-sm text-red-500">
-                       <span>Advance Deducted</span>
-                       <span>- Rs. {(parseFloat(advanceAmount || '0') || 0).toLocaleString()}</span>
+                     <div className="space-y-1">
+                       <div className="flex justify-between text-sm text-red-500 font-bold">
+                         <span>Advance Deducted</span>
+                         <span>- Rs. {(parseFloat(advanceAmount || '0') || 0).toLocaleString()}</span>
+                       </div>
+                       {/* Show individual advance dates */}
+                       {(receiptData.advanceDetails || []).length > 0 && (
+                         <div className="bg-red-50 dark:bg-red-950/30 rounded-md p-2 space-y-0.5">
+                           <p className="text-[8px] font-bold uppercase text-red-400 tracking-widest mb-1">Advance Breakdown</p>
+                           {receiptData.advanceDetails.map((adv: any, i: number) => (
+                             <div key={i} className="flex justify-between text-[10px] text-red-400">
+                               <span>{format(new Date(adv.date), 'dd MMM yyyy (EEE)')}</span>
+                               <span>Rs. {adv.amount.toLocaleString()}</span>
+                             </div>
+                           ))}
+                         </div>
+                       )}
                      </div>
                    )}
                    {(() => {

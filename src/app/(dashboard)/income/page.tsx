@@ -96,7 +96,7 @@ export default function IncomePage() {
       columnStyles: { 4: { cellWidth: 55 } }
     })
 
-    doc.save(`revenue-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`)
+    doc.save(`Revenue_Report_${format(new Date(), 'dd-MMM-yyyy')}.pdf`)
     toast.success('PDF exported successfully')
   }
 
@@ -157,45 +157,72 @@ export default function IncomePage() {
                <CardTitle className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">Collection Ledger</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader className="bg-zinc-900/80">
-                  <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
-                    <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
-                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Project</TableHead>
-                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Remarks</TableHead>
-                    <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 text-right">Amount Received</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    Array(5).fill(0).map((_, i) => (
-                      <TableRow key={i} className="animate-pulse border-zinc-800">
-                        <TableCell colSpan={4} className="h-16 px-8 bg-zinc-800/10"></TableCell>
-                      </TableRow>
-                    ))
-                  ) : income.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="py-24 text-center">
-                        <div className="flex flex-col items-center gap-4 text-zinc-600">
-                            <History size={48} className="opacity-10" />
-                            <p className="text-sm font-bold uppercase tracking-widest">No income record history</p>
-                        </div>
-                      </TableCell>
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader className="bg-zinc-900/80">
+                    <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
+                      <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Project</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Remarks</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 text-right">Amount Received</TableHead>
                     </TableRow>
-                  ) : (
-                    income.map((item) => (
-                      <TableRow key={item.id} className="border-zinc-800 transition-colors hover:bg-white/5">
-                        <TableCell className="px-8 py-5 font-bold text-gray-400 text-xs">
-                          {format(new Date(item.date), 'MMM dd, yyyy')}
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      Array(5).fill(0).map((_, i) => (
+                        <TableRow key={i} className="animate-pulse border-zinc-800">
+                          <TableCell colSpan={4} className="h-16 px-8 bg-zinc-800/10"></TableCell>
+                        </TableRow>
+                      ))
+                    ) : income.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="py-24 text-center">
+                          <div className="flex flex-col items-center gap-4 text-zinc-600">
+                              <History size={48} className="opacity-10" />
+                              <p className="text-sm font-bold uppercase tracking-widest">No income record history</p>
+                          </div>
                         </TableCell>
-                        <TableCell className="py-5 font-bold text-white text-sm lowercase">{item.projects?.name}</TableCell>
-                        <TableCell className="py-5 text-xs text-zinc-400 max-w-[220px] truncate">{item.notes || '—'}</TableCell>
-                        <TableCell className="py-5 text-right px-8 font-black text-blue-400 text-lg">₹ {item.amount.toLocaleString()}</TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+                    ) : (
+                      income.map((item) => (
+                        <TableRow key={item.id} className="border-zinc-800 transition-colors hover:bg-white/5">
+                          <TableCell className="px-8 py-5 font-bold text-gray-400 text-xs">
+                            {format(new Date(item.date), 'MMM dd, yyyy')}
+                          </TableCell>
+                          <TableCell className="py-5 font-bold text-white text-sm lowercase">{item.projects?.name}</TableCell>
+                          <TableCell className="py-5 text-xs text-zinc-400 max-w-[220px] truncate">{item.notes || '—'}</TableCell>
+                          <TableCell className="py-5 text-right px-8 font-black text-blue-400 text-lg">₹ {item.amount.toLocaleString()}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile Cards */}
+              <div className="flex flex-col gap-3 p-4 md:hidden bg-[#05070B]">
+                {loading ? (
+                  Array(3).fill(0).map((_, i) => <div key={i} className="h-24 animate-pulse bg-zinc-900 rounded-xl" />)
+                ) : income.length === 0 ? (
+                  <div className="flex flex-col items-center gap-4 text-zinc-600 py-10">
+                    <History size={48} className="opacity-10" />
+                    <p className="text-sm font-bold uppercase tracking-widest">No income record history</p>
+                  </div>
+                ) : (
+                  income.map((item) => (
+                    <div key={item.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-bold text-white text-sm">{item.projects?.name}</p>
+                          <p className="text-[10px] font-bold text-gray-400 mt-1">{format(new Date(item.date), 'MMM dd, yyyy')}</p>
+                        </div>
+                        <p className="font-black text-blue-400 text-lg">₹ {item.amount.toLocaleString()}</p>
+                      </div>
+                      {item.notes && <p className="text-xs text-zinc-400">{item.notes}</p>}
+                    </div>
+                  ))
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>
