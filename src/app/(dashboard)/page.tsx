@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Users, CalendarCheck, Wallet, Package, TrendingUp, Briefcase, Zap, Search, Sparkles, Loader2 } from 'lucide-react'
 import Link from 'next/link'
@@ -12,6 +12,7 @@ import {
 import { format, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { useMemo } from 'react'
 
 export default function DashboardPage() {
   const [chatQuery, setChatQuery] = useState('')
@@ -25,6 +26,43 @@ export default function DashboardPage() {
   const [monthlyData, setMonthlyData] = useState<any[]>([])
   const [projectCosts, setProjectCosts] = useState<any[]>([])
   const supabase = createClient()
+
+  const chatTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  const clearChatTimer = () => {
+    if (chatTimerRef.current) clearTimeout(chatTimerRef.current)
+  }
+
+  const startChatTimer = () => {
+    clearChatTimer()
+    chatTimerRef.current = setTimeout(() => {
+      setChatResponse('')
+    }, 60000)
+  }
+
+  useEffect(() => {
+    const handleInteraction = () => {
+      if (chatResponse) {
+        startChatTimer()
+      }
+    }
+    
+    if (chatResponse) {
+      startChatTimer()
+      window.addEventListener('mousemove', handleInteraction)
+      window.addEventListener('keydown', handleInteraction)
+      window.addEventListener('touchstart', handleInteraction)
+      window.addEventListener('click', handleInteraction)
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleInteraction)
+      window.removeEventListener('keydown', handleInteraction)
+      window.removeEventListener('touchstart', handleInteraction)
+      window.removeEventListener('click', handleInteraction)
+      clearChatTimer()
+    }
+  }, [chatResponse])
 
   const handleChat = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -77,16 +115,12 @@ export default function DashboardPage() {
       }))
       setMonthlyData(monthly)
 
-      // Project-wise cost (payments + materials per project)
-      const { data: projPay } = await supabase.from('payments').select('amount, project_id')
-      const { data: projMat } = await supabase.from('materials').select('total_amount, project_id')
-      const costMap: Record<string, number> = {}
-      projPay?.forEach(p => { costMap[p.project_id] = (costMap[p.project_id] || 0) + Number(p.amount) })
-      projMat?.forEach(m => { costMap[m.project_id] = (costMap[m.project_id] || 0) + Number(m.total_amount || 0) })
-      const projCosts = (projectsData || [])
-        .map(p => ({ name: p.name.length > 12 ? p.name.slice(0, 12) + '…' : p.name, value: costMap[p.id] || 0 }))
-        .filter(p => p.value > 0)
-      setProjectCosts(projCosts)
+      // Expense Distribution (Labour vs Material vs Extra Work)
+      setProjectCosts([
+        { name: 'Labour', value: totalLabourCost },
+        { name: 'Material', value: totalMaterialCost },
+        { name: 'Extra Work', value: totalExtraWork }
+      ].filter(c => c.value > 0))
     } catch (err) {
       console.error(err)
     } finally {
@@ -199,107 +233,112 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Charts Row 1: Monthly Revenue Trend + Labour vs Material */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Monthly Revenue Trend */}
-        <div style={PANEL} className="p-5">
-          <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Monthly Revenue Trend</p>
-          <ResponsiveContainer width="100%" height={180}>
-            <AreaChart data={monthlyData} margin={{ top: 4, right: 8, bottom: 0, left: -10 }}>
-              <defs>
-                <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e2435" />
-              <XAxis dataKey="month" tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}K`} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Revenue']} />
-              <Area type="monotone" dataKey="Revenue" stroke="#22c55e" fill="url(#revGrad)" strokeWidth={2} dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+      {/* Render Charts with useMemo to prevent re-renders during typing */}
+      {useMemo(() => (
+        <>
+          {/* Charts Row 1: Monthly Revenue Trend + Labour vs Material */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Monthly Revenue Trend */}
+            <div style={PANEL} className="p-5">
+              <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Monthly Revenue Trend</p>
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={monthlyData} margin={{ top: 4, right: 8, bottom: 0, left: -10 }}>
+                  <defs>
+                    <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#22c55e" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e2435" />
+                  <XAxis dataKey="month" tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}K`} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Revenue']} />
+                  <Area type="monotone" dataKey="Revenue" stroke="#22c55e" fill="url(#revGrad)" strokeWidth={2} dot={false} isAnimationActive={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
 
-        {/* Labour vs Material Cost */}
-        <div style={PANEL} className="p-5">
-          <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Labour vs Material Cost</p>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={monthlyData} margin={{ top: 4, right: 8, bottom: 0, left: -10 }} barSize={10}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e2435" />
-              <XAxis dataKey="month" tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}K`} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: any, name: any) => [`₹${Number(v).toLocaleString()}`, name]} />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10, color: DIM }} />
-              <Bar dataKey="Labour" fill={GOLD} radius={[3, 3, 0, 0]} />
-              <Bar dataKey="Material" fill="#60a5fa" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Charts Row 2: Project Cost Distribution + Monthly Cash Flow + Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Project-wise Cost Distribution */}
-        <div style={PANEL} className="p-5">
-          <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Project Cost Distribution</p>
-          {projectCosts.length === 0 ? (
-            <div className="h-[160px] flex items-center justify-center text-xs" style={{ color: DIM }}>No project data</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={160}>
-              <PieChart>
-                <Pie data={projectCosts} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} innerRadius={30} paddingAngle={3}>
-                  {projectCosts.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                </Pie>
-                <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Cost']} />
-                <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10, color: DIM }} />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        {/* Monthly Cash Flow */}
-        <div style={PANEL} className="p-5">
-          <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Monthly Cash Flow</p>
-          <ResponsiveContainer width="100%" height={160}>
-            <AreaChart data={monthlyData.map(m => ({ ...m, Net: m.Revenue - m.Labour - m.Material }))} margin={{ top: 4, right: 8, bottom: 0, left: -10 }}>
-              <defs>
-                <linearGradient id="netGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={GOLD} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={GOLD} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e2435" />
-              <XAxis dataKey="month" tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}K`} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Net Cash']} />
-              <Area type="monotone" dataKey="Net" stroke={GOLD} fill="url(#netGrad)" strokeWidth={2} dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Quick Actions */}
-        <div style={PANEL} className="p-5">
-          <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Quick Actions</p>
-          <div className="space-y-2">
-            {[
-              { href: '/labour', label: 'Add Worker', icon: <Users size={14} /> },
-              { href: '/attendance', label: 'Mark Attendance', icon: <CalendarCheck size={14} /> },
-              { href: '/materials', label: 'Add Material', icon: <Package size={14} /> },
-              { href: '/payments', label: 'Create Payment', icon: <Wallet size={14} /> },
-              { href: '/income', label: 'Record Revenue', icon: <TrendingUp size={14} /> },
-            ].map(a => (
-              <Link key={a.href} href={a.href}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-zinc-300 hover:text-white transition-all"
-                style={{ backgroundColor: '#1a1f2e' }}
-              >
-                <span style={{ color: GOLD }}>{a.icon}</span>
-                {a.label}
-              </Link>
-            ))}
+            {/* Labour vs Material Cost */}
+            <div style={PANEL} className="p-5">
+              <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Labour vs Material Cost</p>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={monthlyData} margin={{ top: 4, right: 8, bottom: 0, left: -10 }} barSize={10}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e2435" />
+                  <XAxis dataKey="month" tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}K`} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(v: any, name: any) => [`₹${Number(v).toLocaleString()}`, name]} cursor={{ fill: 'transparent' }} />
+                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10, color: DIM }} />
+                  <Bar dataKey="Labour" fill={GOLD} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+                  <Bar dataKey="Material" fill="#60a5fa" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        </div>
-      </div>
+
+          {/* Charts Row 2: Project Cost Distribution + Monthly Cash Flow + Quick Actions */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Expense Distribution */}
+            <div style={PANEL} className="p-5">
+              <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Expense Distribution</p>
+              {projectCosts.length === 0 ? (
+                <div className="h-[160px] flex items-center justify-center text-xs" style={{ color: DIM }}>No expenses yet</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={160}>
+                  <PieChart>
+                    <Pie data={projectCosts} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} innerRadius={30} paddingAngle={3} isAnimationActive={false}>
+                      {projectCosts.map((c, i) => <Cell key={c.name} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Cost']} />
+                    <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10, color: DIM }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            {/* Monthly Cash Flow */}
+            <div style={PANEL} className="p-5">
+              <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Monthly Cash Flow</p>
+              <ResponsiveContainer width="100%" height={160}>
+                <AreaChart data={monthlyData.map(m => ({ ...m, Net: m.Revenue - m.Labour - m.Material }))} margin={{ top: 4, right: 8, bottom: 0, left: -10 }}>
+                  <defs>
+                    <linearGradient id="netGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={GOLD} stopOpacity={0.3} />
+                      <stop offset="95%" stopColor={GOLD} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e2435" />
+                  <XAxis dataKey="month" tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}K`} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Net Cash']} />
+                  <Area type="monotone" dataKey="Net" stroke={GOLD} fill="url(#netGrad)" strokeWidth={2} dot={false} isAnimationActive={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Quick Actions */}
+            <div style={PANEL} className="p-5">
+              <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Quick Actions</p>
+              <div className="space-y-2">
+                {[
+                  { href: '/labour', label: 'Add Worker', icon: <Users size={14} /> },
+                  { href: '/attendance', label: 'Mark Attendance', icon: <CalendarCheck size={14} /> },
+                  { href: '/materials', label: 'Add Material', icon: <Package size={14} /> },
+                  { href: '/payments', label: 'Create Payment', icon: <Wallet size={14} /> },
+                  { href: '/income', label: 'Record Revenue', icon: <TrendingUp size={14} /> },
+                ].map(a => (
+                  <Link key={a.href} href={a.href}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-zinc-300 hover:text-white transition-all"
+                    style={{ backgroundColor: '#1a1f2e' }}
+                  >
+                    <span style={{ color: GOLD }}>{a.icon}</span>
+                    {a.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      ), [monthlyData, projectCosts])}
 
       {/* Details Modal */}
       <Dialog open={detailsModalOpen} onOpenChange={setDetailsModalOpen}>
