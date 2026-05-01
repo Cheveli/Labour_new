@@ -1,124 +1,34 @@
--- ========================================
--- Labour Management System - FULL Fresh Database Migration
--- WARNING: This script drops all existing tables and data!
--- Run this script in Supabase SQL Editor to start completely fresh.
--- ========================================
+-- Enable Row Level Security
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE labour_types ENABLE ROW LEVEL SECURITY;
+ALTER TABLE labour ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
+ALTER TABLE income ENABLE ROW LEVEL SECURITY;
+ALTER TABLE materials ENABLE ROW LEVEL SECURITY;
+ALTER TABLE extra_work ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 
--- 1. Drop existing tables completely to wipe out all data
-DROP TABLE IF EXISTS extra_work CASCADE;
-DROP TABLE IF EXISTS materials CASCADE;
-DROP TABLE IF EXISTS income CASCADE;
-DROP TABLE IF EXISTS payments CASCADE;
-DROP TABLE IF EXISTS attendance CASCADE;
-DROP TABLE IF EXISTS labour CASCADE;
-DROP TABLE IF EXISTS labour_types CASCADE;
-DROP TABLE IF EXISTS projects CASCADE;
+-- Create Policies to allow your Next.js app to read/write freely
+DROP POLICY IF EXISTS "Allow all projects" ON projects;
+CREATE POLICY "Allow all projects" ON projects FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
--- 2. Create base tables
-CREATE TABLE projects (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name TEXT NOT NULL,
-  owner_name TEXT,
-  status TEXT DEFAULT 'ACTIVE',
-  description TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+DROP POLICY IF EXISTS "Allow all labour_types" ON labour_types;
+CREATE POLICY "Allow all labour_types" ON labour_types FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
-CREATE TABLE labour_types (
-  code TEXT PRIMARY KEY,
-  display_name TEXT NOT NULL,
-  default_rate NUMERIC NOT NULL
-);
+DROP POLICY IF EXISTS "Allow all labour" ON labour;
+CREATE POLICY "Allow all labour" ON labour FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
-CREATE TABLE labour (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name TEXT NOT NULL,
-  type TEXT NOT NULL,
-  gender TEXT CHECK (gender IN ('Male', 'Female')),
-  phone TEXT,
-  daily_rate NUMERIC NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+DROP POLICY IF EXISTS "Allow all attendance" ON attendance;
+CREATE POLICY "Allow all attendance" ON attendance FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
--- 3. Create dependent tracking tables
-CREATE TABLE attendance (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  labour_id UUID REFERENCES labour(id) ON DELETE CASCADE NOT NULL,
-  project_id UUID REFERENCES projects(id) ON DELETE CASCADE NOT NULL,
-  date DATE NOT NULL,
-  status TEXT NOT NULL,
-  custom_rate NUMERIC,
-  advance_amount NUMERIC DEFAULT 0,
-  notes TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  CONSTRAINT attendance_unique_labour_project_date UNIQUE (labour_id, project_id, date)
-);
+DROP POLICY IF EXISTS "Allow all income" ON income;
+CREATE POLICY "Allow all income" ON income FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
-CREATE TABLE payments (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  labour_id UUID REFERENCES labour(id) ON DELETE CASCADE NOT NULL,
-  amount NUMERIC NOT NULL,
-  date DATE NOT NULL,
-  payment_type TEXT,
-  notes TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+DROP POLICY IF EXISTS "Allow all materials" ON materials;
+CREATE POLICY "Allow all materials" ON materials FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
-CREATE TABLE income (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  project_id UUID REFERENCES projects(id) ON DELETE CASCADE NOT NULL,
-  amount NUMERIC NOT NULL,
-  date DATE NOT NULL,
-  source TEXT,
-  notes TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+DROP POLICY IF EXISTS "Allow all extra_work" ON extra_work;
+CREATE POLICY "Allow all extra_work" ON extra_work FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
-CREATE TABLE materials (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  project_id UUID REFERENCES projects(id) ON DELETE CASCADE NOT NULL,
-  name TEXT NOT NULL,
-  quantity NUMERIC NOT NULL,
-  unit TEXT NOT NULL,
-  total_amount NUMERIC NOT NULL,
-  date DATE NOT NULL,
-  notes TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE TABLE extra_work (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  project_id UUID REFERENCES projects(id) ON DELETE CASCADE NOT NULL,
-  work_name TEXT NOT NULL,
-  amount NUMERIC NOT NULL,
-  date DATE NOT NULL,
-  notes TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- 4. Seed initial default Data
-INSERT INTO labour_types (code, display_name, default_rate)
-VALUES 
-  ('MISTRY', 'Mistry (Skilled)', 1300),
-  ('LABOUR_WOMEN', 'Labour (Women)', 800),
-  ('PARAKADU', 'Parakadu (Helper)', 1000);
-
--- 5. Create performance indexes
-CREATE INDEX idx_attendance_date ON attendance(date);
-CREATE INDEX idx_attendance_labour_id ON attendance(labour_id);
-CREATE INDEX idx_attendance_project_id ON attendance(project_id);
-
-CREATE INDEX idx_payments_date ON payments(date);
-CREATE INDEX idx_payments_labour_id ON payments(labour_id);
-
-CREATE INDEX idx_income_date ON income(date);
-CREATE INDEX idx_income_project_id ON income(project_id);
-
-CREATE INDEX idx_materials_date ON materials(date);
-CREATE INDEX idx_materials_project_id ON materials(project_id);
-
-CREATE INDEX idx_extra_work_date ON extra_work(date);
-CREATE INDEX idx_extra_work_project_id ON extra_work(project_id);
-
--- Migration complete!
-SELECT 'Fresh Database Migration completed successfully!' AS status;
+DROP POLICY IF EXISTS "Allow all payments" ON payments;
+CREATE POLICY "Allow all payments" ON payments FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
