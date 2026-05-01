@@ -64,8 +64,8 @@ export async function middleware(request: NextRequest) {
   const cookieLocale = request.cookies.get('lang')?.value
   const locale = (cookieLocale && locales.includes(cookieLocale)) ? cookieLocale : defaultLocale
   
-  request.nextUrl.pathname = `/${locale}${pathname}`
-  const redirectResponse = NextResponse.redirect(request.nextUrl)
+  const newUrl = new URL(`/${locale}${pathname === '/' ? '' : pathname}`, request.url)
+  const redirectResponse = NextResponse.redirect(newUrl)
   
   // Set lang cookie
   redirectResponse.cookies.set('lang', locale, { path: '/' })
@@ -81,6 +81,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/',
+    '/((?!api|_next/static|_next/image|favicon.ico).*)',
   ],
 }
