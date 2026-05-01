@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Loader2, Download, FileText, Calendar, User, Search } from 'lucide-react'
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, parseISO, addDays } from 'date-fns'
@@ -522,28 +521,17 @@ export default function ReportsPage() {
               {activeTab === 'INDIVIDUAL' ? 'Select Worker' : 'Select Project'}
             </label>
             {activeTab === 'INDIVIDUAL' ? (
-              <Select onValueChange={(v) => setSelectedWorkerId(v ?? '')} value={selectedWorkerId}>
-                <SelectTrigger className="h-12 bg-zinc-950 border-zinc-800 rounded-xl font-bold text-white pl-4">
-                  <SelectValue placeholder="Choose Worker" items={Object.fromEntries(labourers.map(l => [l.id, l.name]))} />
-                </SelectTrigger>
-                <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
-                  {labourers.map(l => (
-                    <SelectItem key={l.id} value={l.id} className="py-3 font-bold hover:bg-zinc-900 cursor-pointer">{l.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <select value={selectedWorkerId} onChange={e => setSelectedWorkerId(e.target.value)}
+                className="w-full h-12 px-3 rounded-xl text-sm font-semibold outline-none" style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }}>
+                <option value="">Choose Worker</option>
+                {labourers.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
             ) : (
-              <Select onValueChange={(v) => setSelectedProjectId(v ?? '')} value={selectedProjectId}>
-                <SelectTrigger className="h-12 bg-zinc-950 border-zinc-800 rounded-xl font-bold text-white pl-4">
-                  <SelectValue placeholder="All Projects" items={Object.fromEntries(projects.map(p => [p.id, p.name]))} />
-                </SelectTrigger>
-                <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
-                  {activeTab === 'MATERIAL' && <SelectItem value="" className="py-3 font-bold hover:bg-zinc-900 cursor-pointer">All Projects</SelectItem>}
-                  {projects.map(p => (
-                    <SelectItem key={p.id} value={p.id} className="py-3 font-bold hover:bg-zinc-900 cursor-pointer">{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <select value={selectedProjectId} onChange={e => setSelectedProjectId(e.target.value)}
+                className="w-full h-12 px-3 rounded-xl text-sm font-semibold outline-none" style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }}>
+                <option value="">All Projects</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
             )}
           </div>
 

@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Table, 
   TableBody, 
@@ -27,6 +26,7 @@ export default function IncomePage() {
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [incomePage, setIncomePage] = useState(0)
   
   const [formData, setFormData] = useState({
     project_id: '',
@@ -143,9 +143,10 @@ export default function IncomePage() {
               </Button>
             </>
           )}
-          <Button className="btn-construction rounded-xl font-bold uppercase tracking-tight gap-2 px-8">
-            <TrendingUp size={18} /> New Collection
-          </Button>
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Total Revenue</span>
+            <span className="text-xl font-black" style={{ color: '#22c55e' }}>₹{income.reduce((s, i) => s + Number(i.amount), 0).toLocaleString()}</span>
+          </div>
         </div>
       </div>
 
@@ -184,7 +185,7 @@ export default function IncomePage() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      income.map((item) => (
+                      income.slice(incomePage * 10, incomePage * 10 + 10).map((item) => (
                         <TableRow key={item.id} className="border-zinc-800 transition-colors hover:bg-white/5">
                           <TableCell className="px-8 py-5 font-bold text-gray-400 text-xs">
                             {format(new Date(item.date), 'MMM dd, yyyy')}
@@ -198,6 +199,17 @@ export default function IncomePage() {
                   </TableBody>
                 </Table>
               </div>
+              {income.length > 10 && (
+                <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-800">
+                  <button disabled={incomePage === 0} onClick={() => setIncomePage(p => p - 1)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
+                    style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
+                  <span className="text-xs" style={{ color: '#6b7280' }}>Page {incomePage + 1} / {Math.ceil(income.length / 10)}</span>
+                  <button disabled={(incomePage + 1) * 10 >= income.length} onClick={() => setIncomePage(p => p + 1)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
+                    style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
+                </div>
+              )}
 
               {/* Mobile Cards */}
               <div className="flex flex-col gap-3 p-4 md:hidden bg-[#05070B]">
@@ -209,7 +221,7 @@ export default function IncomePage() {
                     <p className="text-sm font-bold uppercase tracking-widest">No income record history</p>
                   </div>
                 ) : (
-                  income.map((item) => (
+                  income.slice(incomePage * 10, incomePage * 10 + 10).map((item) => (
                     <div key={item.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
                       <div className="flex justify-between items-start">
                         <div>
@@ -234,16 +246,11 @@ export default function IncomePage() {
               <form onSubmit={handleCreate} className="space-y-6">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Select Site</label>
-                  <Select onValueChange={(v: string | null) => setFormData({...formData, project_id: v ?? ''})} value={formData.project_id}>
-                    <SelectTrigger className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold">
-                      <SelectValue placeholder="Chose site" items={Object.fromEntries(projects.map(p => [p.id, p.name]))} />
-                    </SelectTrigger>
-                    <SelectContent className="bg-zinc-950 border-zinc-800 text-white rounded-xl">
-                      {projects.map(p => (
-                        <SelectItem key={p.id} value={p.id} className="py-3 font-bold hover:bg-zinc-800">{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <select value={formData.project_id} onChange={e => setFormData({...formData, project_id: e.target.value})}
+                    className="w-full h-12 px-3 rounded-xl text-sm font-semibold outline-none" style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }}>
+                    <option value="">Choose site</option>
+                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
                 </div>
 
                 <div className="space-y-2">

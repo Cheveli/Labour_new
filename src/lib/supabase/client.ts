@@ -3,6 +3,16 @@ import { createBrowserClient } from '@supabase/ssr'
 export function createClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-  
-  return createBrowserClient(url, key)
+
+  const client = createBrowserClient(url, key)
+
+  client.auth.onAuthStateChange((event, session) => {
+    if (event === 'TOKEN_REFRESHED' && !session) {
+      client.auth.signOut().then(() => {
+        if (typeof window !== 'undefined') window.location.href = '/login'
+      })
+    }
+  })
+
+  return client
 }

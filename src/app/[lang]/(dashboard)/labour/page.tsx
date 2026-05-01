@@ -1,10 +1,10 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Table, 
   TableBody, 
@@ -59,6 +59,7 @@ export default function WorkersPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [workerToDelete, setWorkerToDelete] = useState<string | null>(null)
+  const [workerPage, setWorkerPage] = useState(0)
   
   const [formData, setFormData] = useState({
     name: '',
@@ -213,19 +214,32 @@ export default function WorkersPage() {
           <h1 className="text-2xl font-black text-white tracking-tight">Workers</h1>
           <p className="mt-1 text-sm" style={{ color: DIM }}>Manage your site crew, roles and daily wage rates.</p>
         </div>
-        <button
-          onClick={() => setDialogOpen(true)}
-          className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-black uppercase tracking-wide text-[#0a0c12] transition-all"
-          style={{ backgroundColor: GOLD, boxShadow: '0 4px 14px rgba(59,130,246,0.3)' }}
-        >
-          <Plus size={16} /> Add Worker
-        </button>
+        {!dialogOpen && (
+          <button
+            onClick={() => setDialogOpen(true)}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-black uppercase tracking-wide text-[#0a0c12] transition-all"
+            style={{ backgroundColor: GOLD, boxShadow: '0 4px 14px rgba(59,130,246,0.3)' }}
+          >
+            <Plus size={16} /> Add Worker
+          </button>
+        )}
       </div>
 
       {/* Workers Table */}
       <div style={PANEL} className="overflow-hidden">
-        <div className="px-6 py-4 border-b" style={{ borderColor: '#1e2435' }}>
+        <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: '#1e2435' }}>
           <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>All Workers — {labourers.length} total</p>
+          {labourers.length > 10 && (
+            <div className="flex items-center gap-2">
+              <button disabled={workerPage === 0} onClick={() => setWorkerPage(p => p - 1)}
+                className="h-7 px-3 text-[10px] font-bold rounded-lg disabled:opacity-40"
+                style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
+              <span className="text-[10px] font-bold" style={{ color: '#6b7280' }}>{workerPage + 1} / {Math.ceil(labourers.length / 10)}</span>
+              <button disabled={(workerPage + 1) * 10 >= labourers.length} onClick={() => setWorkerPage(p => p + 1)}
+                className="h-7 px-3 text-[10px] font-bold rounded-lg disabled:opacity-40"
+                style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
+            </div>
+          )}
         </div>
         <div className="hidden md:block">
           <Table>
@@ -248,9 +262,11 @@ export default function WorkersPage() {
                   <TableCell colSpan={6} className="py-16 text-center text-sm font-bold" style={{ color: DIM }}>No workers added yet</TableCell>
                 </TableRow>
               ) : (
-                labourers.map((worker) => (
+                labourers.slice(workerPage * 10, workerPage * 10 + 10).map((worker) => (
                   <TableRow key={worker.id} style={{ borderColor: '#1e2435' }} className="transition-colors hover:bg-white/[0.02]">
-                    <TableCell className="px-4 py-4 font-bold text-white text-sm">{worker.name}</TableCell>
+                    <TableCell className="px-4 py-4">
+                      <Link href={`/workers/${worker.id}`} className="font-bold text-white text-sm hover:text-blue-400 transition-colors">{worker.name}</Link>
+                    </TableCell>
                     <TableCell className="px-4 py-4 text-xs font-semibold" style={{ color: DIM }}>{worker.phone || '—'}</TableCell>
                     <TableCell className="px-4 py-4 text-xs font-semibold" style={{ color: DIM }}>{worker.type}</TableCell>
                     <TableCell className="px-4 py-4 text-sm font-black" style={{ color: GOLD }}>₹{worker.daily_rate}</TableCell>
@@ -279,7 +295,7 @@ export default function WorkersPage() {
           ) : labourers.length === 0 ? (
             <div className="py-16 text-center text-sm font-bold" style={{ color: DIM }}>No workers added yet</div>
           ) : (
-            labourers.map((worker) => (
+            labourers.slice(workerPage * 10, workerPage * 10 + 10).map((worker) => (
               <div key={worker.id} className="rounded-xl p-4 flex flex-col gap-4 border" style={{ backgroundColor: '#0d1018', borderColor: '#1e2435' }}>
                 <div className="flex justify-between items-start">
                   <div>
@@ -333,16 +349,12 @@ export default function WorkersPage() {
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Worker Type</label>
-              <Select onValueChange={(v) => handleTypeChange(v || 'Mistry (Skilled)')} value={formData.type}>
-                <SelectTrigger className="h-11 rounded-xl font-semibold" style={INPUT_STYLE}>
-                  <SelectValue items={{ 'Mistry (Skilled)': 'Mistry (Skilled) — ₹1300/day', 'Labour (Women)': 'Labour (Women) — ₹800/day', 'Parakadu (Helper)': 'Parakadu (Helper) — ₹1000/day' }} />
-                </SelectTrigger>
-                <SelectContent style={{ backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0' }}>
-                  <SelectItem value="Mistry (Skilled)">Mistry (Skilled) — ₹1300/day</SelectItem>
-                  <SelectItem value="Labour (Women)">Labour (Women) — ₹800/day</SelectItem>
-                  <SelectItem value="Parakadu (Helper)">Parakadu (Helper) — ₹1000/day</SelectItem>
-                </SelectContent>
-              </Select>
+              <select value={formData.type} onChange={e => handleTypeChange(e.target.value)}
+                className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_STYLE}>
+                <option value="Mistry (Skilled)">Mistry (Skilled) — ₹1300/day</option>
+                <option value="Labour (Women)">Labour (Women) — ₹800/day</option>
+                <option value="Parakadu (Helper)">Parakadu (Helper) — ₹1000/day</option>
+              </select>
             </div>
 
             <div className="space-y-1.5">

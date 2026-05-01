@@ -4,29 +4,23 @@ import React, { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
-} from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Zap, Plus, Search, Loader2, Calendar, Briefcase, History, Star, FileText, Download } from 'lucide-react'
+import { Zap, Plus, Search, Loader2, Calendar, Briefcase, History, FileText, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
+import { drawPremiumHeader, drawPremiumFooter, PDF_COLORS } from '@/lib/report-utils'
 
 export default function ExtraWorkPage() {
   const [tasks, setTasks] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [taskPage, setTaskPage] = useState(0)
   
   const [formData, setFormData] = useState({
     project_id: '',
@@ -74,32 +68,37 @@ export default function ExtraWorkPage() {
     setSaving(false)
   }
 
-  const exportPDF = () => {
+  const exportPDF = async () => {
     const doc = new jsPDF()
     
-    doc.setFontSize(18)
-    doc.text('Extra Work Report', 14, 20)
-    
-    doc.setFontSize(10)
-    doc.text(`Generated: ${format(new Date(), 'MMM dd, yyyy')}`, 14, 28)
+    drawPremiumHeader(doc, 'EXTRA WORK REPORT', format(new Date(), 'dd MMM yyyy'))
 
     const tableData = tasks.map((row, idx) => [
       idx + 1,
-      row.date,
+      format(new Date(row.date), 'dd/MM/yyyy'),
       row.projects?.name || 'N/A',
       row.work_name,
       `Rs. ${Number(row.amount).toLocaleString()}`,
       row.notes || '-'
     ])
 
+    const total = tasks.reduce((sum, r) => sum + Number(r.amount || 0), 0)
+
     autoTable(doc, {
-      startY: 35,
+      startY: 54,
       head: [['#', 'Date', 'Project', 'Work Description', 'Amount', 'Notes']],
       body: tableData,
+      foot: [['', '', '', 'TOTAL', `Rs. ${total.toLocaleString()}`, '']],
       theme: 'grid',
-      headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
-      styles: { fontSize: 9 }
+      headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: 8 },
+      bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 8 },
+      footStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontStyle: 'bold', fontSize: 8 },
+      alternateRowStyles: { fillColor: PDF_COLORS.LIGHT },
+      styles: { cellPadding: 2.5 }
     })
+
+    drawPremiumFooter(doc)
+    
 
     doc.save(`Extra_Work_Report_${format(new Date(), 'dd-MMM-yyyy')}.pdf`)
     toast.success('PDF exported successfully')
@@ -149,9 +148,6 @@ export default function ExtraWorkPage() {
               </Button>
             </>
           )}
-          <Button className="btn-construction rounded-xl font-bold uppercase tracking-tight gap-2 px-8">
-            <Star size={18} /> Add Extra Task
-          </Button>
         </div>
       </div>
 
@@ -191,7 +187,7 @@ export default function ExtraWorkPage() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      tasks.map((task) => (
+                      tasks.slice(taskPage * 10, taskPage * 10 + 10).map((task) => (
                         <TableRow key={task.id} className="border-zinc-800 transition-colors hover:bg-white/5">
                           <TableCell className="px-8 py-5 font-bold text-gray-400 text-xs">
                             {format(new Date(task.date), 'MMM dd, yyyy')}
@@ -206,6 +202,17 @@ export default function ExtraWorkPage() {
                   </TableBody>
                 </Table>
               </div>
+              {tasks.length > 10 && (
+                <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-800">
+                  <button disabled={taskPage === 0} onClick={() => setTaskPage(p => p - 1)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
+                    style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
+                  <span className="text-xs" style={{ color: '#6b7280' }}>Page {taskPage + 1} / {Math.ceil(tasks.length / 10)}</span>
+                  <button disabled={(taskPage + 1) * 10 >= tasks.length} onClick={() => setTaskPage(p => p + 1)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
+                    style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
+                </div>
+              )}
 
               {/* Mobile Cards */}
               <div className="flex flex-col gap-3 p-4 md:hidden bg-[#05070B]">
@@ -217,7 +224,7 @@ export default function ExtraWorkPage() {
                     <p className="text-sm font-bold uppercase tracking-widest">No extra task history</p>
                   </div>
                 ) : (
-                  tasks.map((task) => (
+                  tasks.slice(taskPage * 10, taskPage * 10 + 10).map((task) => (
                     <div key={task.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
                       <div className="flex justify-between items-start">
                         <div>
@@ -243,16 +250,11 @@ export default function ExtraWorkPage() {
               <form onSubmit={handleCreate} className="space-y-6">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Select Site</label>
-                  <Select onValueChange={(v: string | null) => setFormData({...formData, project_id: v ?? ''})} value={formData.project_id}>
-                    <SelectTrigger className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold">
-                      <SelectValue placeholder="Execution site" items={Object.fromEntries(projects.map(p => [p.id, p.name]))} />
-                    </SelectTrigger>
-                    <SelectContent className="bg-zinc-950 border-zinc-800 text-white rounded-xl">
-                      {projects.map(p => (
-                        <SelectItem key={p.id} value={p.id} className="py-3 font-bold hover:bg-zinc-800">{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <select value={formData.project_id} onChange={e => setFormData({...formData, project_id: e.target.value})}
+                    className="w-full h-12 px-3 rounded-xl text-sm font-semibold outline-none" style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }}>
+                    <option value="">Execution site</option>
+                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
                 </div>
 
                 <div className="space-y-2">

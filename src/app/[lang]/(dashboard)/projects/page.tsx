@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -11,7 +10,7 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table'
-import { Plus, Loader2 } from 'lucide-react'
+import { Plus, Loader2, MessageCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -23,8 +22,9 @@ export default function ProjectsPage() {
   const [saving, setSaving] = useState(false)
   const [editingProject, setEditingProject] = useState<any>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null)
+  const [deleteOtpInput, setDeleteOtpInput] = useState('')
+  const [deleteStep, setDeleteStep] = useState<'idle' | 'sending' | 'verify'>('idle')
 
   const [formData, setFormData] = useState({
     name: '',
@@ -105,30 +105,81 @@ export default function ProjectsPage() {
     setFormData({ name: '', owner_name: '', description: '', status: 'ACTIVE' })
   }
 
-  const handleDeleteClick = (id: string) => {
+  const handleDeleteClick = async (id: string) => {
     setProjectToDelete(id)
-    setDeleteConfirmText('')
+    setDeleteOtpInput('')
+    setDeleteStep('sending')
     setDeleteDialogOpen(true)
-  }
 
-  const handleDeleteConfirm = async () => {
-    if (deleteConfirmText !== 'DELETE') {
-      toast.error('You must type DELETE to confirm')
+    // Get current user email and send OTP
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.email) {
+      toast.error('User email not found')
       return
     }
 
-    if (!projectToDelete) return
+    const { error } = await supabase.auth.signInWithOtp({
+      email: user.email,
+      options: { shouldCreateUser: false }
+    })
 
+    if (error) {
+      toast.error('Failed to send OTP: ' + error.message)
+      setDeleteDialogOpen(false)
+    } else {
+      toast.success('OTP sent to your email')
+      setDeleteStep('verify')
+    }
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!projectToDelete || !deleteOtpInput) return
+
+    // Get user email for verification
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.email) {
+      toast.error('User not authenticated')
+      return
+    }
+
+    // Verify OTP
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      email: user.email,
+      token: deleteOtpInput,
+      type: 'email'
+    })
+
+    if (verifyError) {
+      toast.error('Invalid OTP — please try again')
+      return
+    }
+
+    // OTP verified — proceed with deletion
     const { error } = await supabase.from('projects').delete().eq('id', projectToDelete)
     if (error) {
       toast.error(error.message)
     } else {
-      toast.success('Project deleted successfully')
+      toast.success('Project deleted. Related records (attendance, revenue, extra work) are preserved.')
       fetchProjects()
     }
     setDeleteDialogOpen(false)
     setProjectToDelete(null)
-    setDeleteConfirmText('')
+    setDeleteOtpInput('')
+    setDeleteStep('idle')
+  }
+
+  const sendClientWhatsApp = (project: any) => {
+    const msg = [
+      `🏗️ *SSC CONSTRUCTIONS — PROJECT UPDATE*`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `📋 *Project:* ${project.name}`,
+      project.owner_name ? `👤 *Client:* ${project.owner_name}` : '',
+      `📌 *Status:* ${project.status}`,
+      project.description ? `📍 *Site:* ${project.description}` : '',
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `_For billing queries contact SSC Constructions_`,
+    ].filter(Boolean).join('\n')
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
   }
 
   const PANEL = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
@@ -280,15 +331,12 @@ export default function ProjectsPage() {
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Status</label>
-                <Select onValueChange={(v: string | null) => setFormData({ ...formData, status: v ?? 'ACTIVE' })} value={formData.status}>
-                  <SelectTrigger className="h-11 rounded-xl font-semibold text-sm" style={INPUT_ST}>
-                    <SelectValue items={{ ACTIVE: 'Active', COMPLETED: 'Completed' }} />
-                  </SelectTrigger>
-                  <SelectContent style={{ backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0' }}>
-                    <SelectItem value="ACTIVE">Active</SelectItem>
-                    <SelectItem value="COMPLETED">Completed</SelectItem>
-                  </SelectContent>
-                </Select>
+                <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })}
+                  className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST}>
+                  <option value="ACTIVE">Active</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="ON_HOLD">On Hold</option>
+                </select>
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -306,24 +354,38 @@ export default function ProjectsPage() {
       </div>
 
       {/* Delete Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <Dialog open={deleteDialogOpen} onOpenChange={(open) => { if (!open) { setDeleteDialogOpen(false); setDeleteStep('idle'); setDeleteOtpInput(''); } }}>
         <DialogContent style={DLG_ST} className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-red-400 font-black">Delete Project</DialogTitle>
-            <DialogDescription style={{ color: DIM }}>Type <strong>DELETE</strong> to confirm. All related records will be removed.</DialogDescription>
+            <DialogDescription style={{ color: DIM }}>
+              {deleteStep === 'sending' ? 'Sending OTP to your email...' : 'Enter the OTP sent to your email to confirm deletion. Attendance, revenue, and extra work records will be preserved.'}
+            </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <input
-              placeholder="Type DELETE"
-              value={deleteConfirmText}
-              onChange={(e) => setDeleteConfirmText(e.target.value)}
-              className="w-full h-11 px-3 rounded-xl text-sm outline-none"
-              style={INPUT_ST}
-            />
+          <div className="py-4 space-y-3">
+            {deleteStep === 'sending' && (
+              <div className="text-center py-6">
+                <Loader2 className="animate-spin mx-auto mb-2" size={24} style={{ color: '#3b82f6' }} />
+                <p className="text-sm" style={{ color: DIM }}>Sending OTP...</p>
+              </div>
+            )}
+            {deleteStep === 'verify' && (
+              <input
+                placeholder="Enter 6-digit OTP"
+                value={deleteOtpInput}
+                onChange={(e) => setDeleteOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className="w-full h-11 px-3 rounded-xl text-sm outline-none text-center font-black tracking-widest"
+                style={INPUT_ST}
+                maxLength={6}
+                autoFocus
+              />
+            )}
           </div>
           <DialogFooter>
-            <button onClick={() => setDeleteDialogOpen(false)} className="px-4 py-2 rounded-xl text-sm font-bold" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Cancel</button>
-            <button onClick={handleDeleteConfirm} disabled={deleteConfirmText !== 'DELETE'} className="px-4 py-2 rounded-xl text-sm font-black text-white disabled:opacity-40" style={{ backgroundColor: '#ef4444' }}>Delete</button>
+            <button onClick={() => { setDeleteDialogOpen(false); setDeleteStep('idle'); setDeleteOtpInput(''); }} className="px-4 py-2 rounded-xl text-sm font-bold" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Cancel</button>
+            {deleteStep === 'verify' && (
+              <button onClick={handleDeleteConfirm} disabled={deleteOtpInput.length !== 6} className="px-4 py-2 rounded-xl text-sm font-black text-white disabled:opacity-40" style={{ backgroundColor: '#ef4444' }}>Delete Project</button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

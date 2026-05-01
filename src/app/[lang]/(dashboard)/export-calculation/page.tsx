@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Loader2, FileText, Download, Calculator, Package, Users, Zap } from 'lucide-react'
 import { toast } from 'sonner'
@@ -124,7 +123,7 @@ export default function ExportCalculationPage() {
     y = (doc as any).lastAutoTable.finalY + 10
 
     // SECTION 2: Materials
-    doc.setFillColor(22, 163, 74)
+    doc.setFillColor(...PDF_COLORS.BLUE)
     doc.roundedRect(14, y, 182, 8, 1, 1, 'F')
     doc.setTextColor(255, 255, 255); doc.setFontSize(9); doc.setFont('helvetica', 'bold')
     doc.text('SECTION B: MATERIAL COST', 18, y + 5.5)
@@ -138,17 +137,17 @@ export default function ExportCalculationPage() {
       ]),
       foot: [['', '', '', 'TOTAL', `Rs. ${totalMaterialCost.toLocaleString()}`]],
       theme: 'grid',
-      headStyles: { fillColor: [22, 100, 50], textColor: 255, fontSize: 8 },
+      headStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontSize: 8 },
       bodyStyles: { fontSize: 8, textColor: PDF_COLORS.NAVY },
-      footStyles: { fillColor: [22, 100, 50], textColor: 255, fontStyle: 'bold', fontSize: 8 },
-      alternateRowStyles: { fillColor: [245, 255, 250] }
+      footStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontStyle: 'bold', fontSize: 8 },
+      alternateRowStyles: { fillColor: PDF_COLORS.LIGHT }
     })
 
     y = (doc as any).lastAutoTable.finalY + 12
 
     // SECTION 3: Extra Work
     if (y > 250) { doc.addPage(); y = 20 }
-    doc.setFillColor(245, 158, 11) // Amber
+    doc.setFillColor(...PDF_COLORS.BLUE)
     doc.roundedRect(14, y, 182, 8, 1, 1, 'F')
     doc.setTextColor(255, 255, 255); doc.setFontSize(9); doc.setFont('helvetica', 'bold')
     doc.text('SECTION C: EXTRA WORK COST', 18, y + 5.5)
@@ -162,10 +161,10 @@ export default function ExportCalculationPage() {
       ]),
       foot: [['', '', '', 'TOTAL', `Rs. ${(reportData.totalExtraWorkCost || 0).toLocaleString()}`]],
       theme: 'grid',
-      headStyles: { fillColor: [217, 119, 6], textColor: 255, fontSize: 8 },
+      headStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontSize: 8 },
       bodyStyles: { fontSize: 8, textColor: PDF_COLORS.NAVY },
-      footStyles: { fillColor: [217, 119, 6], textColor: 255, fontStyle: 'bold', fontSize: 8 },
-      alternateRowStyles: { fillColor: [255, 251, 235] }
+      footStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontStyle: 'bold', fontSize: 8 },
+      alternateRowStyles: { fillColor: PDF_COLORS.LIGHT }
     })
 
     y = (doc as any).lastAutoTable.finalY + 12
@@ -223,14 +222,11 @@ export default function ExportCalculationPage() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
           <div className="space-y-1.5">
             <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Project</label>
-            <Select onValueChange={(v: string | null) => setSelectedProjectId(v ?? '')} value={selectedProjectId}>
-              <SelectTrigger className="h-11 rounded-xl font-semibold text-sm" style={INPUT_ST}>
-                <SelectValue placeholder="All Projects" items={Object.fromEntries(projects.map(p => [p.id, p.name]))} />
-              </SelectTrigger>
-              <SelectContent style={SC_ST}>
-                {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <select value={selectedProjectId} onChange={e => setSelectedProjectId(e.target.value)}
+              className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST}>
+              <option value="">All Projects</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Start Date</label>

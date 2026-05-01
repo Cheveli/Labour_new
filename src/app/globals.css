@@ -68,6 +68,11 @@
     color: #f0f0f0;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+  body.font-telugu {
+    font-family: var(--font-telugu), sans-serif;
+    font-size: 1.05rem;
+    line-height: 1.7;
+  }
   body {
     background-image:
       radial-gradient(ellipse at 0% 0%, rgba(59,130,246,0.12) 0%, transparent 40%),
@@ -130,6 +135,40 @@
   background-color: rgba(239,68,68,0.15);
   color: #ef4444;
   border: 1px solid rgba(239,68,68,0.3);
+}
+
+/* ─── Styled native select ─── */
+.styled-select {
+  width: 100%;
+  height: 2.75rem;
+  padding: 0 2.5rem 0 0.875rem;
+  background-color: #0d1018;
+  border: 1.5px solid #1e2435;
+  border-radius: 0.875rem;
+  color: #f0f0f0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.styled-select:hover {
+  border-color: #2d3a52;
+}
+.styled-select:focus {
+  border-color: rgba(59,130,246,0.6);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+.styled-select option {
+  background-color: #111520;
+  color: #f0f0f0;
+  font-weight: 600;
 }
 
 /* ─── Legacy aliases ─── */

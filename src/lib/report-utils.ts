@@ -21,6 +21,7 @@ export const COMPANY_DETAILS = {
   phones: '9849678296 / 9550017985'
 }
 
+
 export function drawPremiumHeader(doc: jsPDF, title: string, subtitle: string) {
   const W = doc.internal.pageSize.getWidth()
 
