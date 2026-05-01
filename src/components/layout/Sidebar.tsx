@@ -20,6 +20,7 @@ import {
   HardHat,
   Calculator,
   BarChart3,
+  Phone,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -36,6 +37,7 @@ const menuItems = [
   { label: 'Revenue', href: '/income', icon: TrendingUp },
   { label: 'Extra Work', href: '/extra-work', icon: Zap },
   { label: 'Projects', href: '/projects', icon: Briefcase },
+  { label: 'Contacts', href: '/contacts', icon: Phone },
 ]
 
 export default function Sidebar() {
@@ -66,6 +68,7 @@ export default function Sidebar() {
     'Revenue': t.nav.revenue,
     'Extra Work': t.nav.extraWork,
     'Projects': t.nav.projects,
+    'Contacts': t.nav.contacts,
   }
 
   const handleLogout = async () => {

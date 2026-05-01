@@ -1,672 +1,781 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useLang } from '@/lib/i18n'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { 
   Loader2, 
-  Table as TableIcon,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  Save,
+  Plus,
   Trash2,
-  CheckSquare,
-  Users2
+  Copy,
+  CheckCircle2,
+  XCircle,
+  X
 } from 'lucide-react'
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
-} from '@/components/ui/table'
 import { toast } from 'sonner'
-import { addWeeks, format, endOfWeek, startOfWeek, eachDayOfInterval, parseISO } from 'date-fns'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
-import { drawPremiumHeader, drawPremiumFooter, PDF_COLORS } from '@/lib/report-utils'
+import { addWeeks, format, endOfWeek, startOfWeek, eachDayOfInterval, subWeeks, parseISO } from 'date-fns'
+
+type AttendanceStatus = 'P' | 'H' | 'A' | ''
+
+type DayRecord = {
+  status: AttendanceStatus
+  overtime_amount: number
+  advance_amount: number
+}
+
+type WorkerRow = {
+  worker_id: string
+  name: string
+  type: string
+  default_rate: number
+  custom_rate: number
+  days: Record<string, DayRecord> // Date strings as keys
+}
 
 export default function AttendancePage() {
-  const [date, setDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
   const [projects, setProjects] = useState<any[]>([])
   const [labourers, setLabourers] = useState<any[]>([])
-  const [records, setRecords] = useState<any[]>([])
   
-  const [selectedWorkerId, setSelectedWorkerId] = useState<string>('')
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
-  const [status, setStatus] = useState<string>('full')
-  const [overtimeHours, setOvertimeHours] = useState<string>('0')
-  const [overtimeAmount, setOvertimeAmount] = useState<string>('0')
-  const [customRate, setCustomRate] = useState<string>('')
-  const [notes, setNotes] = useState<string>('')
-  const [advanceAmount, setAdvanceAmount] = useState<string>('0')
-
-  const today = new Date()
-  const initialWeekStart = startOfWeek(today, { weekStartsOn: 0 })
-  const initialWeekEnd = endOfWeek(today, { weekStartsOn: 0 })
-  const [filterStart, setFilterStart] = useState<string>(format(initialWeekStart, 'yyyy-MM-dd'))
-  const [filterEnd, setFilterEnd] = useState<string>(format(initialWeekEnd, 'yyyy-MM-dd'))
-
-  const [loading, setLoading] = useState(true)
+  const [selectedProject, setSelectedProject] = useState<string>('')
+  const [currentWeekStart, setCurrentWeekStart] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 0 }))
+  
+  const [gridData, setGridData] = useState<Record<string, WorkerRow>>({})
+  const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [editingRecord, setEditingRecord] = useState<any>(null)
-  const [editStatus, setEditStatus] = useState('full')
-  const [editOT, setEditOT] = useState('0')
-  const [editOTAmt, setEditOTAmt] = useState('0')
-  const [editAdv, setEditAdv] = useState('0')
-  const [editNotes, setEditNotes] = useState('')
-  const [bulkDate, setBulkDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
-  const [bulkProjectId, setBulkProjectId] = useState<string>('')
-  const [bulkMarking, setBulkMarking] = useState(false)
-  const [showAllWorkers, setShowAllWorkers] = useState(false)
-  const [deleteRecordId, setDeleteRecordId] = useState<string | null>(null)
+  const [selectedWorkers, setSelectedWorkers] = useState<string[]>([])
   
-  // Summary view states
-  const [activeView, setActiveView] = useState<'mark' | 'summary'>('mark')
-  const [summaryPeriod, setSummaryPeriod] = useState<'week' | 'month' | 'custom'>('month')
-  const [summaryStart, setSummaryStart] = useState(format(startOfWeek(new Date(), { weekStartsOn: 0 }), 'yyyy-MM-dd'))
-  const [summaryEnd, setSummaryEnd] = useState(format(endOfWeek(new Date(), { weekStartsOn: 0 }), 'yyyy-MM-dd'))
-  const [summaryData, setSummaryData] = useState<any[]>([])
-  const [summaryLoading, setSummaryLoading] = useState(false)
-  const [selectedSummaryProject, setSelectedSummaryProject] = useState('')
+  // Modals & Panels
+  const [showAddWorker, setShowAddWorker] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [otMode, setOtMode] = useState(false)
   
+  // Popup State
+  const [activePopup, setActivePopup] = useState<{ worker_id: string, date: string } | null>(null)
+  const [popupData, setPopupData] = useState<DayRecord>({ status: '', overtime_amount: 0, advance_amount: 0 })
+
   const supabase = createClient()
+  const { t } = useLang()
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
-  useEffect(() => { fetchData(); fetchRecords(filterStart, filterEnd) }, [])
+  const weekDates = useMemo(() => {
+    const end = endOfWeek(currentWeekStart, { weekStartsOn: 0 })
+    return eachDayOfInterval({ start: currentWeekStart, end })
+  }, [currentWeekStart])
 
-  async function fetchData() {
-    setLoading(true)
+  useEffect(() => {
+    fetchInitialData()
+  }, [])
+
+  async function fetchInitialData() {
     const { data: projData } = await supabase.from('projects').select('*').order('name')
     const { data: labData } = await supabase.from('labour').select('*').order('name')
     setProjects(projData || [])
     setLabourers(labData || [])
+    if (projData && projData.length > 0) {
+      setSelectedProject(projData[0].id)
+    }
+  }
+
+  // Effect to load week data when project or week changes
+  useEffect(() => {
+    if (selectedProject) {
+      loadWeekData(selectedProject, currentWeekStart)
+    }
+  }, [selectedProject, currentWeekStart])
+
+  async function loadWeekData(projectId: string, weekStart: Date) {
+    setLoading(true)
+    const startStr = format(weekStart, 'yyyy-MM-dd')
+    const endStr = format(endOfWeek(weekStart, { weekStartsOn: 0 }), 'yyyy-MM-dd')
+
+    const { data } = await supabase
+      .from('attendance')
+      .select('*, labour(name, type, daily_rate)')
+      .eq('project_id', projectId)
+      .gte('date', startStr)
+      .lte('date', endStr)
+
+    const newGrid: Record<string, WorkerRow> = {}
+
+    if (data) {
+      data.forEach((r: any) => {
+        const wId = r.labour_id
+        if (!newGrid[wId]) {
+          newGrid[wId] = {
+            worker_id: wId,
+            name: r.labour?.name || 'Unknown',
+            type: r.labour?.type || 'Worker',
+            default_rate: r.labour?.daily_rate || 0,
+            custom_rate: r.custom_rate || r.labour?.daily_rate || 0,
+            days: {}
+          }
+        }
+        
+        let status: AttendanceStatus = ''
+        if (r.days_worked === 1) status = 'P'
+        else if (r.days_worked === 0.5) status = 'H'
+        else if (r.days_worked === 0 && r.overtime_amount === 0) status = 'A' // Pure absent
+        else if (r.days_worked === 0 && r.overtime_amount > 0) status = 'A' // Absent but has OT
+
+        newGrid[wId].days[r.date] = {
+          status,
+          overtime_amount: Number(r.overtime_amount) || 0,
+          advance_amount: Number(r.advance_amount) || 0
+        }
+      })
+    }
+
+    setGridData(newGrid)
     setLoading(false)
   }
 
-  async function fetchRecords(start: string, end: string) {
-    const { data } = await supabase
-      .from('attendance')
-      .select('*, labour(name), projects(name)')
-      .gte('date', start)
-      .lte('date', end)
-      .order('date', { ascending: false })
-    setRecords(data || [])
+  // Interactions
+  const handleCellClick = (workerId: string, dateStr: string) => {
+    const current = gridData[workerId]?.days[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0 }
+    setPopupData(current)
+    setActivePopup({ worker_id: workerId, date: dateStr })
   }
 
-  const handleMarkAttendance = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!selectedWorkerId || !selectedProjectId) {
-      toast.error('Worker and Project are required')
-      return
+  const handleApplyPopup = () => {
+    if (!activePopup) return
+    const { worker_id, date } = activePopup
+    
+    setGridData(prev => {
+      const worker = prev[worker_id]
+      if (!worker) return prev
+      return {
+        ...prev,
+        [worker_id]: {
+          ...worker,
+          days: {
+            ...worker.days,
+            [date]: { ...popupData }
+          }
+        }
+      }
+    })
+    setActivePopup(null)
+  }
+
+  // Removed handleSaveOT as it's merged into popup logic
+
+  const addSelectedWorkersToGrid = () => {
+    setGridData(prev => {
+      const next = { ...prev }
+      labourers.filter(l => selectedWorkers.includes(l.id)).forEach(worker => {
+        if (!next[worker.id]) {
+          next[worker.id] = {
+            worker_id: worker.id,
+            name: worker.name,
+            type: worker.type || 'Worker',
+            default_rate: worker.daily_rate || 0,
+            custom_rate: worker.daily_rate || 0,
+            days: {}
+          }
+        }
+      })
+      return next
+    })
+    setShowAddWorker(false)
+    setSearchQuery('')
+    setSelectedWorkers([])
+  }
+
+  const removeWorkerFromGrid = (workerId: string) => {
+    setGridData(prev => {
+      const next = { ...prev }
+      delete next[workerId]
+      return next
+    })
+  }
+
+  const updateCustomRate = (workerId: string, rateStr: string) => {
+    setGridData(prev => {
+      const next = { ...prev }
+      if (next[workerId]) {
+        next[workerId].custom_rate = parseFloat(rateStr) || 0
+      }
+      return next
+    })
+  }
+
+  // Quick Actions
+  const markFullWeekPresent = (workerId?: string) => {
+    setGridData(prev => {
+      const next = { ...prev }
+      const targets = workerId ? [workerId] : Object.keys(next)
+      
+      targets.forEach(wId => {
+        const newDays = { ...next[wId].days }
+        weekDates.forEach(d => {
+          const dateStr = format(d, 'yyyy-MM-dd')
+          const currentDay = newDays[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0 }
+          if (currentDay.status === '') {
+            newDays[dateStr] = { ...currentDay, status: 'P' }
+          }
+        })
+        next[wId] = { ...next[wId], days: newDays }
+      })
+      return next
+    })
+  }
+
+  const clearWeek = (workerId?: string) => {
+    setGridData(prev => {
+      const next = { ...prev }
+      const targets = workerId ? [workerId] : Object.keys(next)
+      
+      targets.forEach(wId => {
+        const newDays = { ...next[wId].days }
+        weekDates.forEach(d => {
+          const dateStr = format(d, 'yyyy-MM-dd')
+          if (newDays[dateStr]) {
+            newDays[dateStr] = { ...newDays[dateStr], status: '', overtime_amount: 0, advance_amount: 0 }
+          }
+        })
+        next[wId] = { ...next[wId], days: newDays }
+      })
+      return next
+    })
+  }
+
+  const copyPreviousWeek = async () => {
+    if (!selectedProject) return
+    setLoading(true)
+    const prevStart = subWeeks(currentWeekStart, 1)
+    const startStr = format(prevStart, 'yyyy-MM-dd')
+    const endStr = format(endOfWeek(prevStart, { weekStartsOn: 0 }), 'yyyy-MM-dd')
+
+    const { data } = await supabase
+      .from('attendance')
+      .select('*, labour(name, type, daily_rate)')
+      .eq('project_id', selectedProject)
+      .gte('date', startStr)
+      .lte('date', endStr)
+
+    if (data && data.length > 0) {
+      setGridData(prev => {
+        const next = { ...prev }
+        data.forEach((r: any) => {
+          const wId = r.labour_id
+          if (!next[wId]) {
+            next[wId] = {
+              worker_id: wId,
+              name: r.labour?.name || 'Unknown',
+              type: r.labour?.type || 'Worker',
+              default_rate: r.labour?.daily_rate || 0,
+              custom_rate: r.custom_rate || r.labour?.daily_rate || 0,
+              days: {}
+            }
+          }
+          
+          const prevDateObj = new Date(r.date)
+          const dayIndex = prevDateObj.getDay()
+          const targetDateStr = format(weekDates[dayIndex], 'yyyy-MM-dd')
+
+          let status: AttendanceStatus = ''
+          if (r.days_worked === 1) status = 'P'
+          else if (r.days_worked === 0.5) status = 'H'
+          else if (r.days_worked === 0 && r.overtime_amount === 0) status = 'A'
+
+          if (!next[wId].days[targetDateStr] || next[wId].days[targetDateStr].status === '') {
+            next[wId].days[targetDateStr] = {
+              status,
+              overtime_amount: Number(r.overtime_amount) || 0,
+              advance_amount: Number(r.advance_amount) || 0
+            }
+          }
+        })
+        return next
+      })
+      toast.success('Previous week patterns copied')
+    } else {
+      toast.error('No data found in previous week')
     }
+    setLoading(false)
+  }
 
+  // Save Logic
+  const handleSave = async () => {
+    if (!selectedProject) return
     setSaving(true)
-    try {
-      // Check for duplicate attendance
-      const { data: existing } = await supabase
-        .from('attendance')
-        .select('id')
-        .eq('labour_id', selectedWorkerId)
-        .eq('project_id', selectedProjectId)
-        .eq('date', date)
-        .single()
+    
+    const startStr = format(currentWeekStart, 'yyyy-MM-dd')
+    const endStr = format(endOfWeek(currentWeekStart, { weekStartsOn: 0 }), 'yyyy-MM-dd')
+    const workerIds = Object.keys(gridData)
 
-      if (existing) {
-        toast.error('Attendance already marked for this worker on this date and project')
-        setSaving(false)
-        return
+    try {
+      if (workerIds.length > 0) {
+        await supabase.from('attendance')
+          .delete()
+          .in('labour_id', workerIds)
+          .eq('project_id', selectedProject)
+          .gte('date', startStr)
+          .lte('date', endStr)
       }
 
-      const daysWorked = status === 'full' ? 1 : status === 'half' ? 0.5 : 0
-      const { error } = await supabase
-        .from('attendance')
-        .insert([{
-          labour_id: selectedWorkerId,
-          project_id: selectedProjectId,
-          date: date,
-          days_worked: daysWorked,
-          overtime_hours: parseFloat(overtimeHours || '0'),
-          overtime_amount: parseFloat(overtimeAmount || '0'),
-          advance_amount: parseFloat(advanceAmount || '0'),
-          custom_rate: customRate ? parseFloat(customRate) : null,
-          notes: notes || null
-        }])
+      const inserts: any[] = []
+      Object.values(gridData).forEach(row => {
+        weekDates.forEach(d => {
+          const dateStr = format(d, 'yyyy-MM-dd')
+          const cell = row.days[dateStr] || { status: '', overtime_amount: 0 }
+          
+          // Save every day. If not P or H, it defaults to 0 (Absent)
+          inserts.push({
+            labour_id: row.worker_id,
+            project_id: selectedProject,
+            date: dateStr,
+            days_worked: cell.status === 'P' ? 1 : cell.status === 'H' ? 0.5 : 0,
+            overtime_hours: 0,
+            overtime_amount: cell.overtime_amount || 0,
+            custom_rate: row.custom_rate,
+            advance_amount: cell.advance_amount || 0,
+            notes: null
+          })
+        })
+      })
 
-      if (error) throw error
-      toast.success('Attendance marked successfully')
-      setSelectedWorkerId('')
-      setSelectedProjectId('')
-      setStatus('full')
-      setOvertimeHours('0')
-      setOvertimeAmount('0')
-      setAdvanceAmount('0')
-      setCustomRate('')
-      setNotes('')
-      fetchRecords(filterStart, filterEnd)
-    } catch (error: any) {
-      toast.error(error.message)
+      if (inserts.length > 0) {
+        const { error } = await supabase.from('attendance').insert(inserts)
+        if (error) throw error
+      }
+
+      toast.success('Week saved successfully')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save')
     } finally {
       setSaving(false)
     }
   }
 
-  const handleDeleteRecord = async () => {
-    if (!deleteRecordId) return
-    const { error } = await supabase.from('attendance').delete().eq('id', deleteRecordId)
-    if (error) toast.error(error.message)
-    else { toast.success('Record deleted'); fetchRecords(filterStart, filterEnd) }
-    setDeleteRecordId(null)
-  }
-
-  const handleEditRecord = (rec: any) => {
-    setEditingRecord(rec)
-    setEditStatus(rec.days_worked === 1 ? 'full' : rec.days_worked === 0.5 ? 'half' : 'overtime')
-    setEditOT(String(rec.overtime_hours || 0))
-    setEditOTAmt(String(rec.overtime_amount || 0))
-    setEditAdv(String(rec.advance_amount || 0))
-    setEditNotes(rec.notes || '')
-  }
-
-  const handleSaveEdit = async () => {
-    if (!editingRecord) return
-    const daysWorked = editStatus === 'full' ? 1 : editStatus === 'half' ? 0.5 : 0
-    const { error } = await supabase.from('attendance').update({
-      days_worked: daysWorked,
-      overtime_hours: parseFloat(editOT || '0'),
-      overtime_amount: parseFloat(editOTAmt || '0'),
-      advance_amount: parseFloat(editAdv || '0'),
-      notes: editNotes || null
-    }).eq('id', editingRecord.id)
-    if (error) toast.error(error.message)
-    else { toast.success('Updated'); setEditingRecord(null); fetchRecords(filterStart, filterEnd) }
-  }
-
-  const handleBulkMark = async () => {
-    if (!bulkProjectId) { toast.error('Select a project'); return }
-    setBulkMarking(true)
-    let success = 0, skip = 0
-    for (const worker of labourers) {
-      const { data: existing } = await supabase.from('attendance').select('id')
-        .eq('labour_id', worker.id).eq('project_id', bulkProjectId).eq('date', bulkDate).single()
-      if (existing) { skip++; continue }
-      await supabase.from('attendance').insert([{
-        labour_id: worker.id, project_id: bulkProjectId, date: bulkDate,
-        days_worked: 1, overtime_hours: 0, overtime_amount: 0, advance_amount: 0,
-        custom_rate: worker.daily_rate || 0, notes: null
-      }])
-      success++
-    }
-    toast.success(`Bulk marked: ${success} workers (${skip} skipped)`)
-    setBulkMarking(false)
-    fetchRecords(filterStart, filterEnd)
-  }
-
-  const handleWorkerChange = (value: string) => {
-    setSelectedWorkerId(value)
-    const worker = labourers.find(l => l.id === value)
-    if (worker) setCustomRate(worker.daily_rate.toString())
-  }
-
-  const setVisibleWeek = (baseDate: Date) => {
-    const nextStart = startOfWeek(baseDate, { weekStartsOn: 0 })
-    const nextEnd = endOfWeek(baseDate, { weekStartsOn: 0 })
-    const start = format(nextStart, 'yyyy-MM-dd')
-    const end = format(nextEnd, 'yyyy-MM-dd')
-    setFilterStart(start)
-    setFilterEnd(end)
-    fetchRecords(start, end)
-  }
-
-  const handlePreviousWeek = () => setVisibleWeek(addWeeks(new Date(filterStart), -1))
-
-  const handleNextWeek = () => setVisibleWeek(addWeeks(new Date(filterStart), 1))
-
-  const applySummaryPeriod = (p: 'week' | 'month' | 'custom') => {
-    setSummaryPeriod(p)
-    if (p === 'week') {
-      setSummaryStart(format(startOfWeek(new Date(), { weekStartsOn: 0 }), 'yyyy-MM-dd'))
-      setSummaryEnd(format(endOfWeek(new Date(), { weekStartsOn: 0 }), 'yyyy-MM-dd'))
-    } else if (p === 'month') {
-      const now = new Date()
-      setSummaryStart(format(new Date(now.getFullYear(), now.getMonth(), 1), 'yyyy-MM-dd'))
-      setSummaryEnd(format(new Date(now.getFullYear(), now.getMonth() + 1, 0), 'yyyy-MM-dd'))
-    }
-  }
-
-  const fetchSummary = async () => {
-    setSummaryLoading(true)
-    let q = supabase.from('attendance').select('*, labour(name, type, daily_rate), projects(name)')
-      .gte('date', summaryStart).lte('date', summaryEnd).order('date', { ascending: true })
-    if (selectedSummaryProject) q = q.eq('project_id', selectedSummaryProject)
-    const { data } = await q
-
-    // Group by project → worker
-    const map: Record<string, Record<string, { name: string; type: string; days: number; ot: number; advance: number; wage: number }>> = {}
-    ;(data || []).forEach((r: any) => {
-      const proj = r.projects?.name || 'Unknown'
-      const wid = r.labour_id
-      if (!map[proj]) map[proj] = {}
-      if (!map[proj][wid]) map[proj][wid] = { name: r.labour?.name || '?', type: r.labour?.type || '?', days: 0, ot: 0, advance: 0, wage: 0 }
-      map[proj][wid].days += Number(r.days_worked || 0)
-      map[proj][wid].ot += Number(r.overtime_hours || 0)
-      map[proj][wid].advance += Number(r.advance_amount || 0)
-      const rate = Number(r.custom_rate || r.labour?.daily_rate || 0)
-      map[proj][wid].wage += Number(r.days_worked || 0) * rate + Number(r.overtime_amount || 0)
+  // Calculations
+  const calcRowTotal = (row: WorkerRow) => {
+    let days = 0
+    let ot = 0
+    let adv = 0
+    Object.values(row.days).forEach(d => {
+      if (d.status === 'P') days += 1
+      else if (d.status === 'H') days += 0.5
+      ot += d.overtime_amount || 0
+      adv += d.advance_amount || 0
     })
-    setSummaryData(Object.entries(map).map(([project, workers]) => ({ project, workers: Object.values(workers) })))
-    setSummaryLoading(false)
+    return (days * row.custom_rate) + ot - adv
   }
 
-  const exportSummaryPDF = async () => {
-    if (summaryData.length === 0) {
-      toast.error('Generate summary first')
-      return
-    }
+  const totals = useMemo(() => {
+    let wCount = 0
+    let days = 0
+    let ot = 0
+    let cost = 0
 
-    const doc = new jsPDF()
-    drawPremiumHeader(doc, 'ATTENDANCE SUMMARY', `${format(new Date(summaryStart), 'dd MMM yyyy')} - ${format(new Date(summaryEnd), 'dd MMM yyyy')}`)
-
-    let startY = 54
-    summaryData.forEach((proj: any) => {
-      if (startY > 235) {
-        doc.addPage()
-        drawPremiumHeader(doc, 'ATTENDANCE SUMMARY', 'Continued')
-        startY = 54
-      }
-
-      doc.setTextColor(...PDF_COLORS.NAVY)
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(10)
-      doc.text(`PROJECT: ${proj.project}`, 14, startY)
-
-      autoTable(doc, {
-        startY: startY + 5,
-        head: [['Worker', 'Type', 'Days', 'OT Hrs', 'Advance', 'Total Wage']],
-        body: proj.workers.map((w: any) => [
-          w.name,
-          w.type,
-          w.days.toFixed(1),
-          w.ot.toFixed(1),
-          `Rs.${w.advance.toLocaleString()}`,
-          `Rs.${Math.round(w.wage).toLocaleString()}`
-        ]),
-        theme: 'grid',
-        headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: 8 },
-        bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 8 },
-        alternateRowStyles: { fillColor: PDF_COLORS.LIGHT },
-        styles: { cellPadding: 2.5 },
-        margin: { left: 14, right: 14 }
+    Object.values(gridData).forEach(row => {
+      let activeInWeek = false
+      Object.values(row.days).forEach(d => {
+        if (d.status !== '' || d.overtime_amount > 0 || d.advance_amount > 0) activeInWeek = true
+        if (d.status === 'P') days += 1
+        else if (d.status === 'H') days += 0.5
+        ot += d.overtime_amount || 0
       })
-
-      startY = (doc as any).lastAutoTable.finalY + 12
+      if (activeInWeek) wCount++
+      cost += calcRowTotal(row)
     })
 
-    drawPremiumFooter(doc)
-    
-    doc.save(`Attendance_Summary_${summaryStart}_to_${summaryEnd}.pdf`)
-    toast.success('Attendance summary PDF exported')
-  }
+    return { wCount, days, ot, cost }
+  }, [gridData])
 
-  const visibleWeekLabel = `${format(new Date(filterStart), 'dd MMM yyyy')} - ${format(new Date(filterEnd), 'dd MMM yyyy')}`
-
+  // UI Styles
   const PANEL = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
-  const GOLD = '#3b82f6'
-  const DIM = '#6b7280'
   const INPUT_ST = { backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0', borderRadius: '0.5rem' }
-  const SC_ST = { backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0' }
-  const { t } = useLang()
 
   return (
-    <>
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-white tracking-tight">{t.attendance.title}</h1>
-          <p className="mt-1 text-sm" style={{ color: DIM }}>{t.attendance.subtitle}</p>
+    <div className="space-y-6 pb-20">
+      {/* Top Bar Controller */}
+      <div style={PANEL} className="p-4 flex flex-col xl:flex-row gap-4 items-center justify-between sticky top-4 z-40 shadow-2xl">
+        <div className="flex flex-col sm:flex-row gap-4 items-center w-full xl:w-auto">
+          <select 
+            value={selectedProject} 
+            onChange={e => setSelectedProject(e.target.value)}
+            className="styled-select h-11 min-w-[200px]"
+          >
+            <option value="" disabled>Select Project...</option>
+            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+
+          <div className="flex items-center gap-2 bg-[#0d1018] rounded-xl border border-[#1e2435] p-1 h-11">
+            <button onClick={() => setCurrentWeekStart(subWeeks(currentWeekStart, 1))} className="p-2 hover:bg-white/5 rounded-lg text-zinc-400 transition-colors">
+              <ChevronLeft size={18} />
+            </button>
+            <div className="px-3 text-xs font-black uppercase tracking-widest text-white whitespace-nowrap">
+              {format(currentWeekStart, 'dd MMM')} - {format(endOfWeek(currentWeekStart, { weekStartsOn: 0 }), 'dd MMM yyyy')}
+            </div>
+            <button onClick={() => setCurrentWeekStart(addWeeks(currentWeekStart, 1))} className="p-2 hover:bg-white/5 rounded-lg text-zinc-400 transition-colors">
+              <ChevronRight size={18} />
+            </button>
+          </div>
         </div>
-        {/* View Toggle */}
-        <div className="flex gap-1 p-1 rounded-xl" style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435' }}>
-          <button onClick={() => setActiveView('mark')} className={`px-4 py-2 rounded-lg text-xs font-black uppercase transition-all ${activeView === 'mark' ? 'bg-blue-500 text-white' : 'text-zinc-500 hover:text-white'}`}>Mark Attendance</button>
-          <button onClick={() => { setActiveView('summary'); fetchSummary(); }} className={`px-4 py-2 rounded-lg text-xs font-black uppercase transition-all ${activeView === 'summary' ? 'bg-blue-500 text-white' : 'text-zinc-500 hover:text-white'}`}>Summary</button>
+
+        <div className="flex items-center gap-3 w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0 hide-scrollbar">
+          <button onClick={() => setShowAddWorker(true)} className="whitespace-nowrap h-11 px-4 rounded-xl text-xs font-black uppercase bg-[#1a1f2e] text-white border border-[#1e2435] flex items-center gap-2 hover:bg-[#23293b] transition-colors">
+            <Plus size={16} /> Add Worker
+          </button>
+          <button onClick={handleSave} disabled={saving || !selectedProject} className="whitespace-nowrap h-11 px-6 rounded-xl text-xs font-black uppercase bg-blue-500 text-white flex items-center gap-2 disabled:opacity-50 hover:bg-blue-600 shadow-[0_4px_14px_rgba(59,130,246,0.3)] transition-all">
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Week
+          </button>
         </div>
       </div>
 
-      {activeView === 'summary' ? (
-        /* Summary View */
-        <div className="space-y-6">
-          <div style={PANEL} className="p-6">
-            <div className="flex flex-col md:flex-row gap-4 mb-6">
-              <div className="flex gap-1">
-                {(['week', 'month', 'custom'] as const).map(p => (
-                  <button key={p} onClick={() => applySummaryPeriod(p)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase ${summaryPeriod === p ? 'bg-blue-500 text-white' : 'text-zinc-500'}`}>{p}</button>
-                ))}
-              </div>
-              <select value={selectedSummaryProject} onChange={e => setSelectedSummaryProject(e.target.value)} className="styled-select h-10">
-                <option value="">All Projects</option>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-              <button onClick={fetchSummary} className="px-4 py-2 rounded-lg text-xs font-black uppercase bg-blue-500 text-white">Generate</button>
-              <button onClick={exportSummaryPDF} className="px-4 py-2 rounded-lg text-xs font-black uppercase bg-[#1F2937] text-white border border-zinc-800">PDF</button>
-            </div>
-            {summaryLoading ? (
-              <div className="py-12 text-center"><Loader2 className="animate-spin mx-auto" style={{ color: GOLD }} /></div>
-            ) : summaryData.length === 0 ? (
-              <div className="py-12 text-center text-sm" style={{ color: DIM }}>No data for selected period</div>
-            ) : (
-              <div className="space-y-6">
-                {summaryData.map((proj: any, idx: number) => (
-                  <div key={idx} style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435' }} className="rounded-xl overflow-hidden">
-                    <div className="px-4 py-3 border-b flex justify-between" style={{ borderColor: '#1e2435' }}>
-                      <p className="font-black text-white">{proj.project}</p>
-                    </div>
-                    <Table>
-                      <TableHeader style={{ backgroundColor: '#111520' }}>
-                        <TableRow style={{ borderColor: '#1e2435' }}>
-                          <TableHead className="text-[10px] font-black uppercase" style={{ color: DIM }}>Worker</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase" style={{ color: DIM }}>Type</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase text-right" style={{ color: DIM }}>Days</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase text-right" style={{ color: DIM }}>OT Hrs</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase text-right" style={{ color: DIM }}>Advance</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase text-right" style={{ color: DIM }}>Total Wage</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {proj.workers.map((w: any, i: number) => (
-                          <TableRow key={i} style={{ borderColor: '#1e2435' }}>
-                            <TableCell className="font-bold text-white text-sm">{w.name}</TableCell>
-                            <TableCell className="text-xs" style={{ color: DIM }}>{w.type}</TableCell>
-                            <TableCell className="text-right font-black text-sm" style={{ color: GOLD }}>{w.days.toFixed(1)}</TableCell>
-                            <TableCell className="text-right font-black text-sm" style={{ color: '#a78bfa' }}>{w.ot.toFixed(1)}</TableCell>
-                            <TableCell className="text-right font-black text-sm text-red-400">₹{w.advance.toLocaleString()}</TableCell>
-                            <TableCell className="text-right font-black text-sm text-emerald-400">₹{Math.round(w.wage).toLocaleString()}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                ))}
-              </div>
-            )}
+      {/* Week Summary Panel */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: 'Active Workers', value: totals.wCount },
+          { label: 'Total Days', value: totals.days.toFixed(1) },
+          { label: 'Total Overtime', value: `₹${totals.ot.toLocaleString()}` },
+          { label: 'Week Labour Cost', value: `₹${totals.cost.toLocaleString()}` }
+        ].map((stat, i) => (
+          <div key={i} style={PANEL} className="p-4 flex flex-col justify-center shadow-lg">
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{stat.label}</p>
+            <p className="text-xl font-black text-white mt-1">{stat.value}</p>
           </div>
-        </div>
-      ) : (
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Form */}
-        <div className="lg:col-span-4">
-          <div style={PANEL} className="p-6">
-            <p className="text-sm font-black text-white mb-6 uppercase tracking-wide">{t.attendance.markAttendance}</p>
-            <form onSubmit={handleMarkAttendance} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>{t.attendance.worker}</label>
-                <select value={selectedWorkerId} onChange={e => handleWorkerChange(e.target.value)} className="styled-select">
-                  <option value="">{t.attendance.selectWorker}</option>
-                  {labourers.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
-              </div>
+        ))}
+      </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>{t.attendance.dailyRate}</label>
-                <input type="number" value={customRate} onChange={e => setCustomRate(e.target.value)}
-                  className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST} />
-              </div>
+      {/* Quick Actions & Controls */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => markFullWeekPresent()} className="px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-[10px] font-black uppercase tracking-widest border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors">Mark All Present</button>
+        <button onClick={copyPreviousWeek} className="px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-500 text-[10px] font-black uppercase tracking-widest border border-blue-500/20 hover:bg-blue-500/20 flex items-center gap-1 transition-colors"><Copy size={12}/> Copy Prev Week</button>
+      </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>{t.common.project}</label>
-                <select value={selectedProjectId} onChange={e => setSelectedProjectId(e.target.value)} className="styled-select">
-                  <option value="">{t.attendance.selectProject}</option>
-                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Date</label>
-                <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                  className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST} />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>{t.attendance.statusLabel}</label>
-                <select value={status} onChange={e => setStatus(e.target.value)} className="styled-select">
-                  <option value="full">{t.attendance.fullDay}</option>
-                  <option value="half">{t.attendance.halfDay}</option>
-                  <option value="overtime">{t.attendance.overtime}</option>
-                </select>
-              </div>
-
-              {status === 'overtime' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>OT Hours</label>
-                    <input type="number" value={overtimeHours} onChange={e => setOvertimeHours(e.target.value)}
-                      className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>OT Amount</label>
-                    <input type="number" value={overtimeAmount} onChange={e => setOvertimeAmount(e.target.value)}
-                      className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST} />
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Advance Given (₹)</label>
-                <input type="number" value={advanceAmount} onChange={e => setAdvanceAmount(e.target.value)}
-                  className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none border border-red-500/20" 
-                  style={{ ...INPUT_ST, borderColor: 'rgba(239,68,68,0.2)' }} />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Remarks (optional)</label>
-                <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any remarks..."
-                  className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST} />
-              </div>
-
-              <button type="submit" disabled={saving}
-                className="w-full h-12 rounded-xl text-sm font-black uppercase tracking-wide text-[#0a0c12] flex items-center justify-center gap-2 mt-2"
-                style={{ backgroundColor: GOLD, boxShadow: '0 4px 14px rgba(59,130,246,0.3)' }}>
-                {saving ? <Loader2 size={16} className="animate-spin text-[#0a0c12]" /> : null}
-                Mark Attendance
-              </button>
-            </form>
+      {/* Dynamic Grid */}
+      <div className="shadow-2xl">
+        {loading ? (
+          <div style={PANEL} className="py-24 flex justify-center"><Loader2 className="animate-spin text-blue-500" size={32} /></div>
+        ) : Object.keys(gridData).length === 0 ? (
+          <div style={PANEL} className="py-24 text-center flex flex-col items-center justify-center">
+            <p className="text-sm font-bold text-zinc-500 mb-6">No workers loaded for this week.</p>
+            <button onClick={() => { setShowAddWorker(true); setSelectedWorkers([]); }} className="h-11 px-6 rounded-xl text-xs font-black uppercase bg-[#1a1f2e] text-white border border-[#1e2435] hover:bg-[#23293b] transition-colors shadow-lg">Add Worker to Grid</button>
           </div>
-        </div>
-
-        {/* Records Table */}
-        <div className="lg:col-span-8">
-          <div style={PANEL} className="overflow-hidden h-full">
-            <div className="px-4 py-3 border-b" style={{ borderColor: '#1e2435' }}>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Visible Week</p>
-                  <p className="mt-1 text-sm font-bold text-white">{visibleWeekLabel}</p>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button onClick={() => setShowAllWorkers(v => !v)}
-                    className="h-8 px-3 rounded-lg text-[10px] font-black uppercase flex items-center gap-1"
-                    style={{ backgroundColor: showAllWorkers ? GOLD : '#1a1f2e', color: showAllWorkers ? '#0a0c12' : '#f0f0f0', border: '1px solid #1e2435' }}>
-                    <Users2 size={11} /> {showAllWorkers ? 'All Workers' : 'Present Only'}
-                  </button>
-                  <button onClick={handlePreviousWeek} className="h-8 px-3 rounded-lg text-[10px] font-black uppercase" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
-                  <button onClick={handleNextWeek} className="h-8 px-3 rounded-lg text-[10px] font-black uppercase" style={{ backgroundColor: GOLD, color: '#0a0c12' }}>Next →</button>
-                </div>
-              </div>
-            </div>
-            <div className="hidden md:block overflow-x-auto">
-              <Table>
-                <TableHeader style={{ backgroundColor: '#0d1018' }}>
-                  <TableRow style={{ borderColor: '#1e2435' }}>
-                    <TableHead className="py-3 px-4 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Worker</TableHead>
-                    {eachDayOfInterval({ start: new Date(filterStart), end: new Date(filterEnd) }).map(d => (
-                      <TableHead key={d.toISOString()} className="py-3 px-2 text-[10px] font-black uppercase tracking-widest text-center" style={{ color: DIM }}>
-                        {format(d, 'EEE')}<br/><span className="text-[8px] font-normal">{format(d, 'dd MMM')}</span>
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    Array(5).fill(0).map((_, i) => (
-                      <TableRow key={i} style={{ borderColor: '#1e2435' }}>
-                        <TableCell colSpan={8} className="h-14 animate-pulse" style={{ backgroundColor: '#1a1f2e' }} />
-                      </TableRow>
-                    ))
-                  ) : labourers.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="py-16 text-center">
-                        <div className="flex flex-col items-center gap-3">
-                          <TableIcon size={36} style={{ color: DIM, opacity: 0.3 }} />
-                          <p className="text-sm font-bold" style={{ color: DIM }}>No workers found</p>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    labourers.filter(worker => showAllWorkers || records.some(r => r.labour_id === worker.id)).map((worker) => {
-                      const workerRecords = records.filter(r => r.labour_id === worker.id)
-                      const weekDates = eachDayOfInterval({ start: new Date(filterStart), end: new Date(filterEnd) })
-                      
-                      return (
-                        <TableRow key={worker.id} style={{ borderColor: '#1e2435' }} className="hover:bg-white/[0.02] transition-colors">
-                          <TableCell className="px-4 py-2 font-bold text-white text-sm">
-                            {worker.name}
-                            <p className="text-[9px] text-zinc-500 font-normal">{worker.type || 'Worker'}</p>
-                          </TableCell>
-                          {weekDates.map(d => {
-                            const dateStr = format(d, 'yyyy-MM-dd')
-                            const rec = workerRecords.find(r => r.date === dateStr)
-                            const status = rec ? (rec.days_worked === 1 ? 'FULL' : rec.days_worked === 0.5 ? 'HALF' : 'ABSENT') : '-'
-                            
-                            return (
-                              <TableCell key={dateStr} className="px-1 py-1 text-center">
-                                {status === '-' ? (
-                                  <span className="text-zinc-700 text-xs">—</span>
-                                ) : (
-                                  <div className="flex flex-col items-center gap-0.5">
-                                    <Badge onClick={() => rec && handleEditRecord(rec)}
-                                      className={cn(
-                                        "text-[8px] font-black px-1.5 py-0.5 border-none cursor-pointer hover:opacity-80",
-                                        status === 'FULL' ? "bg-emerald-500/10 text-emerald-500" :
-                                        status === 'HALF' ? "bg-amber-500/10 text-amber-500" :
-                                        "bg-red-500/10 text-red-500"
-                                      )}>{status}</Badge>
-                                    {rec && <button onClick={() => setDeleteRecordId(rec.id)} className="text-red-500/30 hover:text-red-400 transition-colors mt-0.5"><Trash2 size={8} /></button>}
-                                  </div>
-                                )}
-                              </TableCell>
-                            )
-                          })}
-                        </TableRow>
-                      )
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Mobile Cards */}
-            <div className="flex flex-col gap-3 p-4 md:hidden">
-              {loading ? (
-                Array(5).fill(0).map((_, i) => (
-                  <div key={i} className="h-24 animate-pulse rounded-xl" style={{ backgroundColor: '#1a1f2e' }} />
-                ))
-              ) : labourers.length === 0 ? (
-                <div className="py-16 text-center text-sm font-bold" style={{ color: DIM }}>No workers found</div>
-              ) : (
-                labourers.filter(worker => records.some(r => r.labour_id === worker.id)).map((worker) => {
-                  const workerRecords = records.filter(r => r.labour_id === worker.id)
-                  const weekDates = eachDayOfInterval({ start: new Date(filterStart), end: new Date(filterEnd) })
-                  
-                  return (
-                    <div key={worker.id} className="rounded-xl p-4 flex flex-col gap-3 border" style={{ backgroundColor: '#0d1018', borderColor: '#1e2435' }}>
-                      <div className="flex justify-between items-start border-b pb-2" style={{ borderColor: '#1e2435' }}>
-                        <div>
-                          <p className="font-bold text-white text-sm">{worker.name}</p>
-                          <p className="text-[9px] text-zinc-500 font-normal mt-0.5">{worker.type || 'Worker'}</p>
-                        </div>
+        ) : (
+          <>
+            {/* Desktop View */}
+            <div className="hidden xl:block overflow-x-auto hide-scrollbar" style={PANEL}>
+              <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-[#1e2435] bg-[#0d1018]">
+                <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 sticky left-0 bg-[#0d1018] z-10 min-w-[200px]">Worker Details</th>
+                {weekDates.map(d => (
+                  <th key={d.toISOString()} className="py-4 px-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-center min-w-[55px]">
+                    {format(d, 'EEE')}<br/><span className="text-[9px] font-bold text-zinc-600 tracking-normal">{format(d, 'd MMM')}</span>
+                  </th>
+                ))}
+                <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-right min-w-[100px]">Custom Rate</th>
+                <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-right min-w-[100px]">Total (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.values(gridData).sort((a, b) => {
+                const getSortWeight = (type: string) => {
+                  const t = (type || '').toLowerCase()
+                  if (t.includes('mistry') || t.includes('skilled')) return 1
+                  if (t.includes('women') || t.includes('woman') || t.includes('labour')) return 2
+                  if (t.includes('helper')) return 3
+                  return 4
+                }
+                const wA = getSortWeight(a.type)
+                const wB = getSortWeight(b.type)
+                if (wA !== wB) return wA - wB
+                return a.name.localeCompare(b.name)
+              }).map(row => (
+                <tr key={row.worker_id} className="border-b border-[#1e2435] hover:bg-white/[0.02] group transition-colors">
+                  <td className="py-3 px-4 sticky left-0 bg-[#111520] group-hover:bg-[#1a1f2e] transition-colors z-10">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-bold text-white whitespace-nowrap">{row.name}</p>
+                        <p className="text-[10px] text-zinc-500 uppercase font-black tracking-wider mt-0.5">{row.type}</p>
                       </div>
-                      <div className="flex justify-between mt-1">
-                        {weekDates.map(d => {
-                          const dateStr = format(d, 'yyyy-MM-dd')
-                          const rec = workerRecords.find(r => r.date === dateStr)
-                          const status = rec ? (rec.days_worked === 1 ? 'F' : rec.days_worked === 0.5 ? 'H' : 'A') : '-'
-                          
-                          return (
-                            <div key={dateStr} className="flex flex-col items-center">
-                              <p className="text-[8px] font-bold text-zinc-500 uppercase">{format(d, 'EE')}</p>
-                              <div className={cn("w-6 h-6 rounded flex items-center justify-center mt-1 text-[10px] font-black", 
-                                status === 'F' ? "bg-emerald-500/10 text-emerald-500" : 
-                                status === 'H' ? "bg-amber-500/10 text-amber-500" : 
-                                status === 'A' ? "bg-red-500/10 text-red-500" : 
-                                "text-zinc-600"
-                              )}>
-                                {status}
-                              </div>
-                            </div>
-                          )
-                        })}
+                      <button onClick={() => removeWorkerFromGrid(row.worker_id)} className="opacity-0 group-hover:opacity-100 p-1.5 text-red-500/50 hover:text-red-500 hover:bg-red-500/10 rounded transition-all">
+                        <Trash2 size={14}/>
+                      </button>
+                    </div>
+                  </td>
+                  
+                  {weekDates.map(d => {
+                    const dateStr = format(d, 'yyyy-MM-dd')
+                    const cell = row.days[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0 }
+                    
+                    return (
+                      <td key={dateStr} className="py-2 px-1 text-center">
+                        <div 
+                          onClick={() => handleCellClick(row.worker_id, dateStr)}
+                          className={cn(
+                            "mx-auto w-11 h-11 rounded-xl flex flex-col items-center justify-center cursor-pointer select-none transition-all border-2 relative",
+                            cell.status === 'P' ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)]" :
+                            cell.status === 'H' ? "bg-amber-500/10 border-amber-500/30 text-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.2)]" :
+                            cell.status === 'A' ? "bg-red-500/10 border-red-500/30 text-red-500 shadow-[0_0_10px_rgba(239,68,68,0.2)]" :
+                            "bg-[#0d1018] border-[#1e2435] text-zinc-600 hover:border-zinc-500 hover:bg-[#1a1f2e]"
+                          )}
+                        >
+                          <div className="flex flex-col items-center">
+                            <span className="text-sm font-black leading-none">
+                              {cell.status || '-'}
+                            </span>
+                            {cell.advance_amount > 0 && (
+                              <span className="text-[9px] font-bold text-red-500 mt-0.5 leading-none">
+                                {cell.advance_amount}
+                              </span>
+                            )}
+                            {cell.overtime_amount > 0 && (
+                              <span className="text-[9px] font-bold text-amber-500 mt-0.5 leading-none">
+                                +{cell.overtime_amount}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    )
+                  })}
+                  
+                  <td className="py-3 px-4 text-right">
+                    <input 
+                      type="number" 
+                      value={row.custom_rate || ''} 
+                      onChange={e => updateCustomRate(row.worker_id, e.target.value)}
+                      className="w-20 h-9 text-right bg-[#0d1018] border border-[#1e2435] rounded-lg px-2 text-sm font-bold text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                    />
+                  </td>
+                  <td className="py-3 px-4 text-right text-sm font-black text-emerald-400 whitespace-nowrap">
+                    ₹{Math.round(calcRowTotal(row)).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile Card View */}
+        <div className="xl:hidden space-y-4">
+          {Object.values(gridData).sort((a, b) => a.name.localeCompare(b.name)).map(row => (
+            <div key={row.worker_id} style={PANEL} className="p-4 space-y-4">
+              <div className="flex justify-between items-start border-b border-[#1e2435] pb-3">
+                <div>
+                  <p className="text-sm font-black text-white">{row.name}</p>
+                  <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mt-1">{row.type}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="number" 
+                    placeholder="Rate"
+                    value={row.custom_rate || ''} 
+                    onChange={e => updateCustomRate(row.worker_id, e.target.value)}
+                    className="w-16 h-8 text-right bg-[#0d1018] border border-[#1e2435] rounded px-2 text-[10px] font-bold text-white outline-none"
+                  />
+                  <button onClick={() => removeWorkerFromGrid(row.worker_id)} className="p-2 text-red-500/50 hover:text-red-500 bg-red-500/5 rounded-lg transition-colors">
+                    <Trash2 size={14}/>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                {weekDates.map(d => {
+                  const dateStr = format(d, 'yyyy-MM-dd')
+                  const cell = row.days[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0 }
+                  return (
+                    <div key={dateStr} className="flex flex-col items-center gap-1">
+                      <span className="text-[8px] font-black text-zinc-600 uppercase">{format(d, 'EEE')}</span>
+                      <div 
+                        onClick={() => handleCellClick(row.worker_id, dateStr)}
+                        className={cn(
+                          "w-full h-10 rounded-lg flex flex-col items-center justify-center cursor-pointer transition-all border relative",
+                          cell.status === 'P' ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500" :
+                          cell.status === 'H' ? "bg-amber-500/10 border-amber-500/30 text-amber-500" :
+                          cell.status === 'A' ? "bg-red-500/10 border-red-500/30 text-red-500" :
+                          "bg-[#0d1018] border-[#1e2435] text-zinc-700"
+                        )}
+                      >
+                        <span className="text-xs font-black">{cell.status || '-'}</span>
+                        {(cell.advance_amount > 0 || cell.overtime_amount > 0) && (
+                          <div className="absolute -top-1.5 -right-1.5 flex flex-col gap-0.5">
+                             {cell.overtime_amount > 0 && <span className="w-4 h-4 bg-amber-500 text-[7px] text-white rounded-full flex items-center justify-center font-bold">OT</span>}
+                             {cell.advance_amount > 0 && <span className="w-4 h-4 bg-red-500 text-[7px] text-white rounded-full flex items-center justify-center font-bold">AD</span>}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )
-                })
+                })}
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-[8px] font-black text-zinc-600 uppercase">Total</span>
+                  <div className="w-full h-10 rounded-lg bg-emerald-500/5 border border-emerald-500/20 flex items-center justify-center">
+                    <span className="text-[10px] font-black text-emerald-400">₹{Math.round(calcRowTotal(row))}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </>
+    )}
+  </div>
+
+      {/* Add Worker Modal */}
+      {showAddWorker && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowAddWorker(false)}>
+          <div className="rounded-2xl w-full max-w-sm shadow-2xl animate-in zoom-in-95 flex flex-col" style={{ ...PANEL, maxHeight: '85vh' }} onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center p-6 pb-4 border-b border-[#1e2435]">
+              <p className="text-sm font-black text-white uppercase tracking-wide">Add Workers to Grid</p>
+              <button onClick={() => setShowAddWorker(false)} className="text-zinc-500 hover:text-white p-1 rounded hover:bg-white/5 transition-colors"><X size={18}/></button>
+            </div>
+            
+            <div className="p-6 pt-4 pb-2">
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                <input 
+                  type="text" 
+                  placeholder="Search worker name..." 
+                  value={searchQuery}
+                  autoFocus
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full h-11 pl-10 pr-3 rounded-xl text-sm font-semibold outline-none" 
+                  style={INPUT_ST} 
+                />
+              </div>
+            </div>
+
+            <div className="overflow-y-auto px-6 pb-4 flex-1 space-y-1.5 custom-scrollbar">
+              {labourers
+                .filter(l => !gridData[l.id]) // Only show ones not in grid
+                .filter(l => l.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                .map(l => (
+                  <button 
+                    key={l.id} 
+                    onClick={() => {
+                      if (selectedWorkers.includes(l.id)) {
+                        setSelectedWorkers(prev => prev.filter(id => id !== l.id))
+                      } else {
+                        setSelectedWorkers(prev => [...prev, l.id])
+                      }
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left",
+                      selectedWorkers.includes(l.id) 
+                        ? "bg-blue-500/10 border-blue-500/50" 
+                        : "bg-[#0d1018] hover:bg-[#1a1f2e] border-[#1e2435] hover:border-zinc-700"
+                    )}
+                  >
+                    <div className={cn(
+                      "w-5 h-5 rounded-md border flex items-center justify-center transition-colors shrink-0",
+                      selectedWorkers.includes(l.id) 
+                        ? "bg-blue-500 border-blue-500" 
+                        : "bg-[#111520] border-[#1e2435]"
+                    )}>
+                      {selectedWorkers.includes(l.id) && <CheckCircle2 size={12} className="text-white" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-white">{l.name}</p>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-black mt-1">{l.type} • ₹{l.daily_rate}/day</p>
+                    </div>
+                  </button>
+              ))}
+              {labourers.filter(l => !gridData[l.id]).length === 0 && (
+                <div className="py-8 text-center bg-[#0d1018] rounded-xl border border-[#1e2435]">
+                  <CheckCircle2 size={24} className="mx-auto text-emerald-500 mb-2" />
+                  <p className="text-xs font-bold text-zinc-500">All available workers<br/>are already in the grid.</p>
+                </div>
               )}
             </div>
+            
+            <div className="p-6 border-t border-[#1e2435] bg-[#111520] rounded-b-2xl">
+              <button 
+                disabled={selectedWorkers.length === 0}
+                onClick={addSelectedWorkersToGrid} 
+                className="w-full h-12 rounded-xl text-xs font-black uppercase bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add {selectedWorkers.length} Worker{selectedWorkers.length !== 1 ? 's' : ''} to Grid
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Attendance Detail Popup */}
+      {activePopup && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setActivePopup(null)}>
+          <div className="rounded-2xl p-6 w-full max-w-[320px] space-y-6 shadow-2xl animate-in zoom-in-95" style={PANEL} onClick={e => e.stopPropagation()}>
+            <div className="text-center space-y-1 border-b border-[#1e2435] pb-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Attendance Details</p>
+              <p className="text-sm font-bold text-white">{gridData[activePopup.worker_id]?.name}</p>
+              <p className="text-[10px] text-zinc-500 font-bold">{format(new Date(activePopup.date), 'EEEE, dd MMM')}</p>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Status</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { val: 'P', label: 'P', color: 'bg-emerald-500' },
+                    { val: 'H', label: 'H', color: 'bg-amber-500' },
+                    { val: 'A', label: 'A', color: 'bg-red-500' },
+                    { val: '', label: 'None', color: 'bg-zinc-700' }
+                  ].map(s => {
+                    const isDisabled = popupData.status === 'P' && (s.val === 'H' || s.val === 'A');
+                    return (
+                      <button
+                        key={s.val}
+                        disabled={isDisabled}
+                        onClick={() => setPopupData({ ...popupData, status: s.val as AttendanceStatus })}
+                        className={cn(
+                          "h-10 rounded-lg text-xs font-black transition-all border-2",
+                          popupData.status === s.val 
+                            ? `${s.color} border-white text-white` 
+                            : "bg-[#0d1018] border-[#1e2435] text-zinc-500 hover:border-zinc-600",
+                          isDisabled && "opacity-20 cursor-not-allowed"
+                        )}
+                      >
+                        {s.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">OT (₹)</label>
+                  <input 
+                    type="number" 
+                    disabled={popupData.status === 'P'}
+                    value={popupData.overtime_amount || ''}
+                    onChange={e => setPopupData({ ...popupData, overtime_amount: parseFloat(e.target.value) || 0 })}
+                    className={cn("w-full h-11 text-center font-bold rounded-xl outline-none transition-all", popupData.status === 'P' && "opacity-20")}
+                    style={INPUT_ST} 
+                    placeholder="0"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Deduction (₹)</label>
+                  <input 
+                    type="number" 
+                    value={popupData.advance_amount || ''}
+                    onChange={e => setPopupData({ ...popupData, advance_amount: parseFloat(e.target.value) || 0 })}
+                    className="w-full h-11 text-center font-bold rounded-xl outline-none text-red-500" 
+                    style={INPUT_ST} 
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={() => setActivePopup(null)} className="flex-1 h-11 rounded-xl text-xs font-black uppercase bg-zinc-800 text-white hover:bg-zinc-700 transition-colors">Cancel</button>
+              <button onClick={handleApplyPopup} className="flex-1 h-11 rounded-xl text-xs font-black uppercase bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20">Apply</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
-    {/* Delete Confirm Modal */}
-    {deleteRecordId && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setDeleteRecordId(null)}>
-        <div className="rounded-2xl p-6 w-full max-w-xs space-y-4" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }} onClick={e => e.stopPropagation()}>
-          <p className="text-base font-black text-white">Delete Record?</p>
-          <p className="text-sm" style={{ color: '#6b7280' }}>This attendance record will be permanently removed.</p>
-          <div className="flex gap-3 pt-2">
-            <button onClick={() => setDeleteRecordId(null)} className="flex-1 h-10 rounded-xl text-xs font-black uppercase" style={{ backgroundColor: '#1a1f2e', color: '#6b7280', border: '1px solid #1e2435' }}>Cancel</button>
-            <button onClick={handleDeleteRecord} className="flex-1 h-10 rounded-xl text-xs font-black uppercase" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>Delete</button>
-          </div>
-        </div>
-      </div>
-    )}
-    {/* Edit Attendance Record Modal */}
-    {editingRecord && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setEditingRecord(null)}>
-        <div className="rounded-2xl p-6 w-full max-w-sm space-y-4" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }} onClick={e => e.stopPropagation()}>
-          <p className="text-sm font-black text-white uppercase tracking-wide">Edit Attendance</p>
-          <p className="text-xs font-bold" style={{ color: '#6b7280' }}>{editingRecord.labour?.name} — {editingRecord.date}</p>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Status</label>
-            <select value={editStatus} onChange={e => setEditStatus(e.target.value)} className="styled-select">
-              <option value="full">Full Day</option>
-              <option value="half">Half Day</option>
-              <option value="overtime">Overtime Only</option>
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>OT Hours</label>
-              <input type="number" value={editOT} onChange={e => setEditOT(e.target.value)} className="w-full h-10 px-3 rounded-xl text-sm outline-none font-semibold" style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }} />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>OT Amount</label>
-              <input type="number" value={editOTAmt} onChange={e => setEditOTAmt(e.target.value)} className="w-full h-10 px-3 rounded-xl text-sm outline-none font-semibold" style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }} />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Advance Given (₹)</label>
-            <input type="number" value={editAdv} onChange={e => setEditAdv(e.target.value)} className="w-full h-10 px-3 rounded-xl text-sm outline-none font-semibold" style={{ backgroundColor: '#0d1018', border: '1px solid rgba(239,68,68,0.3)', color: '#f0f0f0' }} />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Remarks</label>
-            <input type="text" value={editNotes} onChange={e => setEditNotes(e.target.value)} className="w-full h-10 px-3 rounded-xl text-sm outline-none font-semibold" style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }} />
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button onClick={() => setEditingRecord(null)} className="flex-1 h-10 rounded-xl text-xs font-black uppercase" style={{ backgroundColor: '#1a1f2e', color: '#6b7280', border: '1px solid #1e2435' }}>Cancel</button>
-            <button onClick={handleSaveEdit} className="flex-1 h-10 rounded-xl text-xs font-black uppercase text-[#0a0c12]" style={{ backgroundColor: '#3b82f6' }}>Save Changes</button>
-          </div>
-        </div>
-      </div>
-    )}
-    </>
   )
 }

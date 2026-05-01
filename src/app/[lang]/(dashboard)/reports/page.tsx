@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { format, startOfWeek as import_startOfWeek, endOfWeek as import_endOfWeek } from 'date-fns'
-import { FileText, Download, Filter, Loader2 } from 'lucide-react'
+import { FileText, Download, Filter, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
@@ -15,12 +15,12 @@ const GOLD = '#3b82f6'
 const DIM = '#6b7280'
 const INPUT_ST = { backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0', borderRadius: '0.5rem' }
 
-type ReportType = 'labour' | 'materials' | 'revenue' | 'extra_work'
+type ReportType = 'labour' | 'materials' | 'revenue' | 'extra_work' | 'attendance_cost'
 
 export default function ReportsPage() {
   const supabase = createClient()
   const [projects, setProjects] = useState<any[]>([])
-  const [reportType, setReportType] = useState<ReportType>('labour')
+  const [reportType, setReportType] = useState<ReportType>('materials')
   const [projectId, setProjectId] = useState('')
   const [startDate, setStartDate] = useState(format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd'))
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'))
@@ -36,20 +36,21 @@ export default function ReportsPage() {
 
   // Auto-set dates
   useEffect(() => {
-    if (reportType === 'labour') {
+    if (reportType === 'labour' || reportType === 'attendance_cost') {
       const now = new Date()
       setStartDate(format(import_startOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd'))
       setEndDate(format(import_endOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd'))
     } else {
       if (projectId && projects.length > 0) {
         const p = projects.find(x => x.id === projectId)
-        if (p && p.created_at) setStartDate(format(new Date(p.created_at), 'yyyy-MM-dd'))
-      } else if (projects.length > 0) {
-        const dates = projects.map(p => new Date(p.created_at).getTime())
-        const earliest = Math.min(...dates)
-        if (!isNaN(earliest)) setStartDate(format(new Date(earliest), 'yyyy-MM-dd'))
+        if (p && p.created_at) {
+          // Use a very early date just in case
+          setStartDate('2020-01-01')
+        }
+      } else {
+        setStartDate('2020-01-01')
       }
-      setEndDate(format(new Date(), 'yyyy-MM-dd'))
+      setEndDate(format(new Date(new Date().getFullYear() + 1, 11, 31), 'yyyy-MM-dd'))
     }
   }, [reportType, projectId, projects])
 
@@ -70,19 +71,33 @@ export default function ReportsPage() {
     setLoading(true)
     setPage(0)
     let q: any
-    if (reportType === 'labour') {
-      q = supabase.from('payments').select('date, amount, payment_type, notes, labour(name)').gte('date', startDate).lte('date', endDate).order('date', { ascending: false })
-    } else if (reportType === 'materials') {
-      q = supabase.from('materials').select('date, name, quantity, unit, total_amount, notes, projects(name)').gte('date', startDate).lte('date', endDate).order('date', { ascending: false })
+    if (reportType === 'materials') {
+      q = supabase.from('materials').select('date, name, quantity, unit, total_amount, notes, projects(name)').order('date', { ascending: false })
       if (projectId) q = q.eq('project_id', projectId)
     } else if (reportType === 'revenue') {
-      q = supabase.from('income').select('date, amount, notes, projects(name)').gte('date', startDate).lte('date', endDate).order('date', { ascending: false })
+      q = supabase.from('income').select('date, amount, notes, projects(name)').order('date', { ascending: false })
       if (projectId) q = q.eq('project_id', projectId)
     } else if (reportType === 'extra_work') {
-      q = supabase.from('extra_work').select('date, work_name, amount, notes, projects(name)').gte('date', startDate).lte('date', endDate).order('date', { ascending: false })
+      q = supabase.from('extra_work').select('date, work_name, amount, notes, projects(name)').order('date', { ascending: false })
       if (projectId) q = q.eq('project_id', projectId)
     }
     const { data: rows } = await q
+    
+    // Transform attendance_cost to standard format
+    if (reportType === 'attendance_cost' && rows) {
+      setData(rows.map((r: any) => {
+        const rate = r.custom_rate || r.labour?.daily_rate || 0
+        const gross = (Number(r.days_worked || 0) * rate) + Number(r.overtime_amount || 0)
+        return {
+          ...r,
+          amount: gross,
+          description: `${r.labour?.name || '—'} · ${r.projects?.name || '—'} (${r.days_worked} days)`
+        }
+      }))
+      setLoading(false)
+      return
+    }
+
     setData(rows || [])
     setLoading(false)
   }
@@ -91,6 +106,7 @@ export default function ReportsPage() {
 
   const getLabel = (r: any) => {
     if (reportType === 'labour') return `${r.labour?.name || '—'} (${r.payment_type || 'Cash'})`
+    if (reportType === 'attendance_cost') return r.description
     if (reportType === 'materials') return `${r.name} · ${r.projects?.name || '—'}`
     if (reportType === 'revenue') return r.projects?.name || '—'
     return `${r.work_name} · ${r.projects?.name || '—'}`
@@ -98,8 +114,9 @@ export default function ReportsPage() {
 
   const exportPDF = async () => {
     const doc = new jsPDF()
-    const titles: Record<ReportType, string> = { labour: 'LABOUR PAYMENTS', materials: 'MATERIALS REPORT', revenue: 'REVENUE REPORT', extra_work: 'EXTRA WORK REPORT' }
-    drawPremiumHeader(doc, titles[reportType], `${format(new Date(startDate), 'dd MMM')} - ${format(new Date(endDate), 'dd MMM yyyy')}`)
+    const titles: Record<ReportType, string> = { labour: 'LABOUR PAYMENTS', materials: 'MATERIALS REPORT', revenue: 'REVENUE REPORT', extra_work: 'EXTRA WORK REPORT', attendance_cost: 'ATTENDANCE COST REPORT' }
+    const subtitle = 'ALL TIME REPORT'
+    drawPremiumHeader(doc, titles[reportType], subtitle)
     
     let head = [['#', 'Date', 'Description', 'Notes', 'Amount']]
     let body = data.map((r, i) => [i + 1, format(new Date(r.date), 'dd/MM/yyyy'), getLabel(r), r.notes || '—', `Rs.${Number(r.amount || r.total_amount || 0).toLocaleString()}`])
@@ -144,23 +161,25 @@ export default function ReportsPage() {
     })
     drawPremiumFooter(doc)
     
-    doc.save(`${reportType}-report-${startDate}-to-${endDate}.pdf`)
+    const fileNameSuffix = reportType === 'labour' ? `${startDate}-to-${endDate}` : 'all-time'
+    doc.save(`${reportType}-report-${fileNameSuffix}.pdf`)
     toast.success('PDF exported')
   }
 
   const exportExcel = () => {
-    const rows: any[][] = [['SRI SAI CONSTRUCTIONS - Report'], [`Type: ${reportType} | ${startDate} to ${endDate}`], [], ['#', 'Date', 'Description', 'Notes', 'Amount']]
+    const periodStr = 'All Time'
+    const rows: any[][] = [['SRI SAI CONSTRUCTIONS - Report'], [`Type: ${reportType} | ${periodStr}`], [], ['#', 'Date', 'Description', 'Notes', 'Amount']]
     data.forEach((r, i) => rows.push([i + 1, format(new Date(r.date), 'dd/MM/yyyy'), getLabel(r), r.notes || '—', Number(r.amount || r.total_amount || 0)]))
     rows.push(['', '', '', 'TOTAL', getTotal()])
     const ws = XLSX.utils.aoa_to_sheet(rows)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Report')
-    XLSX.writeFile(wb, `${reportType}-report-${startDate}.xlsx`)
+    const fileNameSuffix = reportType === 'labour' ? startDate : 'all-time'
+    XLSX.writeFile(wb, `${reportType}-report-${fileNameSuffix}.xlsx`)
     toast.success('Excel exported')
   }
 
   const reportTypes: { value: ReportType, label: string }[] = [
-    { value: 'labour', label: 'Labour Payments' },
     { value: 'materials', label: 'Materials' },
     { value: 'revenue', label: 'Revenue' },
     { value: 'extra_work', label: 'Extra Work' },
@@ -177,14 +196,14 @@ export default function ReportsPage() {
       <div className="rounded-2xl p-5 space-y-4" style={PANEL}>
         <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Filter Options</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="col-span-2 md:col-span-1 space-y-1.5">
+          <div className={`col-span-2 md:col-span-1 space-y-1.5 ${(reportType !== 'labour' && reportType !== 'attendance_cost') ? 'md:col-span-2' : ''}`}>
             <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Report Type</label>
             <select value={reportType} onChange={e => setReportType(e.target.value as ReportType)}
               className="w-full h-10 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST}>
               {reportTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </div>
-          <div className="space-y-1.5">
+          <div className={`space-y-1.5 md:col-span-3`}>
             <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Project (optional)</label>
             <select value={projectId} onChange={e => setProjectId(e.target.value)}
               className="w-full h-10 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST}>
@@ -192,22 +211,9 @@ export default function ReportsPage() {
               {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>From</label>
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full h-10 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST} />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>To</label>
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full h-10 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST} />
-          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 pt-1">
-          {reportType === 'labour' && (
-            <div className="flex items-center gap-2 mr-4">
-              <button onClick={setThisWeek} className="px-3 py-1.5 text-xs font-bold rounded-lg" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>This Week</button>
-              <button onClick={setPrevWeek} className="px-3 py-1.5 text-xs font-bold rounded-lg" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Prev Week</button>
-            </div>
-          )}
+
           <button onClick={fetchReport} disabled={loading}
             className="h-10 px-6 rounded-xl text-sm font-black uppercase flex items-center gap-2 disabled:opacity-50"
             style={{ backgroundColor: GOLD, color: '#0a0c12' }}>

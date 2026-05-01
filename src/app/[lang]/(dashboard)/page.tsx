@@ -30,13 +30,17 @@ export default function DashboardPage() {
     try {
       const { count: projectCount } = await supabase.from('projects').select('*', { count: 'exact', head: true })
       const { data: incomeData } = await supabase.from('income').select('amount, date')
-      const { data: paymentData } = await supabase.from('payments').select('amount, date')
+      const { data: attAllData } = await supabase.from('attendance').select('date, days_worked, custom_rate, overtime_amount, labour(daily_rate)')
       const { data: materialData } = await supabase.from('materials').select('total_amount, date')
       const { data: extraWorkData } = await supabase.from('extra_work').select('amount, date')
       const { data: projectsData } = await supabase.from('projects').select('id, name')
 
       const totalRevenue = incomeData?.reduce((a, c) => a + Number(c.amount), 0) || 0
-      const totalLabourCost = paymentData?.reduce((a, c) => a + Number(c.amount), 0) || 0
+      const totalLabourCost = attAllData?.reduce((a, c) => {
+        const l: any = c.labour
+        const rate = c.custom_rate || (Array.isArray(l) ? l[0]?.daily_rate : l?.daily_rate) || 0
+        return a + (Number(c.days_worked) * Number(rate)) + Number(c.overtime_amount || 0)
+      }, 0) || 0
       const totalMaterialCost = materialData?.reduce((a, c) => a + Number(c.total_amount || 0), 0) || 0
       const totalExtraWork = extraWorkData?.reduce((a, c) => a + Number(c.amount), 0) || 0
       const netCash = totalRevenue - (totalLabourCost + totalMaterialCost + totalExtraWork)
@@ -51,7 +55,11 @@ export default function DashboardPage() {
       const monthly = months.map(m => ({
         month: m.label,
         Revenue: incomeData?.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.amount), 0) || 0,
-        Labour: paymentData?.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.amount), 0) || 0,
+        Labour: attAllData?.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => {
+          const l: any = c.labour
+          const rate = c.custom_rate || (Array.isArray(l) ? l[0]?.daily_rate : l?.daily_rate) || 0
+          return a + (Number(c.days_worked) * Number(rate)) + Number(c.overtime_amount || 0)
+        }, 0) || 0,
         Material: materialData?.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.total_amount || 0), 0) || 0,
         ExtraWork: extraWorkData?.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.amount), 0) || 0,
       }))
@@ -108,7 +116,7 @@ export default function DashboardPage() {
       if (type === 'REVENUE') {
         q = supabase.from('income').select('date, amount, notes, projects(name)').order('date', { ascending: false })
       } else if (type === 'LABOUR') {
-        q = supabase.from('payments').select('date, amount, payment_type, notes, labour(name)').order('date', { ascending: false })
+        q = supabase.from('attendance').select('date, days_worked, custom_rate, overtime_amount, labour(name, daily_rate), projects(name)').order('date', { ascending: false })
       } else if (type === 'MATERIAL') {
         q = supabase.from('materials').select('date, total_amount, name, quantity, unit, notes, projects(name)').order('date', { ascending: false })
       } else if (type === 'EXTRA_WORK') {
@@ -224,7 +232,8 @@ export default function DashboardPage() {
           <div className="px-5 py-4 border-b" style={{ borderColor: '#1e2435' }}>
             <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Project-Wise Breakdown</p>
           </div>
-          <div className="overflow-x-auto">
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead style={{ backgroundColor: '#0d1018' }}>
                 <tr style={{ borderBottom: '1px solid #1e2435' }}>
@@ -245,6 +254,32 @@ export default function DashboardPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="md:hidden divide-y divide-[#1e2435]">
+            {projectBreakdown.map((p, i) => (
+              <div key={i} className="p-4 space-y-3">
+                <div className="flex justify-between items-center">
+                  <p className="font-bold text-white">{p.name}</p>
+                  <p className="text-sm font-black" style={{ color: p.net >= 0 ? '#22c55e' : '#ef4444' }}>₹{p.net.toLocaleString()}</p>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Revenue</p>
+                    <p className="text-xs font-bold text-[#22c55e]">₹{p.revenue.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Material</p>
+                    <p className="text-xs font-bold text-[#60a5fa]">₹{p.material.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Extra</p>
+                    <p className="text-xs font-bold text-[#f59e0b]">₹{p.extraWork.toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -286,7 +321,7 @@ export default function DashboardPage() {
                       <TableCell className="text-xs" style={{ color: '#6b7280' }}>{format(new Date(row.date), 'dd MMM yyyy')}</TableCell>
                       <TableCell className="font-bold text-white text-sm">
                         {detailsModalType === 'REVENUE' ? `${row.projects?.name || 'General'} ${row.notes ? '· ' + row.notes : ''}` :
-                         detailsModalType === 'LABOUR' ? `${row.labour?.name || 'Unknown'} ${row.payment_type ? '· ' + row.payment_type : ''}` :
+                        detailsModalType === 'LABOUR' ? `${row.labour?.name || 'Unknown'} · ${row.projects?.name || 'No Site'}` :
                          detailsModalType === 'MATERIAL' ? `${row.name} · ${row.projects?.name || 'No Site'}` :
                          `${row.work_name} · ${row.projects?.name || 'No Site'}`}
                       </TableCell>
@@ -294,7 +329,9 @@ export default function DashboardPage() {
                       <TableCell className="text-xs max-w-[120px] truncate" style={{ color: '#6b7280' }}>
                         {detailsModalType === 'REVENUE' ? '—' : (row.notes || '—')}
                       </TableCell>
-                      <TableCell className="text-right font-black text-sm" style={{ color: '#3b82f6' }}>₹{Number(row.amount || row.total_amount || 0).toLocaleString()}</TableCell>
+                      <TableCell className="text-right font-black text-sm" style={{ color: '#3b82f6' }}>
+                        ₹{Number(row.amount || row.total_amount || (row.days_worked * (row.custom_rate || row.labour?.daily_rate || 0) + (row.overtime_amount || 0))).toLocaleString()}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

@@ -49,27 +49,35 @@ export default function ExportCalculationPage() {
       if (selectedProjectId) extraQuery = extraQuery.eq('project_id', selectedProjectId)
       const { data: extraData } = await extraQuery
 
-      // Group workers
-      const workerMap = new Map()
+      // Group by Week
+      const weekMap = new Map()
       attData?.forEach(att => {
-        const wid = att.labour_id
-        if (!workerMap.has(wid)) {
-          workerMap.set(wid, { worker: att.labour, days: 0, gross: 0, advances: 0 })
+        const d = new Date(att.date)
+        const sw = startOfWeek(d, { weekStartsOn: 0 })
+        const ew = endOfWeek(d, { weekStartsOn: 0 })
+        const key = format(sw, 'yyyy-MM-dd')
+        
+        if (!weekMap.has(key)) {
+          weekMap.set(key, { 
+            period: `${format(sw, 'dd MMM')} - ${format(ew, 'dd MMM yyyy')}`,
+            days: 0, 
+            gross: 0,
+            sortKey: sw.getTime()
+          })
         }
-        const entry = workerMap.get(wid)
+        const entry = weekMap.get(key)
         entry.days += Number(att.days_worked)
-        const rate = att.custom_rate || att.labour.daily_rate
+        const rate = att.custom_rate || att.labour?.daily_rate || 0
         entry.gross += (Number(att.days_worked) * Number(rate)) + Number(att.overtime_amount || 0)
-        entry.advances += Number(att.advance_amount || 0)
       })
-
-      const workers = Array.from(workerMap.values())
-      const totalLabourCost = workers.reduce((a, w) => a + w.gross, 0)
+      
+      const weeklySummaries = Array.from(weekMap.values()).sort((a: any, b: any) => a.sortKey - b.sortKey)
+      const totalLabourCost = weeklySummaries.reduce((a, w) => a + w.gross, 0)
       const totalMaterialCost = (matData || []).reduce((a: number, m: any) => a + Number(m.total_amount || 0), 0)
       const totalExtraWorkCost = (extraData || []).reduce((a: number, e: any) => a + Number(e.amount || 0), 0)
 
       setReportData({
-        workers,
+        weeklySummaries,
         materials: matData || [],
         extraWork: extraData || [],
         totalLabourCost,
@@ -87,7 +95,7 @@ export default function ExportCalculationPage() {
 
   const exportPDF = () => {
     if (!reportData) return
-    const { workers, materials, totalLabourCost, totalMaterialCost, grandTotal, project } = reportData
+    const { weeklySummaries, materials, totalLabourCost, totalMaterialCost, grandTotal, project } = reportData
     const doc = new jsPDF()
 
     drawPremiumHeader(doc, 'EXPORT CALCULATION', '(COMBINED REPORT)')
@@ -108,9 +116,9 @@ export default function ExportCalculationPage() {
 
     autoTable(doc, {
       startY: y,
-      head: [['S.No', 'Worker Name', 'Role', 'Days', 'Gross (Rs.)']],
-      body: workers.map((w: any, i: number) => [
-        i + 1, w.worker.name, w.worker.type || '-', w.days.toFixed(1), `Rs. ${w.gross.toLocaleString()}`
+      head: [['S.No', 'Week Period', 'Total Man-Days', 'Total Gross (Rs.)']],
+      body: weeklySummaries.map((w: any, i: number) => [
+        i + 1, w.period, w.days.toFixed(1), `Rs. ${w.gross.toLocaleString()}`
       ]),
       foot: [['', '', '', 'TOTAL', `Rs. ${totalLabourCost.toLocaleString()}`]],
       theme: 'grid',
@@ -268,7 +276,7 @@ export default function ExportCalculationPage() {
                 <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Labour Cost</p>
               </div>
               <p className="text-2xl font-black text-white">₹ {reportData.totalLabourCost.toLocaleString()}</p>
-              <p className="text-xs text-zinc-500 mt-1">{reportData.workers.length} workers</p>
+              <p className="text-xs text-zinc-500 mt-1">{reportData.weeklySummaries.length} weeks total</p>
             </div>
             <div style={PANEL} className="p-6">
               <div className="flex items-center gap-3 mb-3">
@@ -313,18 +321,16 @@ export default function ExportCalculationPage() {
                 <TableHeader className="bg-zinc-950/50">
                   <TableRow className="border-zinc-800">
                     <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500 w-12">#</TableHead>
-                    <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500">Worker</TableHead>
-                    <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500">Role</TableHead>
-                    <TableHead className="py-4 text-center text-[10px] font-black uppercase text-zinc-500">Days</TableHead>
-                    <TableHead className="py-4 text-right text-[10px] font-black uppercase text-zinc-500 pr-6">Gross (₹)</TableHead>
+                    <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500">Week Period</TableHead>
+                    <TableHead className="py-4 text-center text-[10px] font-black uppercase text-zinc-500">Total Man-Days</TableHead>
+                    <TableHead className="py-4 text-right text-[10px] font-black uppercase text-zinc-500 pr-6">Weekly Gross (₹)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {reportData.workers.map((w: any, i: number) => (
+                  {reportData.weeklySummaries.map((w: any, i: number) => (
                     <TableRow key={i} className="border-zinc-800/50 hover:bg-white/5 transition-colors">
                       <TableCell className="py-4 text-xs text-zinc-500 font-bold">{i + 1}</TableCell>
-                      <TableCell className="py-4 font-bold text-white text-sm">{w.worker.name}</TableCell>
-                      <TableCell className="py-4 text-xs text-zinc-400">{w.worker.type || '-'}</TableCell>
+                      <TableCell className="py-4 font-bold text-white text-sm">{w.period}</TableCell>
                       <TableCell className="py-4 text-center text-xs font-bold text-white">{w.days.toFixed(1)}</TableCell>
                       <TableCell className="py-4 text-right pr-6 font-black text-blue-400 text-sm">₹ {w.gross.toLocaleString()}</TableCell>
                     </TableRow>
@@ -339,20 +345,19 @@ export default function ExportCalculationPage() {
 
             {/* Mobile Cards for Labour */}
             <div className="flex flex-col gap-3 p-4 md:hidden">
-              {reportData.workers.map((w: any, i: number) => (
+              {reportData.weeklySummaries.map((w: any, i: number) => (
                 <div key={i} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex flex-col gap-2">
                   <div className="flex justify-between items-start border-b border-zinc-800/80 pb-2">
                     <div>
-                      <p className="font-bold text-white text-base leading-tight">{w.worker.name}</p>
-                      <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1">{w.worker.type || '-'}</p>
+                      <p className="font-bold text-white text-base leading-tight">{w.period}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-[10px] font-black uppercase text-zinc-500">Gross</p>
+                      <p className="text-[10px] font-black uppercase text-zinc-500">Weekly Gross</p>
                       <p className="font-black text-blue-400 text-lg mt-0.5">₹ {w.gross.toLocaleString()}</p>
                     </div>
                   </div>
                   <div className="flex justify-between items-center pt-1">
-                    <span className="text-[10px] font-black uppercase text-zinc-500">Days Worked</span>
+                    <span className="text-[10px] font-black uppercase text-zinc-500">Total Man-Days</span>
                     <span className="font-bold text-white text-xs bg-zinc-800 px-2 py-1 rounded">{w.days.toFixed(1)}</span>
                   </div>
                 </div>

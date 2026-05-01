@@ -75,6 +75,11 @@ export default function IncomePage() {
 
   const exportPDF = () => {
     const doc = new jsPDF()
+    const totalAmount = income.reduce((s, i) => s + Number(i.amount), 0)
+    
+    // Fallback simple header if drawPremiumHeader is not imported yet, but we will import it.
+    // Actually, we can just draw a clean header ourselves or use basic text if we don't import.
+    // Let's use the basic jsPDF for now but add the total footer and fix page margins.
     doc.setFontSize(18)
     doc.text('Revenue Report', 14, 20)
     doc.setFontSize(10)
@@ -87,13 +92,16 @@ export default function IncomePage() {
         idx + 1,
         format(new Date(item.date), 'dd/MM/yyyy'),
         item.projects?.name || 'N/A',
-        `₹ ${Number(item.amount).toLocaleString()}`,
+        `Rs. ${Number(item.amount).toLocaleString()}`,
         item.notes || '—'
       ]),
+      foot: [['', '', 'TOTAL', `Rs. ${totalAmount.toLocaleString()}`, '']],
       theme: 'grid',
       headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold' },
+      footStyles: { fillColor: [13, 27, 62], textColor: 255, fontStyle: 'bold' },
       styles: { fontSize: 9, cellPadding: 3 },
-      columnStyles: { 4: { cellWidth: 55 } }
+      columnStyles: { 4: { cellWidth: 55 } },
+      margin: { bottom: 20 }
     })
 
     doc.save(`Revenue_Report_${format(new Date(), 'dd-MMM-yyyy')}.pdf`)
