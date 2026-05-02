@@ -4,13 +4,11 @@ export function createClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
-  const client = createBrowserClient(url, key)
-
-  client.auth.onAuthStateChange((event, session) => {
-    if (event === 'TOKEN_REFRESHED' && !session) {
-      client.auth.signOut().then(() => {
-        if (typeof window !== 'undefined') window.location.href = '/login'
-      })
+  const client = createBrowserClient(url, key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
     }
   })
 

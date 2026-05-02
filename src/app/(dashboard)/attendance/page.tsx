@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useLang } from '@/lib/i18n'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { 
@@ -60,7 +59,6 @@ export default function AttendancePage() {
   const [popupData, setPopupData] = useState<DayRecord>({ status: '', overtime_amount: 0, advance_amount: 0 })
 
   const supabase = createClient()
-  const { t } = useLang()
 
   const weekDates = useMemo(() => {
     const end = endOfWeek(currentWeekStart, { weekStartsOn: 0 })
@@ -310,14 +308,13 @@ export default function AttendancePage() {
     const workerIds = Object.keys(gridData)
 
     try {
-      if (workerIds.length > 0) {
-        await supabase.from('attendance')
-          .delete()
-          .in('labour_id', workerIds)
-          .eq('project_id', selectedProject)
-          .gte('date', startStr)
-          .lte('date', endStr)
-      }
+      // Delete ALL existing attendance records for this project and week
+      // This ensures that if a worker was removed from the grid, their records are gone
+      await supabase.from('attendance')
+        .delete()
+        .eq('project_id', selectedProject)
+        .gte('date', startStr)
+        .lte('date', endStr)
 
       const inserts: any[] = []
       Object.values(gridData).forEach(row => {
@@ -369,23 +366,34 @@ export default function AttendancePage() {
 
   const totals = useMemo(() => {
     let wCount = 0
-    let days = 0
+    let mDays = 0 // Mistry
+    let lDays = 0 // Labour
+    let pDays = 0 // Parakadu
     let ot = 0
     let cost = 0
 
     Object.values(gridData).forEach(row => {
       let activeInWeek = false
+      const type = (row.type || '').toLowerCase()
+      
       Object.values(row.days).forEach(d => {
         if (d.status !== '' || d.overtime_amount > 0 || d.advance_amount > 0) activeInWeek = true
-        if (d.status === 'P') days += 1
-        else if (d.status === 'H') days += 0.5
+        
+        let dayVal = 0
+        if (d.status === 'P') dayVal = 1
+        else if (d.status === 'H') dayVal = 0.5
+        
+        if (type.includes('mistry') || type.includes('skilled')) mDays += dayVal
+        else if (type.includes('women') || type.includes('labour')) lDays += dayVal
+        else pDays += dayVal
+
         ot += d.overtime_amount || 0
       })
       if (activeInWeek) wCount++
       cost += calcRowTotal(row)
     })
 
-    return { wCount, days, ot, cost }
+    return { wCount, mDays, lDays, pDays, ot, cost }
   }, [gridData])
 
   // UI Styles
@@ -395,7 +403,7 @@ export default function AttendancePage() {
   return (
     <div className="space-y-6 pb-20">
       {/* Top Bar Controller */}
-      <div style={PANEL} className="p-4 flex flex-col xl:flex-row gap-4 items-center justify-between sticky top-4 z-40 shadow-2xl">
+      <div style={PANEL} className="p-4 flex flex-col xl:flex-row gap-4 items-center justify-between shadow-2xl">
         <div className="flex flex-col sm:flex-row gap-4 items-center w-full xl:w-auto">
           <select 
             value={selectedProject} 
@@ -433,7 +441,7 @@ export default function AttendancePage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Active Workers', value: totals.wCount },
-          { label: 'Total Days', value: totals.days.toFixed(1) },
+          { label: 'Man-Days (M,L,P)', value: `M-${totals.mDays}, L-${totals.lDays}, P-${totals.pDays}` },
           { label: 'Total Overtime', value: `₹${totals.ot.toLocaleString()}` },
           { label: 'Week Labour Cost', value: `₹${totals.cost.toLocaleString()}` }
         ].map((stat, i) => (
@@ -598,9 +606,9 @@ export default function AttendancePage() {
                       >
                         <span className="text-xs font-black">{cell.status || '-'}</span>
                         {(cell.advance_amount > 0 || cell.overtime_amount > 0) && (
-                          <div className="absolute -top-1.5 -right-1.5 flex flex-col gap-0.5">
-                             {cell.overtime_amount > 0 && <span className="w-4 h-4 bg-amber-500 text-[7px] text-white rounded-full flex items-center justify-center font-bold">OT</span>}
-                             {cell.advance_amount > 0 && <span className="w-4 h-4 bg-red-500 text-[7px] text-white rounded-full flex items-center justify-center font-bold">AD</span>}
+                          <div className="absolute -top-2 -right-1 flex flex-col items-end">
+                             {cell.overtime_amount > 0 && <span className="text-[8px] font-black text-amber-500 bg-[#0d1018] px-1 rounded">+{cell.overtime_amount}</span>}
+                             {cell.advance_amount > 0 && <span className="text-[8px] font-black text-red-500 bg-[#0d1018] px-1 rounded">-{cell.advance_amount}</span>}
                           </div>
                         )}
                       </div>

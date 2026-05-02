@@ -120,7 +120,7 @@ export default function LoginPage() {
               </div>
               <CardTitle className="text-2xl font-black text-white">Welcome Back</CardTitle>
               <CardDescription className="text-zinc-400">
-                {step === 'email' ? 'Login with your registered email' : 'Enter the 8-digit OTP sent to your email'}
+                {step === 'email' ? 'Login with your registered email' : 'Enter the 6-digit OTP sent to your email'}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -153,17 +153,17 @@ export default function LoginPage() {
                 <form onSubmit={handleVerifyOTP} className="space-y-4">
                   <Input
                     type="text"
-                    placeholder="Enter 8-digit OTP"
+                    placeholder="000 000"
                     value={otp}
                     onChange={(e) => setOtp(e.target.value)}
                     required
-                    maxLength={8}
-                    className="h-12 bg-zinc-900 border-zinc-800 text-center text-2xl tracking-widest text-white"
+                    maxLength={6}
+                    className="h-16 bg-zinc-900 border-zinc-800 text-center text-4xl font-black tracking-[0.3em] text-blue-400"
                   />
                   <Button
                     type="submit"
                     className="w-full h-12 text-base font-black bg-blue-500 hover:bg-blue-600 text-zinc-900"
-                    disabled={loading || otp.length !== 8}
+                    disabled={loading || otp.length !== 6}
                   >
                     {loading ? (
                       <>

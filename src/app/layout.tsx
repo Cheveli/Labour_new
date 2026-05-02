@@ -1,21 +1,13 @@
 import type { Metadata } from 'next'
-import { Outfit, Noto_Sans_Telugu } from 'next/font/google'
-import '../globals.css'
+import { Outfit } from 'next/font/google'
+import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
-import { LangProvider } from '@/lib/i18n'
 
 const font = Outfit({ 
   subsets: ['latin'],
   display: 'swap',
   variable: '--font-sans'
-})
-
-const teluguFont = Noto_Sans_Telugu({
-  subsets: ['telugu'],
-  display: 'swap',
-  weight: ['400', '600', '700', '800'],
-  variable: '--font-telugu'
 })
 
 export const metadata: Metadata = {
@@ -26,16 +18,12 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic'
 
 export default async function RootLayout({
-  children,
-  params
+  children
 }: Readonly<{
   children: React.ReactNode
-  params: Promise<{ lang: string }>
 }>) {
-  const resolvedParams = await params;
-  const lang = resolvedParams.lang;
   return (
-    <html lang={lang} suppressHydrationWarning className={`${font.variable} ${teluguFont.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${font.variable}`}>
       <body className="antialiased" suppressHydrationWarning>
         <ThemeProvider
           attribute="class"
@@ -43,10 +31,8 @@ export default async function RootLayout({
           forcedTheme="dark"
           disableTransitionOnChange
         >
-          <LangProvider initialLang={lang as 'en' | 'te'}>
-            {children}
-            <Toaster position="top-right" richColors closeButton />
-          </LangProvider>
+          {children}
+          <Toaster position="top-right" richColors closeButton />
         </ThemeProvider>
       </body>
     </html>

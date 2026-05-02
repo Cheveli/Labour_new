@@ -112,11 +112,19 @@ export default function WorkersPage() {
     }
 
     setSaving(true)
-    const { error } = await supabase.from('labour').insert([buildWorkerPayload()])
+    const payload = buildWorkerPayload()
+    const { error } = await supabase.from('labour').insert([payload])
 
     if (error) {
       showConstraintAwareError(error)
     } else {
+      // Also add to contacts
+      await supabase.from('contacts').insert([{
+        name: payload.name,
+        phone: payload.phone,
+        type: payload.type
+      }])
+
       toast.success('Worker added successfully')
       setFormData({ name: '', phone: '', gender: 'Male', type: 'Mistry (Skilled)', daily_rate: '1300' })
       setDialogOpen(false)
@@ -142,6 +150,17 @@ export default function WorkersPage() {
     if (error) {
       showConstraintAwareError(error)
     } else {
+      // Sync to contacts (find by name/phone or just add if not exists, but here we'll just try to update by name/phone match)
+      // For simplicity, we'll just upsert to contacts if we had a contact ID, but we don't.
+      // So we'll just insert/update by phone if available.
+      if (payload.phone) {
+        await supabase.from('contacts').upsert([{
+          name: payload.name,
+          phone: payload.phone,
+          type: payload.type
+        }], { onConflict: 'phone' })
+      }
+
       toast.success('Worker updated successfully')
       setFormData({ name: '', phone: '', gender: 'Male', type: 'Mistry (Skilled)', daily_rate: '1300' })
       setEditingWorker(null)

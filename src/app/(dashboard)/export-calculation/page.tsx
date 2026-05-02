@@ -33,19 +33,19 @@ export default function ExportCalculationPage() {
     try {
       // 1. Fetch attendance (labour cost)
       let attQuery = supabase.from('attendance').select('*, labour(name, type, daily_rate), projects(name)')
-        .gte('date', startDate).lte('date', endDate).order('date', { ascending: true })
+        .order('date', { ascending: true })
       if (selectedProjectId) attQuery = attQuery.eq('project_id', selectedProjectId)
       const { data: attData } = await attQuery
 
       // 2. Fetch materials
       let matQuery = supabase.from('materials').select('*, projects(name)')
-        .gte('date', startDate).lte('date', endDate).order('date', { ascending: true })
+        .order('date', { ascending: true })
       if (selectedProjectId) matQuery = matQuery.eq('project_id', selectedProjectId)
       const { data: matData } = await matQuery
 
       // 3. Fetch extra work
       let extraQuery = supabase.from('extra_work').select('*, projects(name)')
-        .gte('date', startDate).lte('date', endDate).order('date', { ascending: true })
+        .order('date', { ascending: true })
       if (selectedProjectId) extraQuery = extraQuery.eq('project_id', selectedProjectId)
       const { data: extraData } = await extraQuery
 
@@ -76,6 +76,16 @@ export default function ExportCalculationPage() {
       const totalMaterialCost = (matData || []).reduce((a: number, m: any) => a + Number(m.total_amount || 0), 0)
       const totalExtraWorkCost = (extraData || []).reduce((a: number, e: any) => a + Number(e.amount || 0), 0)
 
+      // Man-Days breakdown
+      let mDays = 0, lDays = 0, pDays = 0
+      attData?.forEach((r: any) => {
+        const type = (r.labour?.type || '').toLowerCase()
+        const val = Number(r.days_worked) || 0
+        if (type.includes('mistry') || type.includes('skilled')) mDays += val
+        else if (type.includes('women') || type.includes('labour')) lDays += val
+        else pDays += val
+      })
+
       setReportData({
         weeklySummaries,
         materials: matData || [],
@@ -84,7 +94,10 @@ export default function ExportCalculationPage() {
         totalMaterialCost,
         totalExtraWorkCost,
         grandTotal: totalLabourCost + totalMaterialCost + totalExtraWorkCost,
-        project: projects.find(p => p.id === selectedProjectId)
+        project: projects.find(p => p.id === selectedProjectId),
+        mDays,
+        lDays,
+        pDays
       })
     } catch (err: any) {
       toast.error(err.message)
@@ -95,7 +108,7 @@ export default function ExportCalculationPage() {
 
   const exportPDF = () => {
     if (!reportData) return
-    const { weeklySummaries, materials, totalLabourCost, totalMaterialCost, grandTotal, project } = reportData
+    const { weeklySummaries, materials, totalLabourCost, totalMaterialCost, grandTotal, project, mDays, lDays, pDays } = reportData
     const doc = new jsPDF()
 
     drawPremiumHeader(doc, 'EXPORT CALCULATION', '(COMBINED REPORT)')
@@ -120,7 +133,7 @@ export default function ExportCalculationPage() {
       body: weeklySummaries.map((w: any, i: number) => [
         i + 1, w.period, w.days.toFixed(1), `Rs. ${w.gross.toLocaleString()}`
       ]),
-      foot: [['', '', '', 'TOTAL', `Rs. ${totalLabourCost.toLocaleString()}`]],
+      foot: [['', `M-${mDays}, L-${lDays}, P-${pDays}`, '', 'TOTAL', `Rs. ${totalLabourCost.toLocaleString()}`]],
       theme: 'grid',
       headStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontSize: 8 },
       bodyStyles: { fontSize: 8, textColor: PDF_COLORS.NAVY },
@@ -182,8 +195,9 @@ export default function ExportCalculationPage() {
     const bW = 45, bH = 22
     // Labour total box
     doc.setFillColor(240, 245, 255); doc.roundedRect(14, y, bW, bH, 1, 1, 'F')
-    doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.text('Labour Cost', 14 + bW / 2, y + 7, { align: 'center' })
-    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${totalLabourCost.toLocaleString()}`, 14 + bW / 2, y + 16, { align: 'center' })
+    doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.text('Labour Cost', 14 + bW / 2, y + 5, { align: 'center' })
+    doc.setFontSize(6); doc.text(`M-${mDays} L-${lDays} P-${pDays}`, 14 + bW / 2, y + 10, { align: 'center' })
+    doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${totalLabourCost.toLocaleString()}`, 14 + bW / 2, y + 17, { align: 'center' })
     // Material total box
     doc.setFillColor(240, 255, 245); doc.roundedRect(14 + bW + 2, y, bW, bH, 1, 1, 'F')
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.text('Material Cost', 14 + bW + 2 + bW / 2, y + 7, { align: 'center' })
@@ -276,7 +290,9 @@ export default function ExportCalculationPage() {
                 <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Labour Cost</p>
               </div>
               <p className="text-2xl font-black text-white">₹ {reportData.totalLabourCost.toLocaleString()}</p>
-              <p className="text-xs text-zinc-500 mt-1">{reportData.weeklySummaries.length} weeks total</p>
+              <p className="text-[10px] text-zinc-500 mt-1 uppercase font-bold tracking-wider">
+                M-{reportData.mDays} L-{reportData.lDays} P-{reportData.pDays}
+              </p>
             </div>
             <div style={PANEL} className="p-6">
               <div className="flex items-center gap-3 mb-3">
@@ -336,7 +352,10 @@ export default function ExportCalculationPage() {
                     </TableRow>
                   ))}
                   <TableRow className="border-zinc-800 bg-zinc-950/80">
-                    <TableCell colSpan={4} className="py-4 text-right pr-4 font-black text-xs uppercase tracking-widest text-zinc-400">Labour Total</TableCell>
+                    <TableCell colSpan={3} className="py-4 text-right pr-4 font-black text-[10px] uppercase tracking-widest text-zinc-500">
+                      Breakdown: M-{reportData.mDays}, L-{reportData.lDays}, P-{reportData.pDays}
+                    </TableCell>
+                    <TableCell className="py-4 text-right pr-4 font-black text-xs uppercase tracking-widest text-zinc-400">Labour Total</TableCell>
                     <TableCell className="py-4 text-right pr-6 font-black text-blue-400 text-lg">₹ {reportData.totalLabourCost.toLocaleString()}</TableCell>
                   </TableRow>
                 </TableBody>

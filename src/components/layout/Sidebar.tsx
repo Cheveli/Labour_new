@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { 
   Users, 
@@ -24,7 +24,6 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { useLang } from '@/lib/i18n'
 
 const menuItems = [
   { label: 'Overview', href: '/', icon: LayoutDashboard },
@@ -42,38 +41,30 @@ const menuItems = [
 
 export default function Sidebar() {
   const pathname = usePathname()
-  const router = useRouter()
-  const searchParams = useSearchParams()
   const [isOpen, setIsOpen] = useState(false)
   const supabase = createClient()
-  const { lang, setLang, t } = useLang()
-
-  const handleLangToggle = () => {
-    const next = lang === 'en' ? 'te' : 'en'
-    setLang(next)
-    
-    // Switch the lang parameter in the path (e.g. /en/materials -> /te/materials)
-    const newPath = pathname.replace(/^\/(en|te)/, `/${next}`)
-    router.replace(`${newPath}?${searchParams.toString()}`)
-  }
-
-  const navLabels: Record<string, string> = {
-    'Overview': t.nav.overview,
-    'Workforce': t.nav.workforce,
-    'Attendance': t.nav.attendance,
-    'Materials': t.nav.materials,
-    'Payments': t.nav.payments,
-    'Reports': t.nav.reports,
-    'Export Calculation': t.nav.exportCalc,
-    'Revenue': t.nav.revenue,
-    'Extra Work': t.nav.extraWork,
-    'Projects': t.nav.projects,
-    'Contacts': t.nav.contacts,
-  }
 
   const handleLogout = async () => {
+    // 1. Supabase SignOut
     await supabase.auth.signOut()
-    toast.success('Logged out')
+    
+    // 2. Clear all auth cookies manually just in case
+    if (typeof document !== 'undefined') {
+      const cookies = document.cookie.split(';')
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim()
+        if (cookie.startsWith('sb-')) {
+          const name = cookie.split('=')[0]
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+        }
+      }
+      
+      // 3. Clear local/session storage
+      localStorage.clear()
+      sessionStorage.clear()
+    }
+
+    toast.success('Logged out completely')
     window.location.href = '/login'
   }
 
@@ -143,7 +134,7 @@ export default function Sidebar() {
               return (
                 <Link
                   key={`${item.label}-${idx}`}
-                  href={`/${lang}${item.href === '/' ? '' : item.href}`}
+                  href={item.href}
                   onClick={() => setIsOpen(false)}
                   className={cn(
                     'group flex items-center gap-3 px-4 py-[10px] rounded-xl text-sm font-semibold transition-all duration-150',
@@ -155,7 +146,7 @@ export default function Sidebar() {
                   } : undefined}
                 >
                   <Icon size={18} className={isActive ? 'text-[#0a0c12]' : 'text-zinc-500 group-hover:text-blue-400'} />
-                  <span>{navLabels[item.label] ?? item.label}</span>
+                  <span>{item.label}</span>
                 </Link>
               )
             })}
@@ -163,7 +154,7 @@ export default function Sidebar() {
 
           {/* Admin */}
           <div className="px-4 py-4 border-t border-[#1e2435]">
-            <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-3 mb-4">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black text-[#0a0c12]"
                 style={{ background: 'linear-gradient(135deg,#3b82f6,#2563eb)' }}>
                 A
@@ -173,20 +164,13 @@ export default function Sidebar() {
                 <p className="text-[10px] text-zinc-500 truncate">Site Administrator</p>
               </div>
             </div>
-            {/* Language one-click toggle */}
-            <button onClick={handleLangToggle}
-              className="w-full h-8 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all mb-2 flex items-center justify-center gap-1.5"
-              style={{ backgroundColor: '#1a1f2e', color: '#3b82f6', border: '1px solid #2563eb' }}
-              title="Toggle language">
-              {lang === 'en' ? 'TE Switch to తెలుగు' : 'EN Switch to English'}
-            </button>
             <button
               onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-2 h-9 rounded-xl text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white transition-colors"
+              className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white transition-colors"
               style={{ background: '#1a1f2e' }}
             >
               <LogOut size={14} />
-              {lang === 'te' ? 'లాగ్ అవుట్' : 'Logout'}
+              Logout
             </button>
           </div>
         </div>

@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useLang } from '@/lib/i18n'
 import { 
   Loader2, 
   ChevronLeft,
@@ -27,7 +26,6 @@ import {
 
 export default function PaymentsPage() {
   const supabase = createClient()
-  const { t } = useLang()
 
   const [projects, setProjects] = useState<any[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')

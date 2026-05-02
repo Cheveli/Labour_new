@@ -25,58 +25,19 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  try {
-    await supabase.auth.getUser()
-  } catch (err: any) {
-    // If refresh token is invalid/expired, clear auth cookies and redirect to login
-    if (err?.code === 'refresh_token_not_found' || err?.status === 400) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/login'
-      const redirectResponse = NextResponse.redirect(url)
-      // Clear all supabase auth cookies
-      request.cookies.getAll().forEach(cookie => {
-        if (cookie.name.startsWith('sb-')) {
-          redirectResponse.cookies.delete(cookie.name)
-        }
-      })
-      return redirectResponse
-    }
-  }
-
-  // --- i18n Logic ---
-  const locales = ['en', 'te']
-  const defaultLocale = 'en'
+  // --- Auth Check ---
+  const { data: { user } } = await supabase.auth.getUser()
   const { pathname } = request.nextUrl
+  
+  const isLoginPage = pathname === '/login'
+  const isAuthPage = pathname.startsWith('/auth')
 
-  const pathnameHasLocale = locales.some(
-    (locale) => pathname.startsWith(`/${locale}/`) || pathname === `/${locale}`
-  )
-
-  if (pathnameHasLocale) {
-    const localeInPath = locales.find((locale) => pathname.startsWith(`/${locale}/`) || pathname === `/${locale}`)
-    if (localeInPath) {
-       supabaseResponse.cookies.set('lang', localeInPath, { path: '/' })
-    }
-    return supabaseResponse
+  if (!user && !isLoginPage && !isAuthPage) {
+    const url = new URL('/login', request.url)
+    return NextResponse.redirect(url)
   }
 
-  // Redirect if there is no locale
-  const cookieLocale = request.cookies.get('lang')?.value
-  const locale = (cookieLocale && locales.includes(cookieLocale)) ? cookieLocale : defaultLocale
-  
-  const newUrl = new URL(`/${locale}${pathname === '/' ? '' : pathname}`, request.url)
-  const redirectResponse = NextResponse.redirect(newUrl)
-  
-  // Set lang cookie
-  redirectResponse.cookies.set('lang', locale, { path: '/' })
-  
-  // We need to carry over the auth cookies that were refreshed by supabase
-  const allSetCookies = supabaseResponse.headers.get('set-cookie')
-  if (allSetCookies) {
-    redirectResponse.headers.set('set-cookie', allSetCookies)
-  }
-
-  return redirectResponse
+  return supabaseResponse
 }
 
 export const config = {

@@ -139,7 +139,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-5 pb-6">
+    <div className="space-y-5 pb-6" suppressHydrationWarning>
       {/* Header */}
       <div>
         <h1 className="text-2xl font-black text-white tracking-tight">Overview</h1>

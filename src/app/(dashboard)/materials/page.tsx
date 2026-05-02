@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useLang } from '@/lib/i18n'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { 
@@ -18,8 +17,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Boxes, Loader2, Trash2, Edit2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
-
-
 
 export default function MaterialsPage() {
   const [materials, setMaterials] = useState<any[]>([])
@@ -49,7 +46,6 @@ export default function MaterialsPage() {
   const [editMatData, setEditMatData] = useState({ name: '', quantity: '', unit: 'bags', cost_per_unit: '', total_amount: '', notes: '', date: '' })
   const [editSaving, setEditSaving] = useState(false)
   const supabase = createClient()
-  const { t } = useLang()
 
   useEffect(() => {
     const qty = parseFloat(formData.quantity) || 0;
@@ -159,7 +155,7 @@ export default function MaterialsPage() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-white tracking-tight">{t.materials.title}</h1>
+          <h1 className="text-2xl font-black text-white tracking-tight">Material Inventory</h1>
           <p className="mt-1 text-sm text-zinc-500">Record site deliveries, stock levels, and resource costs.</p>
         </div>
         <div className="flex items-center gap-3">
@@ -326,12 +322,12 @@ export default function MaterialsPage() {
         {/* RIGHT: Add Form */}
         <div className="lg:col-span-4">
            <Card className="panel-elevated text-white rounded-2xl overflow-hidden p-8">
-              <h3 className="text-lg font-black uppercase tracking-tight mb-8">{t.materials.stockEntry}</h3>
+              <h3 className="text-lg font-black uppercase tracking-tight mb-8">Stock Entry</h3>
               <form onSubmit={handleCreate} className="space-y-6">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">{t.materials.selectSite}</label>
+                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Select Site</label>
                   <select value={formData.project_id} onChange={e => setFormData({...formData, project_id: e.target.value})} className="styled-select">
-                    <option value="">{t.materials.deliveryLocation}</option>
+                    <option value="">Delivery Location</option>
                     {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
@@ -360,10 +356,10 @@ export default function MaterialsPage() {
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Unit</label>
                     <select value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value})} className="styled-select">
-                      <option value="bags">{t.materials.bags}</option>
-                      <option value="kgs">{t.materials.kg}</option>
-                      <option value="tons">{t.materials.tons}</option>
-                      <option value="no-unit">{t.materials.noUnit}</option>
+                      <option value="bags">Bags</option>
+                      <option value="kgs">Kg</option>
+                      <option value="tons">Tons</option>
+                      <option value="no-unit">No Unit</option>
                     </select>
                   </div>
                   <div className="space-y-2">
@@ -403,11 +399,11 @@ export default function MaterialsPage() {
                 {/* Supplier Details */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">{t.materials.supplierName}</label>
+                    <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Supplier Name</label>
                     <Input placeholder="e.g. Ramu Traders" value={supplierName} onChange={e => setSupplierName(e.target.value)} className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white" />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">{t.materials.supplierPhone}</label>
+                    <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Supplier Phone</label>
                     <Input placeholder="9876543210" value={supplierPhone} onChange={e => setSupplierPhone(e.target.value)} className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white" />
                   </div>
                 </div>

@@ -56,7 +56,7 @@ export default function ContactsPage() {
 
   async function fetchWorkers() {
     setLoading(true)
-    const { data } = await supabase.from('labour').select('*').order('name')
+    const { data } = await supabase.from('contacts').select('*').order('name')
     setWorkers(data || [])
     setLoading(false)
   }
@@ -83,10 +83,10 @@ export default function ContactsPage() {
 
     let error
     if (editingWorker) {
-      const { error: err } = await supabase.from('labour').update(payload).eq('id', editingWorker.id)
+      const { error: err } = await supabase.from('contacts').update(payload).eq('id', editingWorker.id)
       error = err
     } else {
-      const { error: err } = await supabase.from('labour').insert([payload])
+      const { error: err } = await supabase.from('contacts').insert([payload])
       error = err
     }
 
