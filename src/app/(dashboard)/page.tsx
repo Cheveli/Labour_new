@@ -24,16 +24,43 @@ export default function DashboardPage() {
   const [monthlyData, setMonthlyData] = useState<any[]>([])
   const [projectCosts, setProjectCosts] = useState<any[]>([])
   const [projectBreakdown, setProjectBreakdown] = useState<any[]>([])
+  const [projects, setProjects] = useState<any[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
   const supabase = createClient()
 
   async function fetchStats() {
     try {
-      const { count: projectCount } = await supabase.from('projects').select('*', { count: 'exact', head: true })
-      const { data: incomeData } = await supabase.from('income').select('amount, date')
-      const { data: attAllData } = await supabase.from('attendance').select('date, days_worked, custom_rate, overtime_amount, labour(daily_rate)')
-      const { data: materialData } = await supabase.from('materials').select('total_amount, date')
-      const { data: extraWorkData } = await supabase.from('extra_work').select('amount, date')
-      const { data: projectsData } = await supabase.from('projects').select('id, name')
+      setLoading(true)
+      // 1. Fetch Projects List (always needed for the filter)
+      const { data: projList } = await supabase.from('projects').select('id, name, status').order('name')
+      setProjects(projList || [])
+
+      // Default to first project if none selected
+      let currentProjectId = selectedProjectId
+      if (!currentProjectId && projList && projList.length > 0) {
+        currentProjectId = projList[0].id
+        setSelectedProjectId(currentProjectId)
+      }
+
+      // 2. Prepare queries with optional project filter
+      let incomeQ = supabase.from('income').select('amount, date, project_id')
+      let attQ = supabase.from('attendance').select('date, days_worked, custom_rate, overtime_amount, project_id, labour(daily_rate)')
+      let matQ = supabase.from('materials').select('total_amount, date, project_id')
+      let ewQ = supabase.from('extra_work').select('amount, date, project_id')
+
+      if (currentProjectId) {
+        incomeQ = incomeQ.eq('project_id', currentProjectId)
+        attQ = attQ.eq('project_id', currentProjectId)
+        matQ = matQ.eq('project_id', currentProjectId)
+        ewQ = ewQ.eq('project_id', currentProjectId)
+      }
+
+      const [incomeRes, attRes, matRes, ewRes] = await Promise.all([incomeQ, attQ, matQ, ewQ])
+      
+      const incomeData = incomeRes.data
+      const attAllData = attRes.data
+      const materialData = matRes.data
+      const extraWorkData = ewRes.data
 
       const totalRevenue = incomeData?.reduce((a, c) => a + Number(c.amount), 0) || 0
       const totalLabourCost = attAllData?.reduce((a, c) => {
@@ -45,7 +72,14 @@ export default function DashboardPage() {
       const totalExtraWork = extraWorkData?.reduce((a, c) => a + Number(c.amount), 0) || 0
       const netCash = totalRevenue - (totalLabourCost + totalMaterialCost + totalExtraWork)
 
-      setStats({ totalProjects: projectCount || 0, totalRevenue, totalLabourCost, totalMaterialCost, totalExtraWork, netCash })
+      setStats({ 
+        totalProjects: selectedProjectId ? 1 : (projList?.length || 0), 
+        totalRevenue, 
+        totalLabourCost, 
+        totalMaterialCost, 
+        totalExtraWork, 
+        netCash 
+      })
 
       // Build last-6-months monthly data
       const months = Array.from({ length: 6 }, (_, i) => {
@@ -65,7 +99,7 @@ export default function DashboardPage() {
       }))
       setMonthlyData(monthly)
 
-      // Expense Distribution (Labour vs Material vs Extra Work)
+      // Expense Distribution
       setProjectCosts([
         { name: 'Labour', value: totalLabourCost },
         { name: 'Material', value: totalMaterialCost },
@@ -73,16 +107,14 @@ export default function DashboardPage() {
       ].filter(c => c.value > 0))
 
       // Project-wise breakdown
-      const { data: projList } = await supabase.from('projects').select('id, name, status')
-      const { data: incomeAll } = await supabase.from('income').select('project_id, amount')
-      const { data: matAll } = await supabase.from('materials').select('project_id, total_amount')
-      const { data: ewAll } = await supabase.from('extra_work').select('project_id, amount')
-      const breakdown = (projList || []).map(p => {
-        const rev = (incomeAll || []).filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.amount), 0)
-        const mat = (matAll || []).filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.total_amount || 0), 0)
-        const ew = (ewAll || []).filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.amount), 0)
-        return { name: p.name, status: p.status, revenue: rev, material: mat, extraWork: ew, net: rev - mat - ew }
-      }).filter(p => p.revenue > 0 || p.material > 0 || p.extraWork > 0)
+      const breakdown = (projList || [])
+        .filter(p => !selectedProjectId || p.id === selectedProjectId)
+        .map(p => {
+          const rev = (incomeData || []).filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.amount), 0)
+          const mat = (materialData || []).filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.total_amount || 0), 0)
+          const ew = (extraWorkData || []).filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.amount), 0)
+          return { name: p.name, status: p.status, revenue: rev, material: mat, extraWork: ew, net: rev - mat - ew }
+        }).filter(p => p.revenue > 0 || p.material > 0 || p.extraWork > 0)
       setProjectBreakdown(breakdown)
     } catch (err) {
       console.error(err)
@@ -92,7 +124,7 @@ export default function DashboardPage() {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
-  useEffect(() => { fetchStats() }, [])
+  useEffect(() => { fetchStats() }, [selectedProjectId])
 
   const PANEL = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
   const GOLD = '#3b82f6'
@@ -106,7 +138,7 @@ export default function DashboardPage() {
     { type: 'MATERIAL', label: 'Material Cost', value: `₹${stats.totalMaterialCost.toLocaleString()}`, icon: <Package size={18} color="#60a5fa" />, bg: '#151e2e', color: '#60a5fa', clickable: true },
     { type: 'EXTRA_WORK', label: 'Extra Work', value: `₹${stats.totalExtraWork.toLocaleString()}`, icon: <Zap size={18} color="#f59e0b" />, bg: '#292011', color: '#f59e0b', clickable: true },
     { type: 'NET_CASH', label: 'Net Cash', value: `₹${stats.netCash.toLocaleString()}`, icon: <TrendingUp size={18} color={stats.netCash >= 0 ? '#22c55e' : '#ef4444'} />, bg: '#111520', color: stats.netCash >= 0 ? '#22c55e' : '#ef4444', clickable: false },
-    { type: 'SITES', label: 'Active Sites', value: stats.totalProjects, icon: <Briefcase size={18} color="#a78bfa" />, bg: '#1e1a2e', color: '#a78bfa', clickable: false },
+    { type: 'SITES', label: selectedProjectId ? 'Site Status' : 'Active Sites', value: selectedProjectId ? (projects.find(p => p.id === selectedProjectId)?.status || 'Active') : stats.totalProjects, icon: <Briefcase size={18} color="#a78bfa" />, bg: '#1e1a2e', color: '#a78bfa', clickable: false },
   ]
 
   const fetchDetailsData = async (type: string, filterStart?: string, filterEnd?: string) => {
@@ -114,14 +146,15 @@ export default function DashboardPage() {
     try {
       let q: any
       if (type === 'REVENUE') {
-        q = supabase.from('income').select('date, amount, notes, projects(name)').order('date', { ascending: false })
+        q = supabase.from('income').select('date, amount, notes, projects(name)').order('date', { ascending: true })
       } else if (type === 'LABOUR') {
-        q = supabase.from('attendance').select('date, days_worked, custom_rate, overtime_amount, labour(name, daily_rate), projects(name)').order('date', { ascending: false })
+        q = supabase.from('attendance').select('date, days_worked, custom_rate, overtime_amount, labour(name, daily_rate), projects(name)').order('date', { ascending: true })
       } else if (type === 'MATERIAL') {
-        q = supabase.from('materials').select('date, total_amount, name, quantity, unit, notes, projects(name)').order('date', { ascending: false })
+        q = supabase.from('materials').select('date, total_amount, name, quantity, unit, notes, projects(name)').order('date', { ascending: true })
       } else if (type === 'EXTRA_WORK') {
-        q = supabase.from('extra_work').select('date, amount, work_name, notes, projects(name)').order('date', { ascending: false })
+        q = supabase.from('extra_work').select('date, amount, work_name, notes, projects(name)').order('date', { ascending: true })
       }
+      if (selectedProjectId) q = q.eq('project_id', selectedProjectId)
       if (filterStart) q = q.gte('date', filterStart)
       if (filterEnd) q = q.lte('date', filterEnd)
       const { data } = await q
@@ -141,9 +174,24 @@ export default function DashboardPage() {
   return (
     <div className="space-y-5 pb-6" suppressHydrationWarning>
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-black text-white tracking-tight">Overview</h1>
-        <p className="text-sm mt-0.5" style={{ color: DIM }}>Financial summary across all active sites.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-white tracking-tight">Overview</h1>
+          <p className="text-sm mt-0.5" style={{ color: DIM }}>{selectedProjectId ? `Financial details for ${projects.find(p => p.id === selectedProjectId)?.name}` : 'Financial summary across all active sites.'}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="text-[10px] font-black uppercase tracking-widest hidden md:block" style={{ color: DIM }}>Project Filter:</label>
+          <select 
+            value={selectedProjectId} 
+            onChange={(e) => setSelectedProjectId(e.target.value)}
+            className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all min-w-[180px]"
+          >
+            <option value="">All Projects</option>
+            {projects.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Top 6 Cards */}

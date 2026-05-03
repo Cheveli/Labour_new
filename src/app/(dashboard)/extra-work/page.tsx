@@ -18,6 +18,7 @@ import { drawPremiumHeader, drawPremiumFooter, PDF_COLORS } from '@/lib/report-u
 export default function ExtraWorkPage() {
   const [tasks, setTasks] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [taskPage, setTaskPage] = useState(0)
@@ -34,14 +35,26 @@ export default function ExtraWorkPage() {
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [selectedProjectId])
 
   async function fetchData() {
-    setLoading(true)
-    const { data: workData } = await supabase.from('extra_work').select('*, projects(name)').order('date', { ascending: false })
     const { data: projData } = await supabase.from('projects').select('*').order('name')
-    setTasks(workData || [])
     setProjects(projData || [])
+
+    // Default to first project if none selected
+    let currentProjectId = selectedProjectId
+    if (!currentProjectId && projData && projData.length > 0) {
+      currentProjectId = projData[0].id
+      setSelectedProjectId(currentProjectId)
+    }
+
+    setLoading(true)
+    let q = supabase.from('extra_work').select('*, projects(name)').order('date', { ascending: true })
+    if (currentProjectId) {
+      q = q.eq('project_id', currentProjectId)
+    }
+    const { data: workData } = await q
+    setTasks(workData || [])
     setLoading(false)
   }
 
@@ -137,16 +150,29 @@ export default function ExtraWorkPage() {
           <h1 className="text-2xl font-black text-white tracking-tight">Extra Tasks</h1>
           <p className="mt-1 text-sm text-zinc-500">Record lumpsum payments for extra works and ad-hoc tasks.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-center gap-4">
+          <div className="flex items-center gap-3">
+            <label className="text-[10px] font-black uppercase tracking-widest hidden md:block text-zinc-500">Filter:</label>
+            <select 
+              value={selectedProjectId} 
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all min-w-[180px]"
+            >
+              <option value="">All Projects</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
           {tasks.length > 0 && (
-            <>
-              <Button onClick={exportPDF} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-6 gap-2">
-                <FileText size={16} /> Export PDF
+            <div className="flex items-center gap-2">
+              <Button onClick={exportPDF} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-4 gap-2 h-10">
+                <FileText size={14} /> PDF
               </Button>
-              <Button onClick={exportExcel} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-6 gap-2">
-                <Download size={16} /> Export Excel
+              <Button onClick={exportExcel} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-4 gap-2 h-10">
+                <Download size={14} /> Excel
               </Button>
-            </>
+            </div>
           )}
         </div>
       </div>

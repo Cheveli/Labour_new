@@ -21,6 +21,7 @@ import { format } from 'date-fns'
 export default function MaterialsPage() {
   const [materials, setMaterials] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   
@@ -67,7 +68,7 @@ export default function MaterialsPage() {
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [selectedProjectId])
 
   const handleDeleteMat = async (id: string) => {
     if (!confirm('Delete this material entry?')) return
@@ -99,11 +100,23 @@ export default function MaterialsPage() {
   }
 
   async function fetchData() {
-    setLoading(true)
-    const { data: matData } = await supabase.from('materials').select('*, projects(name)').order('date', { ascending: false })
     const { data: projData } = await supabase.from('projects').select('*').order('name')
-    setMaterials(matData || [])
     setProjects(projData || [])
+
+    // Default to first project if none selected
+    let currentProjectId = selectedProjectId
+    if (!currentProjectId && projData && projData.length > 0) {
+      currentProjectId = projData[0].id
+      setSelectedProjectId(currentProjectId)
+    }
+
+    setLoading(true)
+    let q = supabase.from('materials').select('*, projects(name)').order('date', { ascending: true })
+    if (currentProjectId) {
+      q = q.eq('project_id', currentProjectId)
+    }
+    const { data: matData } = await q
+    setMaterials(matData || [])
     setLoading(false)
   }
 
@@ -158,8 +171,21 @@ export default function MaterialsPage() {
           <h1 className="text-2xl font-black text-white tracking-tight">Material Inventory</h1>
           <p className="mt-1 text-sm text-zinc-500">Record site deliveries, stock levels, and resource costs.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#6b7280' }}>{materials.length} entries</span>
+        <div className="flex flex-col sm:flex-row items-center gap-4">
+          <div className="flex items-center gap-3">
+            <label className="text-[10px] font-black uppercase tracking-widest hidden md:block text-zinc-500">Filter:</label>
+            <select 
+              value={selectedProjectId} 
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all min-w-[180px]"
+            >
+              <option value="">All Projects</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">{materials.length} entries</span>
         </div>
       </div>
 

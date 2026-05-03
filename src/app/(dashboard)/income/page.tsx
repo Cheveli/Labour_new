@@ -24,6 +24,7 @@ import * as XLSX from 'xlsx'
 export default function IncomePage() {
   const [income, setIncome] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [incomePage, setIncomePage] = useState(0)
@@ -39,14 +40,26 @@ export default function IncomePage() {
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [selectedProjectId])
 
   async function fetchData() {
-    setLoading(true)
-    const { data: incData } = await supabase.from('income').select('*, projects(name)').order('date', { ascending: false })
     const { data: projData } = await supabase.from('projects').select('*').order('name')
-    setIncome(incData || [])
     setProjects(projData || [])
+
+    // Default to first project if none selected
+    let currentProjectId = selectedProjectId
+    if (!currentProjectId && projData && projData.length > 0) {
+      currentProjectId = projData[0].id
+      setSelectedProjectId(currentProjectId)
+    }
+
+    setLoading(true)
+    let q = supabase.from('income').select('*, projects(name)').order('date', { ascending: true })
+    if (currentProjectId) {
+      q = q.eq('project_id', currentProjectId)
+    }
+    const { data: incData } = await q
+    setIncome(incData || [])
     setLoading(false)
   }
 
@@ -77,9 +90,6 @@ export default function IncomePage() {
     const doc = new jsPDF()
     const totalAmount = income.reduce((s, i) => s + Number(i.amount), 0)
     
-    // Fallback simple header if drawPremiumHeader is not imported yet, but we will import it.
-    // Actually, we can just draw a clean header ourselves or use basic text if we don't import.
-    // Let's use the basic jsPDF for now but add the total footer and fix page margins.
     doc.setFontSize(18)
     doc.text('Revenue Report', 14, 20)
     doc.setFontSize(10)
@@ -140,21 +150,34 @@ export default function IncomePage() {
           <h1 className="text-2xl font-black text-white tracking-tight">Revenue</h1>
           <p className="mt-1 text-sm text-zinc-500">Record site-wide collections and progress payments.</p>
         </div>
-        <div className="flex items-center gap-3">
-          {income.length > 0 && (
-            <>
-              <Button onClick={exportPDF} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-6 gap-2">
-                <FileText size={16} /> Export PDF
-              </Button>
-              <Button onClick={exportExcel} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-6 gap-2">
-                <Download size={16} /> Export Excel
-              </Button>
-            </>
-          )}
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Total Revenue</span>
-            <span className="text-xl font-black" style={{ color: '#22c55e' }}>₹{income.reduce((s, i) => s + Number(i.amount), 0).toLocaleString()}</span>
+        <div className="flex flex-col sm:flex-row items-center gap-4">
+          <div className="flex items-center gap-3">
+            <label className="text-[10px] font-black uppercase tracking-widest hidden md:block text-zinc-500">Filter:</label>
+            <select 
+              value={selectedProjectId} 
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all min-w-[180px]"
+            >
+              <option value="">All Projects</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
           </div>
+          {income.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Button onClick={exportPDF} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-4 gap-2 h-10">
+                <FileText size={14} /> PDF
+              </Button>
+              <Button onClick={exportExcel} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-4 gap-2 h-10">
+                <Download size={14} /> Excel
+              </Button>
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col items-end">
+          <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Total Revenue</span>
+          <span className="text-xl font-black" style={{ color: '#22c55e' }}>₹{income.reduce((s, i) => s + Number(i.amount), 0).toLocaleString()}</span>
         </div>
       </div>
 
