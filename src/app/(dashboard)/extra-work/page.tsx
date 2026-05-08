@@ -36,22 +36,27 @@ export default function ExtraWorkPage() {
   useEffect(() => {
     fetchData()
   }, [selectedProjectId])
-
   async function fetchData() {
     const { data: projData } = await supabase.from('projects').select('*').order('name')
     setProjects(projData || [])
 
-    // Default to first project if none selected
-    let currentProjectId = selectedProjectId
-    if (!currentProjectId && projData && projData.length > 0) {
-      currentProjectId = projData[0].id
-      setSelectedProjectId(currentProjectId)
+    const savedActive = localStorage.getItem('ssc_active_project_id')
+    let currentId = selectedProjectId
+
+    if (!currentId) {
+      if (savedActive && projData?.some(p => p.id === savedActive)) {
+        currentId = savedActive
+      } else if (projData && projData.length > 0) {
+        currentId = projData[0].id
+      }
+      setSelectedProjectId(currentId)
     }
 
     setLoading(true)
     let q = supabase.from('extra_work').select('*, projects(name)').order('date', { ascending: true })
-    if (currentProjectId) {
-      q = q.eq('project_id', currentProjectId)
+    if (currentId) {
+      q = q.eq('project_id', currentId)
+      localStorage.setItem('ssc_active_project_id', currentId)
     }
     const { data: workData } = await q
     setTasks(workData || [])
@@ -152,7 +157,6 @@ export default function ExtraWorkPage() {
         </div>
         <div className="flex flex-col sm:flex-row items-center gap-4">
           <div className="flex items-center gap-3">
-            <label className="text-[10px] font-black uppercase tracking-widest hidden md:block text-zinc-500">Filter:</label>
             <select 
               value={selectedProjectId} 
               onChange={(e) => setSelectedProjectId(e.target.value)}

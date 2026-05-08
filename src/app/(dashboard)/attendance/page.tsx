@@ -15,7 +15,8 @@ import {
   Copy,
   CheckCircle2,
   XCircle,
-  X
+  X,
+  Zap
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { addWeeks, format, endOfWeek, startOfWeek, eachDayOfInterval, subWeeks, parseISO } from 'date-fns'
@@ -40,7 +41,6 @@ type WorkerRow = {
 export default function AttendancePage() {
   const [projects, setProjects] = useState<any[]>([])
   const [labourers, setLabourers] = useState<any[]>([])
-  
   const [selectedProject, setSelectedProject] = useState<string>('')
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(startOfWeek(new Date(), { weekStartsOn: 0 }))
   
@@ -74,8 +74,22 @@ export default function AttendancePage() {
     const { data: labData } = await supabase.from('labour').select('*').order('name')
     setProjects(projData || [])
     setLabourers(labData || [])
-    if (projData && projData.length > 0) {
-      setSelectedProject(projData[0].id)
+
+    const savedActive = localStorage.getItem('ssc_active_project_id')
+    let currentId = selectedProject
+
+    if (!currentId) {
+      if (savedActive && projData?.some(p => p.id === savedActive)) {
+        currentId = savedActive
+      } else if (projData && projData.length > 0) {
+        currentId = projData[0].id
+      }
+      setSelectedProject(currentId)
+    }
+
+    if (currentId) {
+      localStorage.setItem('ssc_active_project_id', currentId)
+      loadWeekData(currentId, currentWeekStart)
     }
   }
 
@@ -405,14 +419,16 @@ export default function AttendancePage() {
       {/* Top Bar Controller */}
       <div style={PANEL} className="p-4 flex flex-col xl:flex-row gap-4 items-center justify-between shadow-2xl">
         <div className="flex flex-col sm:flex-row gap-4 items-center w-full xl:w-auto">
-          <select 
-            value={selectedProject} 
-            onChange={e => setSelectedProject(e.target.value)}
-            className="styled-select h-11 min-w-[200px]"
-          >
-            <option value="" disabled>Select Project...</option>
-            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          <div className="flex items-center gap-2">
+            <select 
+              value={selectedProject} 
+              onChange={e => setSelectedProject(e.target.value)}
+              className="styled-select h-11 min-w-[200px]"
+            >
+              <option value="" disabled>Select Project...</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
 
           <div className="flex items-center gap-2 bg-[#0d1018] rounded-xl border border-[#1e2435] p-1 h-11">
             <button onClick={() => setCurrentWeekStart(subWeeks(currentWeekStart, 1))} className="p-2 hover:bg-white/5 rounded-lg text-zinc-400 transition-colors">

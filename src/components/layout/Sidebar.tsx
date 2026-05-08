@@ -37,6 +37,7 @@ const menuItems = [
   { label: 'Extra Work', href: '/extra-work', icon: Zap },
   { label: 'Projects', href: '/projects', icon: Briefcase },
   { label: 'Contacts', href: '/contacts', icon: Phone },
+  { label: 'Personal Expenses', href: '/personal-expenses', icon: Wallet },
 ]
 
 export default function Sidebar() {

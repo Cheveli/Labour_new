@@ -26,6 +26,7 @@ export default function DashboardPage() {
   const [projectBreakdown, setProjectBreakdown] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')
+  const [defaultProjectId, setDefaultProjectId] = useState<string | null>(null)
   const supabase = createClient()
 
   async function fetchStats() {
@@ -35,10 +36,20 @@ export default function DashboardPage() {
       const { data: projList } = await supabase.from('projects').select('id, name, status').order('name')
       setProjects(projList || [])
 
-      // Default to first project if none selected
+      // Handle Default Project from localStorage
+      const savedDefault = localStorage.getItem('ssc_default_project_id')
+      const savedActive = localStorage.getItem('ssc_active_project_id')
+      setDefaultProjectId(savedDefault)
+
       let currentProjectId = selectedProjectId
-      if (!currentProjectId && projList && projList.length > 0) {
-        currentProjectId = projList[0].id
+      if (!currentProjectId) {
+        if (savedActive && projList?.some(p => p.id === savedActive)) {
+          currentProjectId = savedActive
+        } else if (savedDefault && projList?.some(p => p.id === savedDefault)) {
+          currentProjectId = savedDefault
+        } else if (projList && projList.length > 0) {
+          currentProjectId = projList[0].id
+        }
         setSelectedProjectId(currentProjectId)
       }
 
@@ -124,7 +135,14 @@ export default function DashboardPage() {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
-  useEffect(() => { fetchStats() }, [selectedProjectId])
+  useEffect(() => { 
+    fetchStats() 
+    if (selectedProjectId) {
+      localStorage.setItem('ssc_active_project_id', selectedProjectId)
+    } else {
+      localStorage.removeItem('ssc_active_project_id')
+    }
+  }, [selectedProjectId])
 
   const PANEL = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
   const GOLD = '#3b82f6'
@@ -171,6 +189,18 @@ export default function DashboardPage() {
     fetchDetailsData(type)
   }
 
+  const handleSetDefault = () => {
+    if (!selectedProjectId) {
+      localStorage.removeItem('ssc_default_project_id')
+      setDefaultProjectId(null)
+      toast.success('Default project cleared')
+    } else {
+      localStorage.setItem('ssc_default_project_id', selectedProjectId)
+      setDefaultProjectId(selectedProjectId)
+      toast.success('Project set as default')
+    }
+  }
+
   return (
     <div className="space-y-5 pb-6" suppressHydrationWarning>
       {/* Header */}
@@ -179,18 +209,35 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-black text-white tracking-tight">Overview</h1>
           <p className="text-sm mt-0.5" style={{ color: DIM }}>{selectedProjectId ? `Financial details for ${projects.find(p => p.id === selectedProjectId)?.name}` : 'Financial summary across all active sites.'}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="text-[10px] font-black uppercase tracking-widest hidden md:block" style={{ color: DIM }}>Project Filter:</label>
-          <select 
-            value={selectedProjectId} 
-            onChange={(e) => setSelectedProjectId(e.target.value)}
-            className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all min-w-[180px]"
-          >
-            <option value="">All Projects</option>
-            {projects.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-3">
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest hidden md:block" style={{ color: DIM }}>Project Filter:</label>
+            <select 
+              value={selectedProjectId} 
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all min-w-[180px]"
+            >
+              <option value="">All Projects</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {selectedProjectId !== defaultProjectId && (
+            <button 
+              onClick={handleSetDefault}
+              className="h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 border border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+            >
+              <Zap size={12} /> Set as Default
+            </button>
+          )}
+
+          {selectedProjectId === defaultProjectId && selectedProjectId !== '' && (
+            <div className="h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2 bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              <Zap size={12} className="fill-blue-400" /> Default Project
+            </div>
+          )}
         </div>
       </div>
 

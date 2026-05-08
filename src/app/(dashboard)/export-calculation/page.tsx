@@ -21,11 +21,29 @@ export default function ExportCalculationPage() {
 
   const supabase = createClient()
 
-  useEffect(() => { setMounted(true); fetchProjects() }, [])
+  useEffect(() => { setMounted(true); fetchInitialData() }, [])
 
-  async function fetchProjects() {
-    const { data } = await supabase.from('projects').select('*').order('name')
-    setProjects(data || [])
+  async function fetchInitialData() {
+    setLoading(true)
+    const { data: projData } = await supabase.from('projects').select('*').order('name')
+    setProjects(projData || [])
+
+    const savedActive = localStorage.getItem('ssc_active_project_id')
+    let currentId = selectedProjectId
+
+    if (!currentId) {
+      if (savedActive && projData?.some(p => p.id === savedActive)) {
+        currentId = savedActive
+      } else if (projData && projData.length > 0) {
+        currentId = projData[0].id
+      }
+      setSelectedProjectId(currentId)
+    }
+
+    if (currentId) {
+      localStorage.setItem('ssc_active_project_id', currentId)
+    }
+    setLoading(false)
   }
 
   const generateReport = async () => {
@@ -230,7 +248,6 @@ export default function ExportCalculationPage() {
   const PANEL = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
   const DIM = '#6b7280'
   const INPUT_ST: React.CSSProperties = { backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0', borderRadius: '0.75rem' }
-  const SC_ST: React.CSSProperties = { backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0' }
 
   return (
     <div className="space-y-6">
@@ -242,13 +259,18 @@ export default function ExportCalculationPage() {
       {/* Filters */}
       <div style={PANEL} className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 col-span-1 md:col-span-1">
             <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Project</label>
-            <select value={selectedProjectId} onChange={e => setSelectedProjectId(e.target.value)}
-              className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST}>
-              <option value="">All Projects</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <div className="flex items-center gap-2">
+              <select value={selectedProjectId} onChange={e => {
+                setSelectedProjectId(e.target.value);
+                localStorage.setItem('ssc_active_project_id', e.target.value);
+              }}
+                className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST}>
+                <option value="">All Projects</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Start Date</label>
