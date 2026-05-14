@@ -1,4 +1,5 @@
 import Sidebar from '@/components/layout/Sidebar'
+import CalculatorBubble from '@/components/calculator-bubble'
 
 export default function DashboardLayout({
   children,
@@ -13,6 +14,7 @@ export default function DashboardLayout({
           {children}
         </div>
       </main>
+      <CalculatorBubble />
     </div>
   )
 }

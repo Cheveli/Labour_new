@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { UserPlus, Search, Calendar, Loader2, DollarSign, History, Trash2, FileText, Download } from 'lucide-react'
+import { UserPlus, Search, Calendar, Loader2, DollarSign, History, Trash2, FileText, Download, Edit2 } from 'lucide-react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { toast } from 'sonner'
@@ -26,14 +26,17 @@ export default function PersonalExpensesPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [page, setPage] = useState(0)
-  
+  const [editingExpense, setEditingExpense] = useState<any>(null)
+  const [editFormData, setEditFormData] = useState({ person_name: '', purpose: '', amount: '', date: '' })
+  const [editSaving, setEditSaving] = useState(false)
+
   const [formData, setFormData] = useState({
     person_name: '',
     purpose: '',
     amount: '',
     date: format(new Date(), 'yyyy-MM-dd')
   })
-  
+
   const supabase = createClient()
 
   useEffect(() => {
@@ -85,7 +88,7 @@ export default function PersonalExpensesPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this entry?')) return
-    
+
     const { error } = await supabase.from('personal_expenses').delete().eq('id', id)
     if (error) {
       toast.error(error.message)
@@ -93,6 +96,25 @@ export default function PersonalExpensesPage() {
       toast.success('Entry deleted')
       fetchData()
     }
+  }
+
+  const handleOpenEdit = (expense: any) => {
+    setEditingExpense(expense)
+    setEditFormData({ person_name: expense.person_name, purpose: expense.purpose, amount: String(expense.amount), date: expense.date })
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingExpense) return
+    setEditSaving(true)
+    const { error } = await supabase.from('personal_expenses').update({
+      person_name: editFormData.person_name,
+      purpose: editFormData.purpose,
+      amount: parseFloat(editFormData.amount),
+      date: editFormData.date
+    }).eq('id', editingExpense.id).select()
+    if (error) toast.error(error.message)
+    else { toast.success('Entry updated'); setEditingExpense(null); fetchData() }
+    setEditSaving(false)
   }
 
   const totalExpenses = expenses.reduce((s, i) => s + Number(i.amount), 0)
@@ -249,9 +271,10 @@ export default function PersonalExpensesPage() {
                           <TableCell className="py-5 text-xs text-zinc-400 max-w-[200px] truncate">{item.purpose}</TableCell>
                           <TableCell className="py-5 text-right font-black text-rose-400 text-lg">₹{Number(item.amount).toLocaleString()}</TableCell>
                           <TableCell className="py-5 px-8 text-right">
-                            <button onClick={() => handleDelete(item.id)} className="text-zinc-700 hover:text-rose-500 transition-colors">
-                              <Trash2 size={16} />
-                            </button>
+                            <div className="flex items-center gap-1 justify-end">
+                              <button onClick={() => handleOpenEdit(item)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-zinc-500 hover:text-blue-400 transition-colors"><Edit2 size={13} /></button>
+                              <button onClick={() => handleDelete(item.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
@@ -337,6 +360,37 @@ export default function PersonalExpensesPage() {
            </Card>
         </div>
       </div>
+
+      {/* Edit Personal Expense Modal */}
+      {editingExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setEditingExpense(null)}>
+          <div className="rounded-2xl p-6 w-full max-w-md space-y-4 bg-[#0d1018] border border-[#1e2435]" onClick={e => e.stopPropagation()}>
+            <p className="text-sm font-black text-white uppercase tracking-wide">Edit Personal Expense</p>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Person Name</label>
+                <Input value={editFormData.person_name} onChange={e => setEditFormData({ ...editFormData, person_name: e.target.value })} className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Purpose</label>
+                <Textarea value={editFormData.purpose} onChange={e => setEditFormData({ ...editFormData, purpose: e.target.value })} className="bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white p-4" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Amount</label>
+                <Input type="number" value={editFormData.amount} onChange={e => setEditFormData({ ...editFormData, amount: e.target.value })} className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Date</label>
+                <Input type="date" value={editFormData.date} onChange={e => setEditFormData({ ...editFormData, date: e.target.value })} className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4" />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button onClick={() => setEditingExpense(null)} variant="outline" className="flex-1 border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight">Cancel</Button>
+              <Button onClick={handleSaveEdit} disabled={editSaving} className="flex-1 bg-rose-600 hover:bg-rose-500 rounded-xl font-black uppercase tracking-tight">{editSaving ? <Loader2 className="animate-spin mr-2" /> : null} Save</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

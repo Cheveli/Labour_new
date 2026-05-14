@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Zap, Plus, Search, Loader2, Calendar, Briefcase, History, FileText, Download } from 'lucide-react'
+import { Zap, Plus, Search, Loader2, Calendar, Briefcase, History, FileText, Download, Edit2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import jsPDF from 'jspdf'
@@ -22,7 +22,10 @@ export default function ExtraWorkPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [taskPage, setTaskPage] = useState(0)
-  
+  const [editingTask, setEditingTask] = useState<any>(null)
+  const [editFormData, setEditFormData] = useState({ project_id: '', work_name: '', amount: '', date: '', notes: '' })
+  const [editSaving, setEditSaving] = useState(false)
+
   const [formData, setFormData] = useState({
     project_id: '',
     work_name: '',
@@ -30,7 +33,7 @@ export default function ExtraWorkPage() {
     date: format(new Date(), 'yyyy-MM-dd'),
     notes: ''
   })
-  
+
   const supabase = createClient()
 
   useEffect(() => {
@@ -86,27 +89,52 @@ export default function ExtraWorkPage() {
     setSaving(false)
   }
 
-  const exportPDF = async () => {
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this extra work entry?')) return
+    const { error } = await supabase.from('extra_work').delete().eq('id', id)
+    if (error) toast.error(error.message)
+    else { toast.success('Entry deleted'); fetchData() }
+  }
+
+  const handleOpenEdit = (task: any) => {
+    setEditingTask(task)
+    setEditFormData({ project_id: task.project_id, work_name: task.work_name, amount: String(task.amount), date: task.date, notes: task.notes || '' })
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingTask) return
+    setEditSaving(true)
+    const { error } = await supabase.from('extra_work').update({
+      project_id: editFormData.project_id,
+      work_name: editFormData.work_name,
+      amount: parseFloat(editFormData.amount),
+      date: editFormData.date,
+      notes: editFormData.notes
+    }).eq('id', editingTask.id).select()
+    if (error) toast.error(error.message)
+    else { toast.success('Entry updated'); setEditingTask(null); fetchData() }
+    setEditSaving(false)
+  }
+
+  const exportPDF = () => {
     const doc = new jsPDF()
     
     drawPremiumHeader(doc, 'EXTRA WORK REPORT', format(new Date(), 'dd MMM yyyy'))
 
     const tableData = tasks.map((row, idx) => [
       idx + 1,
-      format(new Date(row.date), 'dd/MM/yyyy'),
+      format(new Date(row.date), 'dd MMM yyyy'),
       row.projects?.name || 'N/A',
       row.work_name,
       `Rs. ${Number(row.amount).toLocaleString()}`,
       row.notes || '-'
     ])
 
-    const total = tasks.reduce((sum, r) => sum + Number(r.amount || 0), 0)
-
     autoTable(doc, {
       startY: 54,
-      head: [['#', 'Date', 'Project', 'Work Description', 'Amount', 'Notes']],
+      head: [['S.No', 'Date', 'Project', 'Work Description', 'Amount', 'Notes']],
       body: tableData,
-      foot: [['', '', '', 'TOTAL', `Rs. ${total.toLocaleString()}`, '']],
+      foot: [['', '', '', 'TOTAL', `Rs. ${tasks.reduce((s, t) => s + Number(t.amount), 0).toLocaleString()}`, '']],
       theme: 'grid',
       headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: 8 },
       bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 8 },
@@ -116,8 +144,6 @@ export default function ExtraWorkPage() {
     })
 
     drawPremiumFooter(doc)
-    
-
     doc.save(`Extra_Work_Report_${format(new Date(), 'dd-MMM-yyyy')}.pdf`)
     toast.success('PDF exported successfully')
   }
@@ -198,18 +224,19 @@ export default function ExtraWorkPage() {
                       <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Task Name</TableHead>
                       <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Remarks</TableHead>
                       <TableHead className="text-right px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Valuation</TableHead>
+                      <TableHead className="py-6 w-16"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loading ? (
                       Array(5).fill(0).map((_, i) => (
                         <TableRow key={i} className="animate-pulse border-zinc-800">
-                          <TableCell colSpan={5} className="h-16 px-8 bg-zinc-800/10"></TableCell>
+                          <TableCell colSpan={6} className="h-16 px-8 bg-zinc-800/10"></TableCell>
                         </TableRow>
                       ))
                     ) : tasks.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="py-24 text-center">
+                        <TableCell colSpan={6} className="py-24 text-center">
                           <div className="flex flex-col items-center gap-4 text-zinc-600">
                               <Zap size={48} className="opacity-10" />
                               <p className="text-sm font-bold uppercase tracking-widest">No extra task history</p>
@@ -226,6 +253,12 @@ export default function ExtraWorkPage() {
                           <TableCell className="py-5 font-black text-xs text-gray-300 uppercase tracking-tighter">{task.work_name}</TableCell>
                           <TableCell className="py-5 text-xs text-zinc-400 max-w-[220px] truncate">{task.notes || '—'}</TableCell>
                           <TableCell className="py-5 text-right px-8 font-black text-blue-400 text-sm">₹ {task.amount.toLocaleString()}</TableCell>
+                          <TableCell className="py-3 pr-4">
+                            <div className="flex items-center gap-1 justify-end">
+                              <button onClick={() => handleOpenEdit(task)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-zinc-500 hover:text-blue-400 transition-colors"><Edit2 size={13} /></button>
+                              <button onClick={() => handleDelete(task.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
@@ -336,6 +369,43 @@ export default function ExtraWorkPage() {
            </Card>
         </div>
       </div>
+
+      {/* Edit Extra Work Modal */}
+      {editingTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setEditingTask(null)}>
+          <div className="rounded-2xl p-6 w-full max-w-md space-y-4" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }} onClick={e => e.stopPropagation()}>
+            <p className="text-sm font-black text-white uppercase tracking-wide">Edit Extra Work Entry</p>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Project</label>
+                <select value={editFormData.project_id} onChange={e => setEditFormData({ ...editFormData, project_id: e.target.value })} className="w-full h-10 px-3 rounded-xl text-sm font-semibold outline-none" style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }}>
+                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Work Name</label>
+                <Input value={editFormData.work_name} onChange={e => setEditFormData({ ...editFormData, work_name: e.target.value })} className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Amount</label>
+                <Input type="number" value={editFormData.amount} onChange={e => setEditFormData({ ...editFormData, amount: e.target.value })} className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Date</label>
+                <Input type="date" value={editFormData.date} onChange={e => setEditFormData({ ...editFormData, date: e.target.value })} className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Notes</label>
+                <Textarea value={editFormData.notes} onChange={e => setEditFormData({ ...editFormData, notes: e.target.value })} className="bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white p-4" />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button onClick={() => setEditingTask(null)} variant="outline" className="flex-1 border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight">Cancel</Button>
+              <Button onClick={handleSaveEdit} disabled={editSaving} className="flex-1 btn-construction rounded-xl font-black uppercase tracking-tight">{editSaving ? <Loader2 className="animate-spin mr-2" /> : null} Save</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

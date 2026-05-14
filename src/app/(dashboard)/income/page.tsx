@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, Search, TrendingUp, Calendar, Briefcase, Loader2, DollarSign, History, FileText, Download, Receipt, Zap } from 'lucide-react'
+import { Plus, Search, TrendingUp, Calendar, Briefcase, Loader2, DollarSign, History, FileText, Download, Receipt, Zap, Edit2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import jsPDF from 'jspdf'
@@ -29,6 +29,9 @@ export default function IncomePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [incomePage, setIncomePage] = useState(0)
+  const [editingItem, setEditingItem] = useState<any>(null)
+  const [editFormData, setEditFormData] = useState({ project_id: '', amount: '', date: '', notes: '' })
+  const [editSaving, setEditSaving] = useState(false)
 
   const [formData, setFormData] = useState({
     project_id: '',
@@ -91,6 +94,32 @@ export default function IncomePage() {
       fetchData()
     }
     setSaving(false)
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this income entry?')) return
+    const { error } = await supabase.from('income').delete().eq('id', id)
+    if (error) toast.error(error.message)
+    else { toast.success('Entry deleted'); fetchData() }
+  }
+
+  const handleOpenEdit = (item: any) => {
+    setEditingItem(item)
+    setEditFormData({ project_id: item.project_id, amount: String(item.amount), date: item.date, notes: item.notes || '' })
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingItem) return
+    setEditSaving(true)
+    const { error } = await supabase.from('income').update({
+      project_id: editFormData.project_id,
+      amount: parseFloat(editFormData.amount),
+      date: editFormData.date,
+      notes: editFormData.notes
+    }).eq('id', editingItem.id).select()
+    if (error) toast.error(error.message)
+    else { toast.success('Entry updated'); setEditingItem(null); fetchData() }
+    setEditSaving(false)
   }
 
   const exportPDF = () => {
@@ -344,18 +373,19 @@ export default function IncomePage() {
                       <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Project</TableHead>
                       <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Remarks</TableHead>
                       <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 text-right">Amount Received</TableHead>
+                      <TableHead className="py-6 w-16"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loading ? (
                       Array(5).fill(0).map((_, i) => (
                         <TableRow key={i} className="animate-pulse border-zinc-800">
-                          <TableCell colSpan={4} className="h-16 px-8 bg-zinc-800/10"></TableCell>
+                          <TableCell colSpan={5} className="h-16 px-8 bg-zinc-800/10"></TableCell>
                         </TableRow>
                       ))
                     ) : income.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={4} className="py-24 text-center">
+                        <TableCell colSpan={5} className="py-24 text-center">
                           <div className="flex flex-col items-center gap-4 text-zinc-600">
                             <History size={48} className="opacity-10" />
                             <p className="text-sm font-bold uppercase tracking-widest">No income record history</p>
@@ -381,6 +411,12 @@ export default function IncomePage() {
                             >
                               <Receipt size={16} />
                             </Button>
+                          </TableCell>
+                          <TableCell className="py-3 pr-4">
+                            <div className="flex items-center gap-1 justify-end">
+                              <button onClick={() => handleOpenEdit(item)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-zinc-500 hover:text-blue-400 transition-colors"><Edit2 size={13} /></button>
+                              <button onClick={() => handleDelete(item.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
@@ -492,6 +528,39 @@ export default function IncomePage() {
           </Card>
         </div>
       </div>
+
+      {/* Edit Income Modal */}
+      {editingItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setEditingItem(null)}>
+          <div className="rounded-2xl p-6 w-full max-w-md space-y-4" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }} onClick={e => e.stopPropagation()}>
+            <p className="text-sm font-black text-white uppercase tracking-wide">Edit Income Entry</p>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Project</label>
+                <select value={editFormData.project_id} onChange={e => setEditFormData({ ...editFormData, project_id: e.target.value })} className="w-full h-10 px-3 rounded-xl text-sm font-semibold outline-none" style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }}>
+                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Amount</label>
+                <Input type="number" value={editFormData.amount} onChange={e => setEditFormData({ ...editFormData, amount: e.target.value })} className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Date</label>
+                <Input type="date" value={editFormData.date} onChange={e => setEditFormData({ ...editFormData, date: e.target.value })} className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Notes</label>
+                <Textarea value={editFormData.notes} onChange={e => setEditFormData({ ...editFormData, notes: e.target.value })} className="bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white p-4" />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button onClick={() => setEditingItem(null)} variant="outline" className="flex-1 border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight">Cancel</Button>
+              <Button onClick={handleSaveEdit} disabled={editSaving} className="flex-1 btn-construction rounded-xl font-black uppercase tracking-tight">{editSaving ? <Loader2 className="animate-spin mr-2" /> : null} Save</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

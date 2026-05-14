@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Boxes, Loader2, Trash2, Edit2, Zap, Upload, Link, FileText, CheckSquare, Square } from 'lucide-react'
+import { Boxes, Loader2, Trash2, Edit2, FileText, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -47,12 +47,7 @@ export default function MaterialsPage() {
   const [editingMat, setEditingMat] = useState<any>(null)
   const [editMatData, setEditMatData] = useState({ name: '', quantity: '', unit: 'bags', cost_per_unit: '', total_amount: '', notes: '', date: '' })
   const [editSaving, setEditSaving] = useState(false)
-
-  // Receipt and Combined Bill State
   const [receiptFile, setReceiptFile] = useState<File | null>(null)
-  const [recentMaterials, setRecentMaterials] = useState<any[]>([])
-  const [selectedCombineIds, setSelectedCombineIds] = useState<string[]>([])
-  const [fetchingRecent, setFetchingRecent] = useState(false)
   const supabase = createClient()
 
   useEffect(() => {
@@ -98,12 +93,12 @@ export default function MaterialsPage() {
       unit: editMatData.unit,
       cost_per_unit: parseFloat(editMatData.cost_per_unit) || 0,
       total_amount: parseFloat(editMatData.total_amount) || 0,
-      notes: editMatData.notes || null,
+      notes: editMatData.notes,
       date: editMatData.date
-    }).eq('id', editingMat.id)
-    setEditSaving(false)
+    }).eq('id', editingMat.id).select()
     if (error) toast.error(error.message)
-    else { toast.success('Updated'); setEditingMat(null); fetchData() }
+    else { toast.success('Entry updated'); setEditingMat(null); fetchData() }
+    setEditSaving(false)
   }
   async function fetchData() {
     const { data: projData } = await supabase.from('projects').select('*').order('name')
@@ -130,36 +125,6 @@ export default function MaterialsPage() {
     const { data: matData } = await q
     setMaterials(matData || [])
     setLoading(false)
-
-    // Also fetch recent entries for combination
-    if (currentId) {
-      fetchRecentMaterials(currentId)
-    }
-  }
-
-  async function fetchRecentMaterials(projectId: string) {
-    setFetchingRecent(true)
-    // Fetch materials from the last 2 days for the same project that DON'T have a receipt yet
-    // (Assuming we want to link unbilled ones)
-    const twoDaysAgo = format(new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd')
-
-    const { data } = await supabase
-      .from('materials')
-      .select('*')
-      .eq('project_id', projectId)
-      .gte('date', twoDaysAgo)
-      .is('receipt_url', null) // Only those without a receipt
-      .order('date', { ascending: false })
-      .limit(5)
-
-    setRecentMaterials(data || [])
-    setFetchingRecent(false)
-  }
-
-  const toggleCombine = (id: string) => {
-    setSelectedCombineIds(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    )
   }
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -173,19 +138,24 @@ export default function MaterialsPage() {
 
     let uploadedUrl = null
     if (receiptFile) {
-      const fileName = `material_${Date.now()}_${receiptFile.name}`
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('receipts')
-        .upload(fileName, receiptFile)
+      try {
+        const fileName = `material_${Date.now()}_${receiptFile.name}`
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('receipts')
+          .upload(fileName, receiptFile)
 
-      if (uploadError) {
-        toast.error('Failed to upload receipt: ' + uploadError.message)
-        setSaving(false)
-        return
+        if (uploadError) {
+          toast.error('Failed to upload receipt: ' + uploadError.message)
+          setSaving(false)
+          return
+        }
+
+        const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(fileName)
+        uploadedUrl = publicUrl
+      } catch (err) {
+        toast.error('Receipt upload failed. Continuing without receipt.')
+        uploadedUrl = null
       }
-
-      const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(fileName)
-      uploadedUrl = publicUrl
     }
 
     const transport = transportEnabled ? (parseFloat(transportFee) || 0) : 0
@@ -208,37 +178,27 @@ export default function MaterialsPage() {
       quantity: parseFloat(formData.quantity) || 0,
       cost_per_unit: parseFloat(formData.cost_per_unit) || 0,
       total_amount: finalAmt,
-      notes: notesWithFees || null
+      notes: notesWithFees || null,
+      receipt_url: uploadedUrl
     }
 
-    const { data: newEntry, error } = await supabase.from('materials').insert([{
-      ...payload,
-      receipt_url: uploadedUrl
-    }]).select()
+    const { data: newEntry, error } = await supabase.from('materials').insert([payload]).select()
 
     let finalError = error
     if (error && error.message.includes('column "receipt_url" of relation "materials" does not exist')) {
-      const { data: retryData, error: retryError } = await supabase.from('materials').insert([payload]).select()
+      const { data: retryData, error: retryError } = await supabase.from('materials').insert([{ ...payload, receipt_url: undefined }]).select()
       finalError = retryError
     }
 
     if (finalError) {
       toast.error(finalError.message)
     } else {
-      if (selectedCombineIds.length > 0 && uploadedUrl) {
-        await supabase
-          .from('materials')
-          .update({ receipt_url: uploadedUrl })
-          .in('id', selectedCombineIds)
-      }
-
       toast.success('Inventory recorded')
       setFormData({ project_id: '', name: '', quantity: '', unit: 'bags', cost_per_unit: '', base_amount: '', total_amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' })
       setSupplierName(''); setSupplierPhone('')
       setTransportEnabled(false); setTransportFee('')
       setHamaliEnabled(false); setHamaliFee('')
       setReceiptFile(null)
-      setSelectedCombineIds([])
       setMatPage(0)
       fetchData()
     }
@@ -283,13 +243,14 @@ export default function MaterialsPage() {
                 <Table>
                   <TableHeader className="bg-zinc-900/80">
                     <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
+                      <TableHead className="px-6 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 w-12">S.No</TableHead>
                       <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Supplier</TableHead>
                       <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Project</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Material / Qty</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Material</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Supplier</TableHead>
                       <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Cost</TableHead>
                       <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Remarks</TableHead>
-                      <TableHead className="text-right px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Grand Total</TableHead>
+                      <TableHead className="text-right px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Total</TableHead>
                       <TableHead className="py-6 w-16"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -297,12 +258,12 @@ export default function MaterialsPage() {
                     {loading ? (
                       Array(5).fill(0).map((_, i) => (
                         <TableRow key={i} className="animate-pulse border-zinc-800">
-                          <TableCell colSpan={6} className="h-16 px-8 bg-zinc-800/10"></TableCell>
+                          <TableCell colSpan={9} className="h-16 px-8 bg-zinc-800/10"></TableCell>
                         </TableRow>
                       ))
                     ) : materials.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="py-24 text-center">
+                        <TableCell colSpan={9} className="py-24 text-center">
                           <div className="flex flex-col items-center gap-4 text-zinc-600">
                             <Boxes size={48} className="opacity-10" />
                             <p className="text-sm font-bold uppercase tracking-widest">No material history found</p>
@@ -310,22 +271,26 @@ export default function MaterialsPage() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      materials.slice(matPage * 10, matPage * 10 + 10).map((item) => {
+                      materials.slice(matPage * 10, matPage * 10 + 10).map((item, idx) => {
                         const notes = item.notes || '';
-                        const supplierMatch = notes.match(/Supplier:\s(.*?)(?:\s\||$)/);
+                        const supplierMatch = notes.match(/Supplier:\s(.*?)(?:\s\(|$)/);
+                        const supplierPhoneMatch = notes.match(/\((\d+)\)/);
                         const matAmtMatch = notes.match(/Material Amount:\sRs\.([\d,.]+)/);
                         const transportMatch = notes.match(/Transportation:\sRs\.([\d,.]+)/);
                         const hamaliMatch = notes.match(/Hamali:\sRs\.([\d,.]+)/);
                         const receiptMatch = notes.match(/Receipt:\s(.*?)(?:\s\||$)/);
 
                         const supplier = supplierMatch ? supplierMatch[1] : '—';
+                        const supplierPhone = supplierPhoneMatch ? supplierPhoneMatch[1] : '';
+                        const supplierDisplay = supplier !== '—' ? (supplierPhone ? `${supplier} (${supplierPhone})` : supplier) : '—';
                         const matAmt = matAmtMatch ? `₹${matAmtMatch[1]}` : (item.quantity > 0 && item.cost_per_unit > 0 ? `₹${(item.quantity * item.cost_per_unit).toLocaleString()}` : '');
                         const transport = transportMatch ? `₹${transportMatch[1]}` : '—';
                         const hamali = hamaliMatch ? `₹${hamaliMatch[1]}` : '—';
                         const receiptUrl = item.receipt_url || (receiptMatch ? receiptMatch[1] : null);
 
                         let cleanNotes = notes
-                          .replace(/Supplier:\s(.*?)(?:\s\||$)/, '')
+                          .replace(/Supplier:\s(.*?)(?:\s\(|$)/, '')
+                          .replace(/\(\d+\)/, '')
                           .replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '')
                           .replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '')
                           .replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '')
@@ -335,11 +300,9 @@ export default function MaterialsPage() {
 
                         return (
                           <TableRow key={item.id} className="border-zinc-800 transition-colors hover:bg-white/5">
+                            <TableCell className="px-6 py-5 font-bold text-gray-400 text-xs text-center">{matPage * 10 + idx + 1}</TableCell>
                             <TableCell className="px-8 py-5 font-bold text-gray-400 text-xs whitespace-nowrap">
                               {format(new Date(item.date), 'dd-MM-yyyy')}
-                            </TableCell>
-                            <TableCell className="py-5">
-                              <p className="font-bold text-white text-sm">{supplier}</p>
                             </TableCell>
                             <TableCell className="py-5">
                               <p className="font-bold text-white text-sm lowercase">{item.projects?.name}</p>
@@ -349,11 +312,14 @@ export default function MaterialsPage() {
                               <p className="font-bold text-zinc-500 text-[10px] uppercase mt-1">{item.quantity} {item.unit} {item.cost_per_unit > 0 ? ` @ ₹${item.cost_per_unit}` : ''}</p>
                             </TableCell>
                             <TableCell className="py-5">
-                              {matAmt && <p className="text-[10px] font-bold text-zinc-400">Material Amount: <span className="text-emerald-400">{matAmt}</span></p>}
+                              <p className="font-bold text-white text-sm">{supplierDisplay}</p>
+                            </TableCell>
+                            <TableCell className="py-5">
+                              {matAmt && <p className="text-[10px] font-bold text-zinc-400">Material: <span className="text-emerald-400">{matAmt}</span></p>}
                               {transport !== '—' && <p className="text-[10px] font-bold text-zinc-400">Transport: <span className="text-white">{transport}</span></p>}
                               {hamali !== '—' && <p className="text-[10px] font-bold text-zinc-400">Hamali: <span className="text-white">{hamali}</span></p>}
                             </TableCell>
-                            <TableCell className="py-5 text-xs text-zinc-400 max-w-[200px] break-words">{cleanNotes || '—'}</TableCell>
+                            <TableCell className="py-5 text-xs text-zinc-400 max-w-[220px] break-words">{cleanNotes || '—'}</TableCell>
                             <TableCell className="py-5 text-right px-8 font-black text-white text-sm whitespace-nowrap">₹ {item.total_amount?.toLocaleString() || item.total_cost?.toLocaleString()}</TableCell>
                             <TableCell className="py-3 pr-4">
                               <div className="flex items-center gap-1 justify-end">
@@ -611,42 +577,6 @@ export default function MaterialsPage() {
                   </div>
                 </div>
               </div>
-
-              {/* Combine Bills Option */}
-              {recentMaterials.length > 0 && (
-                <div className="space-y-3 pt-4 border-t border-zinc-800">
-                  <label className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2">
-                    <Link size={14} className="text-amber-400" />
-                    Combine with Recent <span className="text-[10px] text-zinc-500 font-normal lowercase">(optional)</span>
-                  </label>
-                  <p className="text-[10px] text-zinc-500 leading-tight">Apply the same bill to entries added in the last 48 hours.</p>
-
-                  <div className="space-y-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
-                    {recentMaterials.map((mat) => (
-                      <div
-                        key={mat.id}
-                        onClick={() => toggleCombine(mat.id)}
-                        className={cn(
-                          "p-2 rounded-lg border flex items-center justify-between cursor-pointer transition-all",
-                          selectedCombineIds.includes(mat.id)
-                            ? "bg-amber-500/10 border-amber-500/30 ring-1 ring-amber-500/20"
-                            : "bg-zinc-900 border-zinc-800 hover:border-zinc-700"
-                        )}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[10px] font-black text-white uppercase truncate">{mat.name}</p>
-                          <p className="text-[8px] text-zinc-500 uppercase mt-0.5">{format(new Date(mat.date), 'MMM dd')} • ₹{mat.total_amount?.toLocaleString()}</p>
-                        </div>
-                        {selectedCombineIds.includes(mat.id) ? (
-                          <CheckSquare size={14} className="text-amber-400 shrink-0" />
-                        ) : (
-                          <Square size={14} className="text-zinc-700 shrink-0" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               <Button type="submit" disabled={saving} className="w-full h-14 btn-construction rounded-xl font-black uppercase tracking-tight text-lg">
                 {saving ? <Loader2 className="animate-spin mr-2" /> : null}

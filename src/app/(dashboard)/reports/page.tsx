@@ -41,16 +41,18 @@ export default function ReportsPage() {
       setStartDate(format(import_startOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd'))
       setEndDate(format(import_endOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd'))
     } else {
+      // For materials, revenue, extra work - default to project start to current date
       if (projectId && projects.length > 0) {
         const p = projects.find(x => x.id === projectId)
         if (p && p.created_at) {
-          // Use a very early date just in case
+          setStartDate(format(new Date(p.created_at), 'yyyy-MM-dd'))
+        } else {
           setStartDate('2020-01-01')
         }
       } else {
         setStartDate('2020-01-01')
       }
-      setEndDate(format(new Date(new Date().getFullYear() + 1, 11, 31), 'yyyy-MM-dd'))
+      setEndDate(format(new Date(), 'yyyy-MM-dd'))
     }
   }, [reportType, projectId, projects])
 
@@ -123,26 +125,29 @@ export default function ReportsPage() {
     let foot = [['', '', '', 'TOTAL', `Rs.${getTotal().toLocaleString()}`]]
 
     if (reportType === 'materials') {
-      head = [['#', 'Date', 'Supplier', 'Project', 'Material/Qty', 'Cost', 'Remarks', 'Grand Total']]
+      head = [['S.No', 'Date', 'Project', 'Material', 'Supplier', 'Cost', 'Remarks', 'Total']]
       body = data.map((r, i) => {
         const notes = r.notes || ''
-        const sMatch = notes.match(/Supplier:\s(.*?)(?:\s\||$)/)
+        const sMatch = notes.match(/Supplier:\s(.*?)(?:\s\(|$)/)
+        const sPhoneMatch = notes.match(/\((\d+)\)/)
         const mMatch = notes.match(/Material Amount:\sRs\.([\d,.]+)/)
         const tMatch = notes.match(/Transportation:\sRs\.([\d,.]+)/)
         const hMatch = notes.match(/Hamali:\sRs\.([\d,.]+)/)
         
-        const supp = sMatch ? sMatch[1] : '—'
-        const matAmt = mMatch ? `Material Amount: Rs.${mMatch[1]}` : ''
+        const supplier = sMatch ? sMatch[1] : '—'
+        const supplierPhone = sPhoneMatch ? sPhoneMatch[1] : ''
+        const supplierDisplay = supplier !== '—' ? (supplierPhone ? `${supplier} (${supplierPhone})` : supplier) : '—'
+        const matAmt = mMatch ? `Material: Rs.${mMatch[1]}` : ''
         const tr = tMatch ? `Transport: Rs.${tMatch[1]}` : ''
         const ha = hMatch ? `Hamali: Rs.${hMatch[1]}` : ''
         const cost = [matAmt, tr, ha].filter(Boolean).join('\n') || '—'
         
-        const cleanNotes = notes.replace(/Supplier:\s(.*?)(?:\s\||$)/, '').replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/^[\s\|]+|[\s\|]+$/g, '').trim()
+        const cleanNotes = notes.replace(/Supplier:\s(.*?)(?:\s\(|$)/, '').replace(/\(\d+\)/, '').replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/^[\s\|]+|[\s\|]+$/g, '').trim()
         
-        const materialQty = `${r.name}\n${r.quantity} ${r.unit}`
+        const materialQty = `${r.name} ${r.quantity > 0 ? `(${r.quantity} ${r.unit})` : ''}`
         const project = r.projects?.name || '—'
 
-        return [i + 1, format(new Date(r.date), 'dd/MM/yyyy'), supp, project, materialQty, cost, cleanNotes || '—', `Rs.${Number(r.total_amount || 0).toLocaleString()}`]
+        return [i + 1, format(new Date(r.date), 'dd/MM/yyyy'), project, materialQty, supplierDisplay, cost, cleanNotes || '—', `Rs.${Number(r.total_amount || 0).toLocaleString()}`]
       })
       foot = [['', '', '', '', '', '', 'TOTAL', `Rs.${getTotal().toLocaleString()}`]]
     }

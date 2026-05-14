@@ -212,16 +212,15 @@ export default function ExportCalculationPage() {
     if (y > 240) { doc.addPage(); y = 20 }
     const bW = 45, bH = 22
     // Labour total box
-    doc.setFillColor(240, 245, 255); doc.roundedRect(14, y, bW, bH, 1, 1, 'F')
-    doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.text('Labour Cost', 14 + bW / 2, y + 5, { align: 'center' })
-    doc.setFontSize(6); doc.text(`M-${mDays} L-${lDays} P-${pDays}`, 14 + bW / 2, y + 10, { align: 'center' })
-    doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${totalLabourCost.toLocaleString()}`, 14 + bW / 2, y + 17, { align: 'center' })
+    doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14, y, bW, bH, 1, 1, 'F')
+    doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.text('Labour Cost', 14 + bW / 2, y + 7, { align: 'center' })
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${totalLabourCost.toLocaleString()}`, 14 + bW / 2, y + 16, { align: 'center' })
     // Material total box
-    doc.setFillColor(240, 255, 245); doc.roundedRect(14 + bW + 2, y, bW, bH, 1, 1, 'F')
+    doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14 + bW + 2, y, bW, bH, 1, 1, 'F')
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.text('Material Cost', 14 + bW + 2 + bW / 2, y + 7, { align: 'center' })
     doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${totalMaterialCost.toLocaleString()}`, 14 + bW + 2 + bW / 2, y + 16, { align: 'center' })
     // Extra work total box
-    doc.setFillColor(255, 251, 235); doc.roundedRect(14 + (bW + 2) * 2, y, bW, bH, 1, 1, 'F')
+    doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14 + (bW + 2) * 2, y, bW, bH, 1, 1, 'F')
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.text('Extra Work', 14 + (bW + 2) * 2 + bW / 2, y + 7, { align: 'center' })
     doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${(reportData.totalExtraWorkCost || 0).toLocaleString()}`, 14 + (bW + 2) * 2 + bW / 2, y + 16, { align: 'center' })
     // Grand total box
