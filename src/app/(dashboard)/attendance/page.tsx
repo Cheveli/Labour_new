@@ -235,7 +235,7 @@ export default function AttendancePage() {
         const newDays = { ...next[wId].days }
         weekDates.forEach(d => {
           const dateStr = format(d, 'yyyy-MM-dd')
-          const currentDay = newDays[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0, notes: '' }
+          const currentDay = newDays[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0 }
           if (currentDay.status === '') {
             newDays[dateStr] = { ...currentDay, status: 'P' }
           }
@@ -256,7 +256,7 @@ export default function AttendancePage() {
         weekDates.forEach(d => {
           const dateStr = format(d, 'yyyy-MM-dd')
           if (newDays[dateStr]) {
-            newDays[dateStr] = { ...newDays[dateStr], status: '', overtime_amount: 0, advance_amount: 0, notes: '' }
+            newDays[dateStr] = { ...newDays[dateStr], status: '', overtime_amount: 0, advance_amount: 0 }
           }
         })
         next[wId] = { ...next[wId], days: newDays }
@@ -308,8 +308,7 @@ export default function AttendancePage() {
             next[wId].days[targetDateStr] = {
               status,
               overtime_amount: Number(r.overtime_amount) || 0,
-              advance_amount: Number(r.advance_amount) || 0,
-              notes: r.notes || ''
+              advance_amount: Number(r.advance_amount) || 0
             }
           }
         })
