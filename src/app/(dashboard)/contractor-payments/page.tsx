@@ -13,6 +13,7 @@ import { format } from 'date-fns'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { drawPremiumHeader, drawPremiumFooter, PDF_COLORS } from '@/lib/report-utils'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 
 const WORK_NATURES = [
   'Painter',
@@ -48,6 +49,8 @@ export default function ContractorPaymentsPage() {
   const [installmentAmount, setInstallmentAmount] = useState('')
   const [installmentDate, setInstallmentDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [selectedContractor, setSelectedContractor] = useState<any>(null)
+  const [viewContractor, setViewContractor] = useState<any | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
   
   const supabase = createClient()
 
@@ -151,10 +154,19 @@ export default function ContractorPaymentsPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this contractor payment?')) return
-    const { error } = await supabase.from('contractor_payments').delete().eq('id', id)
-    if (error) toast.error(error.message)
-    else { toast.success('Deleted'); fetchContractors() }
+    setDeleteId(id)
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteId) return
+    const { error } = await supabase.from('contractor_payments').delete().eq('id', deleteId)
+    if (error) {
+      toast.error(error.message)
+    } else {
+      toast.success('Deleted successfully')
+      setDeleteId(null)
+      fetchContractors()
+    }
   }
 
   const exportPDF = (contractor: any) => {
@@ -377,14 +389,14 @@ export default function ContractorPaymentsPage() {
                 <Table>
                   <TableHeader className="bg-black/20">
                     <TableRow className="border-[#1e2435] hover:bg-transparent">
-                      <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-500">Date</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-500">Name</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-500">Work</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-500">Mobile</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-500 text-right">Total</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-500 text-right">Paid</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-500 text-right">Receipts</TableHead>
-                      <TableHead className="py-6 px-8 w-16"></TableHead>
+                      <TableHead className="px-4 py-4 uppercase text-[10px] font-black tracking-widest text-zinc-500">Date</TableHead>
+                      <TableHead className="py-4 uppercase text-[10px] font-black tracking-widest text-zinc-500">Name</TableHead>
+                      <TableHead className="py-4 uppercase text-[10px] font-black tracking-widest text-zinc-500">Work</TableHead>
+                      <TableHead className="py-4 uppercase text-[10px] font-black tracking-widest text-zinc-500">Mobile</TableHead>
+                      <TableHead className="py-4 uppercase text-[10px] font-black tracking-widest text-zinc-500 text-right">Last Payment</TableHead>
+                      <TableHead className="py-4 uppercase text-[10px] font-black tracking-widest text-zinc-500 text-right">Total Paid</TableHead>
+                      <TableHead className="py-4 uppercase text-[10px] font-black tracking-widest text-zinc-500 text-right">Receipts</TableHead>
+                      <TableHead className="py-4 px-4 w-16"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -406,16 +418,26 @@ export default function ContractorPaymentsPage() {
                     ) : (
                       contractors.slice(page * 10, page * 10 + 10).map((contractor) => (
                         <TableRow key={contractor.id} className="border-[#1e2435] transition-colors hover:bg-white/5">
-                          <TableCell className="px-8 py-5 font-bold text-zinc-400 text-xs">
+                          <TableCell className="px-4 py-3.5 font-bold text-zinc-400 text-xs">
                             {format(new Date(contractor.date), 'MMM dd, yyyy')}
                           </TableCell>
-                          <TableCell className="py-5 font-bold text-white text-sm">{contractor.name}</TableCell>
-                          <TableCell className="py-5 text-xs text-zinc-400 max-w-[150px] truncate">{contractor.work_nature}</TableCell>
-                          <TableCell className="py-5 text-xs text-zinc-400">{contractor.mobile}</TableCell>
-                          <TableCell className="py-5 text-right font-black text-white text-lg">₹{contractor.total_amount.toLocaleString()}</TableCell>
-                          <TableCell className="py-5 text-right font-black text-blue-400 text-lg">₹{contractor.total_paid.toLocaleString()}</TableCell>
-                          <TableCell className="py-5 text-right font-bold text-amber-400 text-xs">{contractor.installments?.length || 0}</TableCell>
-                          <TableCell className="py-5 px-8 text-right">
+                          <TableCell className="py-3.5 font-bold text-white text-sm">{contractor.name}</TableCell>
+                          <TableCell className="py-3.5 text-xs text-zinc-400 max-w-[150px] truncate">{contractor.work_nature}</TableCell>
+                          <TableCell className="py-3.5 text-xs text-zinc-400">{contractor.mobile}</TableCell>
+                          <TableCell className="py-3.5 text-right font-black text-white text-lg">
+                            ₹{(contractor.installments?.[contractor.installments.length - 1]?.amount || 0).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="py-3.5 text-right font-black text-blue-400 text-lg">₹{contractor.total_paid.toLocaleString()}</TableCell>
+                          <TableCell className="py-3.5 text-right font-bold text-amber-400 text-xs">
+                            <button
+                              onClick={() => setViewContractor(contractor)}
+                              className="px-2 py-1 rounded-md bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 font-bold text-xs border border-amber-500/20 transition-all cursor-pointer"
+                              title="Click to view installments"
+                            >
+                              {contractor.installments?.length || 0} Receipts
+                            </button>
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4 text-right">
                             <div className="flex items-center gap-1 justify-end">
                               <button onClick={() => setSelectedContractor(contractor)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-zinc-500 hover:text-blue-400 transition-colors" title="Add Installment"><Plus size={13} /></button>
                               <button onClick={() => exportPDF(contractor)} className="p-1.5 rounded-lg hover:bg-green-500/10 text-zinc-500 hover:text-green-400 transition-colors" title="Download PDF"><Download size={13} /></button>
@@ -502,10 +524,10 @@ export default function ContractorPaymentsPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Amount</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">First Installment Amount</label>
                 <Input 
                   type="number" 
-                  placeholder="Enter amount" 
+                  placeholder="Enter installment amount" 
                   value={formData.amount}
                   onChange={e => setFormData({...formData, amount: e.target.value})}
                   className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
@@ -538,46 +560,166 @@ export default function ContractorPaymentsPage() {
               </Button>
             </form>
           </Card>
-
-          {/* Add Installment Card */}
-          {selectedContractor && (
-            <Card className="panel-elevated text-white rounded-2xl overflow-hidden p-6 bg-[#0d1018] border-[#1e2435] mt-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-sm font-black uppercase tracking-tight">Add Installment</h3>
-                <button onClick={() => setSelectedContractor(null)} className="text-zinc-500 hover:text-white">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-              <div className="space-y-3">
-                <p className="text-xs text-zinc-400">{selectedContractor.name}</p>
-                <p className="text-[10px] text-zinc-500">Total: ₹{selectedContractor.total_amount.toLocaleString()} | Paid: ₹{selectedContractor.total_paid.toLocaleString()}</p>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Amount</label>
-                  <Input 
-                    type="number" 
-                    placeholder="Enter amount" 
-                    value={installmentAmount}
-                    onChange={e => setInstallmentAmount(e.target.value)}
-                    className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Date</label>
-                  <Input 
-                    type="date"
-                    value={installmentDate}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInstallmentDate(e.target.value)}
-                    className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
-                  />
-                </div>
-                <Button onClick={handleAddInstallment} className="w-full h-10 bg-amber-600 hover:bg-amber-500 rounded-xl font-bold uppercase tracking-widest text-xs">
-                  Add Installment
-                </Button>
-              </div>
-            </Card>
-          )}
         </div>
       </div>
+
+      {/* Add Installment Dialog Modal */}
+      <Dialog open={!!selectedContractor} onOpenChange={(open) => !open && setSelectedContractor(null)}>
+        <DialogContent style={{ backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0' }} className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-white font-black text-lg">ADD INSTALLMENT PAYMENT</DialogTitle>
+            <DialogDescription style={{ color: '#6b7280' }}>
+              Record a new installment payment for <strong>{selectedContractor?.name}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-3">
+            <div className="p-4 rounded-xl bg-black/30 border border-[#1e2435] text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-zinc-500 uppercase tracking-widest font-bold">Role/Work:</span>
+                <span className="text-white font-bold">{selectedContractor?.work_nature}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500 uppercase tracking-widest font-bold">Last Payment:</span>
+                <span className="text-white font-bold">
+                  ₹{(selectedContractor?.installments?.[selectedContractor.installments.length - 1]?.amount || 0).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between border-t border-[#1e2435] pt-1.5 mt-1.5">
+                <span className="text-zinc-500 uppercase tracking-widest font-bold">Total Paid Till Now:</span>
+                <span className="text-blue-400 font-black text-sm">₹{selectedContractor?.total_paid.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Installment Amount (₹)</label>
+              <Input 
+                type="number" 
+                placeholder="Enter amount" 
+                value={installmentAmount}
+                onChange={e => setInstallmentAmount(e.target.value)}
+                className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Payment Date</label>
+              <Input 
+                type="date"
+                value={installmentDate}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInstallmentDate(e.target.value)}
+                className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex items-center justify-end gap-3 mt-4">
+            <button 
+              type="button" 
+              onClick={() => setSelectedContractor(null)} 
+              className="h-11 px-6 rounded-xl font-bold text-sm bg-[#1a1f2e] hover:bg-[#252b3d] border border-[#1e2435] text-zinc-300 transition-all cursor-pointer flex items-center justify-center min-w-[100px]"
+            >
+              Cancel
+            </button>
+            <button 
+              type="button" 
+              onClick={handleAddInstallment} 
+              className="h-11 px-6 rounded-xl font-black uppercase tracking-widest text-xs text-[#0a0c12] hover:shadow-lg hover:shadow-amber-500/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center min-w-[140px]"
+              style={{ backgroundColor: '#f39c12' }}
+            >
+              Add Installment
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Installments Details Dialog */}
+      <Dialog open={!!viewContractor} onOpenChange={(open) => !open && setViewContractor(null)}>
+        <DialogContent style={{ backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0' }} className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-white font-black text-lg">CONTRACTOR PROFILE & PAYMENTS</DialogTitle>
+            <DialogDescription style={{ color: '#6b7280' }}>Summary of all installment transactions</DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-2">
+            {/* Header info */}
+            <div className="p-5 rounded-2xl bg-black/40 border border-[#1e2435] space-y-3">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h4 className="text-lg font-black text-white">{viewContractor?.name}</h4>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mt-0.5">{viewContractor?.work_nature}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Contact Number</p>
+                  <p className="text-sm font-bold text-zinc-300">{viewContractor?.mobile || 'N/A'}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-3 border-t border-[#1e2435] text-center">
+                <div>
+                  <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500 mb-1">Last Payment</p>
+                  <p className="text-sm font-black text-white">
+                    ₹{(viewContractor?.installments?.[viewContractor.installments.length - 1]?.amount || 0).toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500 mb-1">Total Paid Till Now</p>
+                  <p className="text-sm font-black text-blue-400">₹{viewContractor?.total_paid.toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Installment History list */}
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Installments Paid ({viewContractor?.installments?.length || 0} terms)</p>
+              <div className="max-h-[200px] overflow-y-auto divide-y divide-[#1e2435] border border-[#1e2435] rounded-xl bg-black/20">
+                {viewContractor?.installments?.map((inst: any, idx: number) => (
+                  <div key={idx} className="p-3 flex justify-between items-center hover:bg-white/[0.02] transition-all">
+                    <div>
+                      <p className="text-xs font-bold text-white">Installment #{inst.receipt_number || (idx + 1)}</p>
+                      <p className="text-[9px] text-zinc-500 font-bold uppercase mt-0.5">{inst.date ? format(new Date(inst.date), 'dd MMM yyyy') : 'N/A'} {inst.site_project ? `· ${inst.site_project}` : ''}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-amber-400">₹{inst.amount.toLocaleString()}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setViewContractor(null)} className="w-full bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold uppercase tracking-widest text-xs h-11">
+              Close Profile
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog Modal */}
+      <Dialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <DialogContent style={{ backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0' }} className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-white font-black text-lg">DELETE CONTRACTOR PAYMENT</DialogTitle>
+            <DialogDescription style={{ color: '#6b7280' }}>
+              Are you absolutely sure you want to delete this payment record? This action cannot be undone, and the paid amount will be added back into your Net Cash.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex items-center justify-end gap-3 mt-6">
+            <button 
+              type="button" 
+              onClick={() => setDeleteId(null)} 
+              className="h-11 px-6 rounded-xl font-bold text-sm bg-[#1a1f2e] hover:bg-[#252b3d] border border-[#1e2435] text-zinc-300 transition-all cursor-pointer flex items-center justify-center min-w-[100px]"
+            >
+              Cancel
+            </button>
+            <button 
+              type="button" 
+              onClick={confirmDelete} 
+              className="h-11 px-6 rounded-xl font-black uppercase tracking-widest text-xs bg-red-600 hover:bg-red-500 text-white transition-all cursor-pointer flex items-center justify-center min-w-[150px]"
+            >
+              Yes, Delete Record
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

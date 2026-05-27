@@ -112,6 +112,17 @@ export default function ContactsPage() {
     setDialogOpen(true)
   }
 
+  const handleDelete = async (workerId: string) => {
+    if (!confirm('Are you sure you want to delete this contact?')) return
+    const { error } = await supabase.from('contacts').delete().eq('id', workerId)
+    if (error) {
+      toast.error(error.message)
+    } else {
+      toast.success('Contact deleted')
+      fetchWorkers()
+    }
+  }
+
   const filteredWorkers = workers.filter(w => 
     w.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (w.phone && w.phone.includes(searchQuery))
@@ -188,8 +199,16 @@ export default function ContactsPage() {
                       <button 
                         onClick={(e) => { e.stopPropagation(); handleEdit(worker); }}
                         className="p-2 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white"
+                        title="Edit Contact"
                       >
                         <Edit2 size={14} />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDelete(worker.id); }}
+                        className="p-2 rounded-lg hover:bg-red-500/10 text-zinc-400 hover:text-red-400"
+                        title="Delete Contact"
+                      >
+                        <Trash2 size={14} />
                       </button>
                     </div>
                   </div>

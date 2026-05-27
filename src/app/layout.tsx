@@ -11,8 +11,8 @@ const font = Outfit({
 })
 
 export const metadata: Metadata = {
-  title: 'Labourly Pro | Contractor Management System',
-  description: 'Enterprise-grade labour, site, and material management for contractors.',
+  title: 'Nirmana | Site & Contractor Management System',
+  description: 'Enterprise-grade contractor, site, and material management.',
 }
 
 export const dynamic = 'force-dynamic'

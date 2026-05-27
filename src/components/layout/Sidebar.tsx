@@ -82,7 +82,7 @@ export default function Sidebar() {
             style={{ background: 'linear-gradient(135deg,#3b82f6,#2563eb)' }}>
             <HardHat className="w-4 h-4 text-[#0a0c12]" />
           </div>
-          <span className="font-black text-sm tracking-widest uppercase text-white">Labour MS</span>
+          <span className="font-black text-sm tracking-widest uppercase text-white">Nirmana</span>
         </div>
         <button onClick={() => setIsOpen(true)} className="text-zinc-400 hover:text-white">
           <Menu size={22} />
@@ -116,8 +116,8 @@ export default function Sidebar() {
                   <HardHat className="w-5 h-5 text-[#0a0c12]" />
                 </div>
                 <div>
-                  <p className="font-black text-sm tracking-widest uppercase text-white leading-none">Labour</p>
-                  <p className="text-[9px] uppercase tracking-[0.18em] font-bold mt-0.5" style={{ color: '#3b82f6' }}>Management System</p>
+                  <p className="font-black text-sm tracking-widest uppercase text-white leading-none">Nirmana</p>
+                  <p className="text-[9px] uppercase tracking-[0.18em] font-bold mt-0.5" style={{ color: '#3b82f6' }}>Site Management Hub</p>
                 </div>
               </div>
               <button onClick={() => setIsOpen(false)} className="lg:hidden text-zinc-400 hover:text-white">

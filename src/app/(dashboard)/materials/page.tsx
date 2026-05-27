@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Boxes, Loader2, Trash2, Edit2, FileText, Upload } from 'lucide-react'
+import { Boxes, Loader2, Trash2, Edit2, FileText, Upload, Folder, FolderOpen, ChevronRight, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -25,6 +25,55 @@ export default function MaterialsPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [viewMode, setViewMode] = useState<'all' | 'folders'>('all')
+  const [activeFolder, setActiveFolder] = useState<string | null>(null)
+
+  // Smart grouping of materials by categories
+  const groupedCategories = React.useMemo(() => {
+    const categories: Record<string, {
+      name: string;
+      items: any[];
+      totalCost: number;
+      totalQty: Record<string, number>;
+    }> = {
+      Cement: { name: 'Cement', items: [], totalCost: 0, totalQty: {} },
+      Steel: { name: 'Steel / Iron', items: [], totalCost: 0, totalQty: {} },
+      Concrete: { name: 'Concrete / RCC', items: [], totalCost: 0, totalQty: {} },
+      Sand: { name: 'Sand & Dust', items: [], totalCost: 0, totalQty: {} },
+      Bricks: { name: 'Bricks & Blocks', items: [], totalCost: 0, totalQty: {} },
+      Others: { name: 'Other Materials', items: [], totalCost: 0, totalQty: {} }
+    }
+
+    materials.forEach(item => {
+      const name = (item.name || '').toLowerCase().trim()
+      let category = 'Others'
+
+      if (name.includes('cement')) {
+        category = 'Cement'
+      } else if (name.includes('steel') || name.includes('iron') || name.includes('rod') || name.includes('rebar') || name.includes('wire mesh')) {
+        category = 'Steel'
+      } else if (name.includes('concrete') || name.includes('rcc') || name.includes('aggregate') || name.includes('gravel') || name.includes('stones') || name.includes('chips')) {
+        category = 'Concrete'
+      } else if (name.includes('sand') || name.includes('dust') || name.includes('powder')) {
+        category = 'Sand'
+      } else if (name.includes('brick') || name.includes('block')) {
+        category = 'Bricks'
+      }
+
+      const cost = parseFloat(item.total_amount || item.total_cost || 0) || 0
+      const qty = parseFloat(item.quantity) || 0
+      const unit = (item.unit || 'units').toLowerCase().trim()
+
+      categories[category].items.push(item)
+      categories[category].totalCost += cost
+      
+      if (qty > 0) {
+        categories[category].totalQty[unit] = (categories[category].totalQty[unit] || 0) + qty
+      }
+    })
+
+    return categories
+  }, [materials])
 
   const [formData, setFormData] = useState({
     project_id: '',
@@ -122,6 +171,7 @@ export default function MaterialsPage() {
       q = q.eq('project_id', currentId)
       localStorage.setItem('ssc_active_project_id', currentId)
     }
+    window.dispatchEvent(new Event('ssc_project_changed'))
     const { data: matData } = await q
     setMaterials(matData || [])
     setLoading(false)
@@ -235,11 +285,99 @@ export default function MaterialsPage() {
         {/* LEFT: Material List */}
         <div className="lg:col-span-8">
           <Card className="panel-elevated text-white rounded-2xl overflow-hidden min-h-full">
-            <CardHeader className="p-8 border-b border-zinc-800">
+            <CardHeader className="p-8 border-b border-zinc-800 flex flex-row items-center justify-between gap-4">
               <CardTitle className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">Inventory History</CardTitle>
+              <div className="flex bg-[#0d1018] p-1 rounded-xl border border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('all')}
+                  className={cn(
+                    "px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                    viewMode === 'all'
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-600/10 font-bold"
+                      : "text-zinc-400 hover:text-white"
+                  )}
+                >
+                  All Deliveries
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('folders')}
+                  className={cn(
+                    "px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                    viewMode === 'folders'
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-600/10 font-bold"
+                      : "text-zinc-400 hover:text-white"
+                  )}
+                >
+                  Grouped Folders
+                </button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="hidden md:block">
+              {viewMode === 'folders' ? (
+                <div className="p-8">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {Object.entries(groupedCategories).map(([key, category]) => {
+                      const qtyDisplay = Object.entries(category.totalQty)
+                        .map(([unit, val]) => `${val.toLocaleString()} ${unit}`)
+                        .join(', ') || '—'
+
+                      return (
+                        <div
+                          key={key}
+                          onClick={() => category.items.length > 0 && setActiveFolder(key)}
+                          className={cn(
+                            "group rounded-2xl border p-6 flex flex-col justify-between transition-all bg-gradient-to-br from-[#111520] to-[#0c0f17] relative overflow-hidden",
+                            category.items.length > 0
+                              ? "border-zinc-800 hover:border-blue-500/50 hover:shadow-xl hover:shadow-blue-500/5 cursor-pointer active:scale-[0.98]"
+                              : "border-zinc-900/50 opacity-40 select-none"
+                          )}
+                        >
+                          {/* Folder decoration */}
+                          <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-all pointer-events-none" />
+
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div className="p-3 bg-blue-600/10 border border-blue-500/20 rounded-xl text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                <Folder className="w-6 h-6 fill-current" />
+                              </div>
+                              <span className="text-[9px] font-black uppercase tracking-wider text-zinc-500 px-2.5 py-1 bg-zinc-950 border border-zinc-800 rounded-full">
+                                {category.items.length} {category.items.length === 1 ? 'Delivery' : 'Deliveries'}
+                              </span>
+                            </div>
+
+                            <div>
+                              <h4 className="text-sm font-black text-white uppercase tracking-wider group-hover:text-blue-400 transition-colors">
+                                {category.name}
+                              </h4>
+                              <p className="text-[10px] font-bold text-zinc-400 mt-1 line-clamp-1">
+                                Qty: <span className="text-zinc-200">{qtyDisplay}</span>
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="border-t border-zinc-900 pt-4 mt-5 flex justify-between items-end">
+                            <div>
+                              <p className="text-[8px] font-black uppercase text-zinc-500 tracking-wider">Total Spent</p>
+                              <p className="text-lg font-black text-white group-hover:text-blue-400 transition-colors mt-0.5">
+                                ₹ {category.totalCost.toLocaleString()}
+                              </p>
+                            </div>
+                            {category.items.length > 0 && (
+                              <div className="text-xs font-black text-blue-500 flex items-center gap-1 group-hover:translate-x-1 transition-all">
+                                Open <ChevronRight size={14} />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="hidden md:block">
                 <Table>
                   <TableHeader className="bg-zinc-900/80">
                     <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
@@ -398,7 +536,9 @@ export default function MaterialsPage() {
                     style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
                 </div>
               )}
-            </CardContent>
+            </>
+          )}
+        </CardContent>
           </Card>
         </div>
 
@@ -627,50 +767,223 @@ export default function MaterialsPage() {
           </div>
         </div>
       )}
+      {/* Folder Drill-down Modal */}
+      {activeFolder && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-[2px] p-4 transition-all"
+          onClick={() => setActiveFolder(null)}
+        >
+          <div 
+            className="rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden bg-[#0d1018] border border-[#1e2435] shadow-2xl relative"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-[#111520] p-6 border-b border-[#1e2435] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-600/10 border border-blue-500/20 rounded-xl text-blue-400">
+                  <FolderOpen className="w-5 h-5 fill-current" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white uppercase tracking-wider">
+                    {groupedCategories[activeFolder]?.name} Folder
+                  </h3>
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-0.5">
+                    {groupedCategories[activeFolder]?.items.length} itemized deliveries
+                  </p>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setActiveFolder(null)}
+                className="p-2 rounded-lg bg-zinc-950/50 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 transition-all cursor-pointer animate-none"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Folder Summary Bar */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-zinc-950/40 p-4 rounded-xl border border-zinc-900">
+                  <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Total Deliveries</p>
+                  <p className="text-xl font-black text-white mt-1">
+                    {groupedCategories[activeFolder]?.items.length} Times
+                  </p>
+                </div>
+                <div className="bg-zinc-950/40 p-4 rounded-xl border border-zinc-900">
+                  <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Total Quantities</p>
+                  <p className="text-xs font-black text-white mt-1 text-ellipsis overflow-hidden">
+                    {Object.entries(groupedCategories[activeFolder]?.totalQty)
+                      .map(([unit, val]) => `${val.toLocaleString()} ${unit}`)
+                      .join(', ') || '—'}
+                  </p>
+                </div>
+                <div className="bg-blue-600 p-4 rounded-xl border border-blue-500 shadow-lg shadow-blue-600/10">
+                  <p className="text-[8px] font-black uppercase tracking-widest text-blue-100">Total Money Spent</p>
+                  <p className="text-xl font-black text-white mt-1">
+                    ₹ {groupedCategories[activeFolder]?.totalCost.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+
+              {/* Desktop Items Table */}
+              <div className="hidden md:block border border-[#1e2435] rounded-xl overflow-hidden bg-black/10">
+                <Table>
+                  <TableHeader className="bg-black/30">
+                    <TableRow className="border-[#1e2435] hover:bg-transparent">
+                      <TableHead className="px-5 py-4 text-[9px] font-black uppercase tracking-wider text-zinc-500 w-10">S.No</TableHead>
+                      <TableHead className="py-4 text-[9px] font-black uppercase tracking-wider text-zinc-500">Date</TableHead>
+                      <TableHead className="py-4 text-[9px] font-black uppercase tracking-wider text-zinc-500">Item Detail</TableHead>
+                      <TableHead className="py-4 text-[9px] font-black uppercase tracking-wider text-zinc-500">Supplier</TableHead>
+                      <TableHead className="py-4 text-[9px] font-black uppercase tracking-wider text-zinc-500">Fees (Trsp/Hml)</TableHead>
+                      <TableHead className="py-4 text-[9px] font-black uppercase tracking-wider text-zinc-500">Remarks</TableHead>
+                      <TableHead className="text-right pr-6 py-4 text-[9px] font-black uppercase tracking-wider text-zinc-500">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groupedCategories[activeFolder]?.items.map((item, idx) => {
+                      const notes = item.notes || '';
+                      const supplierMatch = notes.match(/Supplier:\s(.*?)(?:\s\(|$)/);
+                      const supplierPhoneMatch = notes.match(/\((\d+)\)/);
+                      const transportMatch = notes.match(/Transportation:\sRs\.([\d,.]+)/);
+                      const hamaliMatch = notes.match(/Hamali:\sRs\.([\d,.]+)/);
+                      const receiptMatch = notes.match(/Receipt:\s(.*?)(?:\s\||$)/);
+
+                      const supplier = supplierMatch ? supplierMatch[1] : '—';
+                      const supplierPhone = supplierPhoneMatch ? supplierPhoneMatch[1] : '';
+                      const supplierDisplay = supplier !== '—' ? (supplierPhone ? `${supplier} (${supplierPhone})` : supplier) : '—';
+                      const transport = transportMatch ? `₹${transportMatch[1]}` : '';
+                      const hamali = hamaliMatch ? `₹${hamaliMatch[1]}` : '';
+                      const receiptUrl = item.receipt_url || (receiptMatch ? receiptMatch[1] : null);
+
+                      let cleanNotes = notes
+                        .replace(/Supplier:\s(.*?)(?:\s\(|$)/, '')
+                        .replace(/\(\d+\)/, '')
+                        .replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+                        .replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+                        .replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+                        .replace(/Receipt:\s(.*?)(?:\s\||$)/, '')
+                        .replace(/^[\s\|]+|[\s\|]+$/g, '')
+                        .trim();
+
+                      return (
+                        <TableRow key={item.id} className="border-[#1e2435] transition-colors hover:bg-white/[0.02]">
+                          <TableCell className="px-5 py-4 font-bold text-gray-500 text-xs text-center">{idx + 1}</TableCell>
+                          <TableCell className="py-4 font-bold text-gray-400 text-xs whitespace-nowrap">
+                            {format(new Date(item.date), 'dd-MM-yyyy')}
+                          </TableCell>
+                          <TableCell className="py-4">
+                            <p className="font-black text-gray-200 text-xs uppercase tracking-tight leading-none">{item.name}</p>
+                            <p className="font-bold text-zinc-500 text-[9px] uppercase mt-1">
+                              {item.quantity} {item.unit} {item.cost_per_unit > 0 ? ` @ ₹${item.cost_per_unit}` : ''}
+                            </p>
+                          </TableCell>
+                          <TableCell className="py-4">
+                            <p className="font-bold text-white text-xs whitespace-nowrap">{supplierDisplay}</p>
+                          </TableCell>
+                          <TableCell className="py-4 text-[10px]">
+                            {transport && <p className="text-zinc-400">Trsp: <span className="text-white">{transport}</span></p>}
+                            {hamali && <p className="text-zinc-400">Hml: <span className="text-white">{hamali}</span></p>}
+                            {!transport && !hamali && '—'}
+                          </TableCell>
+                          <TableCell className="py-4 text-[10px] text-zinc-400 max-w-[150px] break-words">
+                            {cleanNotes || '—'}
+                          </TableCell>
+                          <TableCell className="py-4 text-right pr-6 font-black text-blue-400 text-sm whitespace-nowrap">
+                            ₹ {item.total_amount?.toLocaleString() || item.total_cost?.toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile Items Cards */}
+              <div className="flex flex-col gap-3 md:hidden">
+                {groupedCategories[activeFolder]?.items.map((item, idx) => {
+                  const notes = item.notes || '';
+                  const supplierMatch = notes.match(/Supplier:\s(.*?)(?:\s\(|$)/);
+                  const supplierPhoneMatch = notes.match(/\((\d+)\)/);
+                  const transportMatch = notes.match(/Transportation:\sRs\.([\d,.]+)/);
+                  const hamaliMatch = notes.match(/Hamali:\sRs\.([\d,.]+)/);
+                  const receiptMatch = notes.match(/Receipt:\s(.*?)(?:\s\||$)/);
+
+                  const supplier = supplierMatch ? supplierMatch[1] : '—';
+                  const supplierPhone = supplierPhoneMatch ? supplierPhoneMatch[1] : '';
+                  const supplierDisplay = supplier !== '—' ? (supplierPhone ? `${supplier} (${supplierPhone})` : supplier) : '—';
+                  const transport = transportMatch ? `₹${transportMatch[1]}` : '';
+                  const hamali = hamaliMatch ? `₹${hamaliMatch[1]}` : '';
+                  const receiptUrl = item.receipt_url || (receiptMatch ? receiptMatch[1] : null);
+
+                  let cleanNotes = notes
+                    .replace(/Supplier:\s(.*?)(?:\s\(|$)/, '')
+                    .replace(/\(\d+\)/, '')
+                    .replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+                    .replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+                    .replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+                    .replace(/Receipt:\s(.*?)(?:\s\||$)/, '')
+                    .replace(/^[\s\|]+|[\s\|]+$/g, '')
+                    .trim();
+
+                  return (
+                    <div key={item.id} className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-[10px] font-black text-gray-500 uppercase">#{idx + 1} · {format(new Date(item.date), 'dd-MM-yyyy')}</p>
+                          <h5 className="font-black text-white text-sm uppercase mt-1">{item.name}</h5>
+                          <p className="font-bold text-zinc-400 text-xs mt-0.5">
+                            {item.quantity} {item.unit} {item.cost_per_unit > 0 ? ` @ ₹${item.cost_per_unit}` : ''}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-black text-blue-400 text-sm">₹ {item.total_amount?.toLocaleString() || item.total_cost?.toLocaleString()}</p>
+                          {receiptUrl && (
+                            <a href={receiptUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-black text-emerald-400 hover:underline">
+                              <FileText size={10} /> View Bill
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {(supplierDisplay !== '—' || transport || hamali || cleanNotes) && (
+                        <div className="border-t border-zinc-800/60 pt-2.5 mt-1 space-y-1.5 text-[11px] text-zinc-400">
+                          {supplierDisplay !== '—' && (
+                            <p><strong>Supplier:</strong> <span className="text-zinc-200">{supplierDisplay}</span></p>
+                          )}
+                          {(transport || hamali) && (
+                            <p>
+                              <strong>Fees:</strong>{' '}
+                              <span className="text-zinc-200">
+                                {[transport && `Transport: ${transport}`, hamali && `Hamali: ${hamali}`].filter(Boolean).join(', ')}
+                              </span>
+                            </p>
+                          )}
+                          {cleanNotes && (
+                            <p><strong>Remarks:</strong> <span className="text-zinc-300 italic">{cleanNotes}</span></p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="bg-[#111520] p-4 border-t border-[#1e2435] flex justify-end">
+              <button 
+                type="button" 
+                onClick={() => setActiveFolder(null)}
+                className="h-10 px-6 rounded-xl text-xs font-black uppercase text-zinc-300 bg-[#1a1f2e] border border-[#1e2435] hover:bg-zinc-800 transition-all cursor-pointer"
+              >
+                Close Folder
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
-function fetchData() {
-  throw new Error('Function not implemented.')
-}
-
-function setSaving(arg0: boolean) {
-  throw new Error('Function not implemented.')
-}
-
-function setFormData(arg0: { project_id: string; name: string; quantity: string; unit: string; cost_per_unit: string; base_amount: string; total_amount: string; date: string; notes: string }) {
-  throw new Error('Function not implemented.')
-}
-
-function setSupplierName(arg0: string) {
-  throw new Error('Function not implemented.')
-}
-
-function setSupplierPhone(arg0: string) {
-  throw new Error('Function not implemented.')
-}
-
-function setTransportEnabled(arg0: boolean) {
-  throw new Error('Function not implemented.')
-}
-
-function setTransportFee(arg0: string) {
-  throw new Error('Function not implemented.')
-}
-
-function setHamaliEnabled(arg0: boolean) {
-  throw new Error('Function not implemented.')
-}
-
-function setHamaliFee(arg0: string) {
-  throw new Error('Function not implemented.')
-}
-
-function setMatPage(arg0: number) {
-  throw new Error('Function not implemented.')
-}
-
-function setDefaultProjectId(arg0: null) {
-  throw new Error('Function not implemented.')
-}
-

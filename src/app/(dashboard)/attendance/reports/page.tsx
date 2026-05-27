@@ -183,6 +183,14 @@ export default function ReportsPage() {
       .gte('date', startDate)
       .lte('date', endDate)
 
+    // Extract grouped daily notes — one note per date applies to ALL workers
+    const notesByDate: Record<string, string> = {}
+    attData?.forEach(att => {
+      if (att.notes && att.notes.trim() && !notesByDate[att.date]) {
+        notesByDate[att.date] = att.notes.trim()
+      }
+    })
+
     // Group by worker
     const workerMap = new Map()
     attData?.forEach(att => {
@@ -214,6 +222,7 @@ export default function ReportsPage() {
       type: 'PROJECT',
       project,
       days: eachDayOfInterval({ start: parseISO(startDate), end: parseISO(endDate) }),
+      notesByDate,
       workers: Array.from(workerMap.values())
     })
   }
@@ -263,15 +272,14 @@ export default function ReportsPage() {
 
     autoTable(doc, {
       startY: y + 14,
-      head: [['Day', 'Status', 'Basic Wage', 'OT Amount', 'Adv Taken', 'Gross Total', 'Remarks']],
+      head: [['Day', 'Status', 'Basic Wage', 'OT Amount', 'Adv Taken', 'Gross Total']],
       body: breakdown.map((r: any) => [
         format(new Date(r.date), 'EEEE (dd MMM)'),
         r.status,
         `Rs. ${(r.baseWage || 0).toLocaleString()}`,
         `Rs. ${(r.overtimeAmount || 0).toLocaleString()}`,
         `Rs. ${(r.advance || 0).toLocaleString()}`,
-        `Rs. ${(r.total || 0).toLocaleString()}`,
-        r.notes || '-'
+        `Rs. ${(r.total || 0).toLocaleString()}`
       ]),
       theme: 'grid',
       headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontSize: 8 },
@@ -317,7 +325,7 @@ export default function ReportsPage() {
 
   const exportProjectPDF = () => {
     if (!reportData) return
-    const { project, days, workers } = reportData
+    const { project, days, workers, notesByDate } = reportData
     const doc = new jsPDF({ orientation: 'landscape' })
     
     drawPremiumHeader(doc, 'PROJECT WEEKLY REPORT', '(ALL WORKERS)')
@@ -342,12 +350,19 @@ export default function ReportsPage() {
       `Rs. ${w.totals.gross.toLocaleString()}`
     ])
 
+    // Append a dedicated "Work Done (All Workers)" row at the bottom of the table
+    const workDoneRow = [
+      '', 'WORK DONE (ALL WORKERS)', '',
+      ...days.map((d: any) => notesByDate[format(d, 'yyyy-MM-dd')] || '-'),
+      '', ''
+    ]
+
     const totalGross = workers.reduce((acc: number, w: any) => acc + w.totals.gross, 0)
 
     autoTable(doc, {
       startY: y + 14,
       head,
-      body,
+      body: [...body, workDoneRow],
       theme: 'grid',
       headStyles: { fillColor: PDF_COLORS.BLUE, fontSize: 7 },
       bodyStyles: { fontSize: 7 },
@@ -419,11 +434,12 @@ export default function ReportsPage() {
         ['Worker', reportData.worker.name],
         ['Period', `${startDate} to ${endDate}`],
         [],
-        ['Date', 'Status', 'Basic Wage', 'OT Amount', 'Total', 'Notes'],
-        ...reportData.breakdown.map((r: any) => [r.date, r.status, r.baseWage, r.overtimeAmount, r.total, r.notes])
+        ['Date', 'Status', 'Basic Wage', 'OT Amount', 'Total'],
+        ...reportData.breakdown.map((r: any) => [r.date, r.status, r.baseWage, r.overtimeAmount, r.total])
       ]
       fileName = `Labour_${reportData.worker.name}`
     } else if (activeTab === 'PROJECT_WEEKLY') {
+      const notesByDate: Record<string, string> = reportData.notesByDate || {}
       rows = [
         ['Project Weekly Report'],
         ['Project', reportData.project?.name || 'All'],
@@ -438,8 +454,11 @@ export default function ReportsPage() {
             return att ? att.days_worked : 0
           }),
           w.totals.days,
-          w.totals.amount
-        ])
+          w.totals.gross
+        ]),
+        [],
+        // Grouped daily notes row
+        ['WORK DONE (ALL WORKERS)', '', ...reportData.days.map((d: any) => notesByDate[format(d, 'yyyy-MM-dd')] || '-'), '', '']
       ]
       fileName = `Project_${reportData.project?.name || 'All'}`
     } else {
@@ -716,34 +735,50 @@ export default function ReportsPage() {
                             </TableHead>
                           ))}
                           <TableHead className="py-4 text-center text-[10px] font-black uppercase text-zinc-500">Days</TableHead>
+                          <TableHead className="py-4 text-left text-[10px] font-black uppercase text-zinc-500">Work Done</TableHead>
                           <TableHead className="py-4 text-right pr-8 text-[10px] font-black uppercase text-zinc-500">Total (Gross)</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {reportData.workers.map((w: any, idx: number) => (
-                          <TableRow key={idx} className="border-zinc-800/50 hover:bg-white/5 transition-colors">
-                            <TableCell className="py-5 pl-8 font-bold text-white text-sm sticky left-0 bg-[#111520] z-10 border-r border-zinc-800">{w.worker.name}</TableCell>
-                            <TableCell className="py-5 text-xs text-zinc-500">{w.worker.type || '-'}</TableCell>
-                            {reportData.days.map((d: any) => {
-                              const att = w.attendance[format(d, 'yyyy-MM-dd')]
-                              const status = att ? (att.days_worked === 1 ? 'P' : att.days_worked === 0.5 ? 'H' : 'A') : 'A'
-                              return (
-                                <TableCell key={d.toString()} className="py-5 text-center">
-                                   <span className={cn(
-                                     "text-[10px] font-black",
-                                     status === 'P' ? "text-emerald-500" : status === 'H' ? "text-amber-500" : "text-zinc-700"
-                                   )}>
-                                     {status}
-                                   </span>
-                                </TableCell>
-                              )
-                            })}
-                            <TableCell className="py-5 text-center font-bold text-white text-xs">{w.totals.days.toFixed(1)}</TableCell>
-                            <TableCell className="py-5 text-right pr-8 font-black text-blue-400 text-xs leading-none">
-                               ₹ {w.totals.gross.toLocaleString()}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {reportData.workers.map((w: any, idx: number) => {
+                          const tasks: string[] = []
+                          reportData.days.forEach((d: any) => {
+                            const dateStr = format(d, 'yyyy-MM-dd')
+                            const att = w.attendance[dateStr]
+                            if (att && att.notes && att.notes.trim()) {
+                              tasks.push(`${format(d, 'EEE')}: ${att.notes.trim()}`)
+                            }
+                          })
+                          const weeklyTasks = tasks.join(' | ')
+
+                          return (
+                            <TableRow key={idx} className="border-zinc-800/50 hover:bg-white/5 transition-colors">
+                              <TableCell className="py-5 pl-8 font-bold text-white text-sm sticky left-0 bg-[#111520] z-10 border-r border-zinc-800">{w.worker.name}</TableCell>
+                              <TableCell className="py-5 text-xs text-zinc-500">{w.worker.type || '-'}</TableCell>
+                              {reportData.days.map((d: any) => {
+                                const att = w.attendance[format(d, 'yyyy-MM-dd')]
+                                const status = att ? (att.days_worked === 1 ? 'P' : att.days_worked === 0.5 ? 'H' : 'A') : 'A'
+                                return (
+                                  <TableCell key={d.toString()} className="py-5 text-center">
+                                     <span className={cn(
+                                       "text-[10px] font-black",
+                                       status === 'P' ? "text-emerald-500" : status === 'H' ? "text-amber-500" : "text-zinc-700"
+                                     )}>
+                                       {status}
+                                     </span>
+                                  </TableCell>
+                                )
+                              })}
+                              <TableCell className="py-5 text-center font-bold text-white text-xs">{w.totals.days.toFixed(1)}</TableCell>
+                              <TableCell className="py-5 text-left text-xs text-zinc-400 max-w-[200px] truncate" title={weeklyTasks}>
+                                 {weeklyTasks || <span className="text-zinc-600 italic">No notes</span>}
+                              </TableCell>
+                              <TableCell className="py-5 text-right pr-8 font-black text-blue-400 text-xs leading-none">
+                                 ₹ {w.totals.gross.toLocaleString()}
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -777,6 +812,23 @@ export default function ReportsPage() {
                             )
                           })}
                         </div>
+                        {(() => {
+                          const tasks: string[] = []
+                          reportData.days.forEach((d: any) => {
+                            const dateStr = format(d, 'yyyy-MM-dd')
+                            const att = w.attendance[dateStr]
+                            if (att && att.notes && att.notes.trim()) {
+                              tasks.push(`${format(d, 'EEE')}: ${att.notes.trim()}`)
+                            }
+                          })
+                          const summary = tasks.join(' | ')
+                          return summary ? (
+                            <div className="mt-2 pt-2 border-t border-zinc-800/50 text-[10px] text-zinc-400">
+                              <span className="font-black uppercase tracking-widest text-[8px] text-zinc-500 block mb-1">Work Done</span>
+                              <p className="bg-zinc-950 p-2 rounded-lg border border-zinc-800/80">{summary}</p>
+                            </div>
+                          ) : null
+                        })()}
                       </div>
                     ))}
                   </div>

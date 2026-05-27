@@ -1,15 +1,15 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Users, CalendarCheck, Wallet, Package, TrendingUp, Briefcase, Zap, Loader2 } from 'lucide-react'
+import { Users, CalendarCheck, Wallet, Package, TrendingUp, Briefcase, Zap, Loader2, Sparkles, Send, Search, Bot } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts'
-import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns'
+import { format, subMonths, startOfMonth, endOfMonth, differenceInCalendarMonths, addMonths } from 'date-fns'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
@@ -25,15 +25,97 @@ export default function DashboardPage() {
   const [projectCosts, setProjectCosts] = useState<any[]>([])
   const [projectBreakdown, setProjectBreakdown] = useState<any[]>([])
   const [projects, setProjects] = useState<any[]>([])
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('all')
+  const [isInitialized, setIsInitialized] = useState(false)
   const [defaultProjectId, setDefaultProjectId] = useState<string | null>(null)
+  
+  // AI Command & Chat states
+  const [searchQuery, setSearchQuery] = useState('')
+  const [modalQuery, setModalQuery] = useState('')
+  const [aiModalOpen, setAiModalOpen] = useState(false)
+  const [messages, setMessages] = useState<any[]>([])
+  const [aiLoading, setAiLoading] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
   const supabase = createClient()
+
+  const handleAISearchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!searchQuery.trim()) return
+    
+    const query = searchQuery
+    setSearchQuery('')
+    triggerAIChat(query)
+  }
+
+  const handleAIModalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!modalQuery.trim()) return
+    
+    const query = modalQuery
+    setModalQuery('')
+    triggerAIChat(query, true)
+  }
+
+  const triggerAIChat = async (query: string, append = false) => {
+    setAiModalOpen(true)
+    setAiLoading(true)
+
+    const userMessage = { role: 'user', content: query }
+    const updatedMessages = append ? [...messages, userMessage] : [userMessage]
+    setMessages(updatedMessages)
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: query })
+      })
+
+      if (!res.ok) {
+        const errorText = await res.text()
+        throw new Error(errorText || 'Failed to query AI')
+      }
+
+      const data = await res.json()
+      setMessages([...updatedMessages, { role: 'assistant', content: data.reply }])
+    } catch (err: any) {
+      console.error(err)
+      toast.error('AI Assistant is currently offline or rate-limited.')
+      setMessages([...updatedMessages, { role: 'assistant', content: 'Sorry, I encountered an error. Please verify your NVIDIA API key in environment variables or try again later.' }])
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  const scrollToBottom = () => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
+    }
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    if (aiModalOpen) {
+      scrollToBottom()
+      const t1 = setTimeout(scrollToBottom, 50)
+      const t2 = setTimeout(scrollToBottom, 150)
+      const t3 = setTimeout(scrollToBottom, 300)
+      const t4 = setTimeout(scrollToBottom, 500)
+      return () => {
+        clearTimeout(t1)
+        clearTimeout(t2)
+        clearTimeout(t3)
+        clearTimeout(t4)
+      }
+    }
+  }, [messages, aiLoading, aiModalOpen])
 
   async function fetchStats() {
     try {
       setLoading(true)
       // 1. Fetch Projects List (always needed for the filter)
-      const { data: projList } = await supabase.from('projects').select('id, name, status').order('name')
+      const { data: projList } = await supabase.from('projects').select('id, name, status, created_at').order('name')
       setProjects(projList || [])
 
       // Handle Default Project from localStorage
@@ -41,17 +123,7 @@ export default function DashboardPage() {
       const savedActive = localStorage.getItem('ssc_active_project_id')
       setDefaultProjectId(savedDefault)
 
-      let currentProjectId = selectedProjectId
-      if (!currentProjectId) {
-        if (savedActive && projList?.some(p => p.id === savedActive)) {
-          currentProjectId = savedActive
-        } else if (savedDefault && projList?.some(p => p.id === savedDefault)) {
-          currentProjectId = savedDefault
-        } else if (projList && projList.length > 0) {
-          currentProjectId = projList[0].id
-        }
-        setSelectedProjectId(currentProjectId)
-      }
+      const currentProjectId = selectedProjectId === 'all' ? '' : selectedProjectId
 
       // 2. Prepare queries with optional project filter
       let incomeQ = supabase.from('income').select('amount, date, project_id')
@@ -84,7 +156,7 @@ export default function DashboardPage() {
       const netCash = totalRevenue - (totalLabourCost + totalMaterialCost + totalExtraWork)
 
       setStats({ 
-        totalProjects: selectedProjectId ? 1 : (projList?.length || 0), 
+        totalProjects: (selectedProjectId && selectedProjectId !== 'all') ? 1 : (projList?.length || 0), 
         totalRevenue, 
         totalLabourCost, 
         totalMaterialCost, 
@@ -92,11 +164,78 @@ export default function DashboardPage() {
         netCash 
       })
 
-      // Build last-6-months monthly data
-      const months = Array.from({ length: 6 }, (_, i) => {
-        const d = subMonths(new Date(), 5 - i)
-        return { key: format(d, 'yyyy-MM'), label: format(d, 'MMM'), start: format(startOfMonth(d), 'yyyy-MM-dd'), end: format(endOfMonth(d), 'yyyy-MM-dd') }
+      // Build dynamic monthly data based on project creation/transaction dates
+      const today = new Date()
+      // Default fallback: last 6 months
+      let startDateForGraph = startOfMonth(subMonths(today, 5))
+
+      // Gather all transaction dates to find earliest transaction date
+      const allTxDates = [
+        ...(incomeData || []).map(r => r.date),
+        ...(attAllData || []).map(r => r.date),
+        ...(materialData || []).map(r => r.date),
+        ...(extraWorkData || []).map(r => r.date),
+      ].filter(Boolean)
+
+      let earliestTxDate: Date | null = null
+      if (allTxDates.length > 0) {
+        const sortedTxDates = allTxDates
+          .map(d => new Date(d))
+          .filter(d => !isNaN(d.getTime()))
+          .sort((a, b) => a.getTime() - b.getTime())
+        if (sortedTxDates.length > 0) {
+          earliestTxDate = sortedTxDates[0]
+        }
+      }
+
+      if (projList && projList.length > 0) {
+        if (currentProjectId) {
+          // Fetch from specific selected project creation date compared with its earliest transaction
+          const selectedProj = projList.find(p => p.id === currentProjectId)
+          let projDate = selectedProj?.created_at ? new Date(selectedProj.created_at) : null
+          
+          let dates = [projDate, earliestTxDate].filter((d): d is Date => d !== null)
+          if (dates.length > 0) {
+            startDateForGraph = startOfMonth(new Date(Math.min(...dates.map(d => d.getTime()))))
+          }
+        } else {
+          // Fetch from the earliest project creation date among all projects compared with earliest overall transaction
+          const validProjDates = projList
+            .filter(p => p.created_at)
+            .map(p => new Date(p.created_at))
+          
+          let dates = [...validProjDates, earliestTxDate].filter((d): d is Date => d !== null)
+          if (dates.length > 0) {
+            startDateForGraph = startOfMonth(new Date(Math.min(...dates.map(d => d.getTime()))))
+          }
+        }
+      }
+
+      // Safeguard: Limit the graph timeline to a maximum of 12 months history
+      const maxHistoricalDate = startOfMonth(subMonths(today, 11))
+      if (startDateForGraph < maxHistoricalDate) {
+        startDateForGraph = maxHistoricalDate
+      }
+
+      // Safeguard: If start date is in the future compared to current month start, cap it at current month
+      const currentMonthStart = startOfMonth(today)
+      if (startDateForGraph > currentMonthStart) {
+        startDateForGraph = currentMonthStart
+      }
+
+      // Always show at least 6 months starting from startDateForGraph
+      const totalMonthsToShow = Math.max(6, differenceInCalendarMonths(today, startDateForGraph) + 1)
+      
+      const months = Array.from({ length: totalMonthsToShow }, (_, i) => {
+        const d = addMonths(startDateForGraph, i)
+        return { 
+          key: format(d, 'yyyy-MM'), 
+          label: format(d, 'MMM'), 
+          start: format(startOfMonth(d), 'yyyy-MM-dd'), 
+          end: format(endOfMonth(d), 'yyyy-MM-dd') 
+        }
       })
+
       const monthly = months.map(m => ({
         month: m.label,
         Revenue: incomeData?.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.amount), 0) || 0,
@@ -119,7 +258,7 @@ export default function DashboardPage() {
 
       // Project-wise breakdown
       const breakdown = (projList || [])
-        .filter(p => !selectedProjectId || p.id === selectedProjectId)
+        .filter(p => !selectedProjectId || selectedProjectId === 'all' || p.id === selectedProjectId)
         .map(p => {
           const rev = (incomeData || []).filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.amount), 0)
           const mat = (materialData || []).filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.total_amount || 0), 0)
@@ -136,27 +275,54 @@ export default function DashboardPage() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
   useEffect(() => { 
+    if (!isInitialized) return
     fetchStats() 
-    if (selectedProjectId) {
+    
+    // Always save the overview selection
+    localStorage.setItem('ssc_overview_selection', selectedProjectId)
+    
+    // Only update ssc_active_project_id if a specific project is selected
+    if (selectedProjectId && selectedProjectId !== 'all') {
       localStorage.setItem('ssc_active_project_id', selectedProjectId)
-    } else {
-      localStorage.removeItem('ssc_active_project_id')
     }
-  }, [selectedProjectId])
+    
+    window.dispatchEvent(new Event('ssc_project_changed'))
+  }, [selectedProjectId, isInitialized])
+
+  // Mount useEffect to read saved state on load
+  useEffect(() => {
+    const savedOverview = localStorage.getItem('ssc_overview_selection')
+    const savedActive = localStorage.getItem('ssc_active_project_id')
+    const savedDefault = localStorage.getItem('ssc_default_project_id')
+    if (savedOverview) {
+      setSelectedProjectId(savedOverview)
+    } else if (savedActive) {
+      setSelectedProjectId(savedActive)
+    } else if (savedDefault) {
+      setSelectedProjectId(savedDefault)
+    } else {
+      setSelectedProjectId('all')
+    }
+    setIsInitialized(true)
+  }, [])
 
   const PANEL = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
   const GOLD = '#3b82f6'
   const DIM = '#6b7280'
-  const CHART_COLORS = ['#3b82f6', '#22c55e', '#60a5fa', '#a78bfa', '#f87171']
+  const EXPENSE_COLORS: Record<string, string> = {
+    'Labour': '#3b82f6',     // Blue
+    'Material': '#06b6d4',   // Cyan
+    'Extra Work': '#f97316', // Orange
+    'Contractor': '#8b5cf6'  // Purple
+  }
   const tooltipStyle = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '8px', color: '#f0f0f0', fontSize: 12 }
 
   const topCards = [
-    { type: 'REVENUE', label: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString()}`, icon: <TrendingUp size={18} color="#22c55e" />, bg: '#1a2a1a', color: '#22c55e', clickable: true },
-    { type: 'LABOUR', label: 'Labour Cost', value: `₹${stats.totalLabourCost.toLocaleString()}`, icon: <Wallet size={18} color={GOLD} />, bg: '#2a1e10', color: GOLD, clickable: true },
-    { type: 'MATERIAL', label: 'Material Cost', value: `₹${stats.totalMaterialCost.toLocaleString()}`, icon: <Package size={18} color="#60a5fa" />, bg: '#151e2e', color: '#60a5fa', clickable: true },
-    { type: 'EXTRA_WORK', label: 'Extra Work', value: `₹${stats.totalExtraWork.toLocaleString()}`, icon: <Zap size={18} color="#f59e0b" />, bg: '#292011', color: '#f59e0b', clickable: true },
-    { type: 'NET_CASH', label: 'Net Cash', value: `₹${stats.netCash.toLocaleString()}`, icon: <TrendingUp size={18} color={stats.netCash >= 0 ? '#22c55e' : '#ef4444'} />, bg: '#111520', color: stats.netCash >= 0 ? '#22c55e' : '#ef4444', clickable: false },
-    { type: 'SITES', label: selectedProjectId ? 'Site Status' : 'Active Sites', value: selectedProjectId ? (projects.find(p => p.id === selectedProjectId)?.status || 'Active') : stats.totalProjects, icon: <Briefcase size={18} color="#a78bfa" />, bg: '#1e1a2e', color: '#a78bfa', clickable: false },
+    { type: 'REVENUE', label: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString()}`, icon: <TrendingUp size={18} color="#10b981" />, bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981', clickable: true },
+    { type: 'LABOUR', label: 'Labour Cost', value: `₹${stats.totalLabourCost.toLocaleString()}`, icon: <Wallet size={18} color="#3b82f6" />, bg: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', clickable: true },
+    { type: 'MATERIAL', label: 'Material Cost', value: `₹${stats.totalMaterialCost.toLocaleString()}`, icon: <Package size={18} color="#06b6d4" />, bg: 'rgba(6, 182, 212, 0.1)', color: '#06b6d4', clickable: true },
+    { type: 'EXTRA_WORK', label: 'Extra Work', value: `₹${stats.totalExtraWork.toLocaleString()}`, icon: <Zap size={18} color="#f97316" />, bg: 'rgba(249, 115, 22, 0.1)', color: '#f97316', clickable: true },
+    { type: 'NET_CASH', label: 'Net Cash', value: `₹${stats.netCash.toLocaleString()}`, icon: <TrendingUp size={18} color={stats.netCash >= 0 ? '#10b981' : '#ef4444'} />, bg: stats.netCash >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: stats.netCash >= 0 ? '#10b981' : '#ef4444', clickable: false },
   ]
 
   const fetchDetailsData = async (type: string, filterStart?: string, filterEnd?: string) => {
@@ -172,7 +338,7 @@ export default function DashboardPage() {
       } else if (type === 'EXTRA_WORK') {
         q = supabase.from('extra_work').select('date, amount, work_name, notes, projects(name)').order('date', { ascending: true })
       }
-      if (selectedProjectId) q = q.eq('project_id', selectedProjectId)
+      if (selectedProjectId && selectedProjectId !== 'all') q = q.eq('project_id', selectedProjectId)
       if (filterStart) q = q.gte('date', filterStart)
       if (filterEnd) q = q.lte('date', filterEnd)
       const { data } = await q
@@ -190,7 +356,7 @@ export default function DashboardPage() {
   }
 
   const handleSetDefault = () => {
-    if (!selectedProjectId) {
+    if (!selectedProjectId || selectedProjectId === 'all') {
       localStorage.removeItem('ssc_default_project_id')
       setDefaultProjectId(null)
       toast.success('Default project cleared')
@@ -207,7 +373,7 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-white tracking-tight">Overview</h1>
-          <p className="text-sm mt-0.5" style={{ color: DIM }}>{selectedProjectId ? `Financial details for ${projects.find(p => p.id === selectedProjectId)?.name}` : 'Financial summary across all active sites.'}</p>
+          <p className="text-sm mt-0.5" style={{ color: DIM }}>{(selectedProjectId && selectedProjectId !== 'all') ? `Financial details for ${projects.find(p => p.id === selectedProjectId)?.name}` : 'Financial summary across all active sites.'}</p>
         </div>
         <div className="flex flex-col md:flex-row items-start md:items-center gap-3">
           <div className="flex items-center gap-2">
@@ -217,14 +383,14 @@ export default function DashboardPage() {
               onChange={(e) => setSelectedProjectId(e.target.value)}
               className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all min-w-[180px]"
             >
-              <option value="">All Projects</option>
+              <option value="all">All Projects</option>
               {projects.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
           </div>
 
-          {selectedProjectId !== defaultProjectId && (
+          {selectedProjectId !== 'all' && selectedProjectId !== defaultProjectId && (
             <button 
               onClick={handleSetDefault}
               className="h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 border border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
@@ -233,11 +399,51 @@ export default function DashboardPage() {
             </button>
           )}
 
-          {selectedProjectId === defaultProjectId && selectedProjectId !== '' && (
+          {selectedProjectId !== 'all' && selectedProjectId === defaultProjectId && selectedProjectId !== '' && (
             <div className="h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2 bg-blue-500/10 text-blue-400 border border-blue-500/20">
               <Zap size={12} className="fill-blue-400" /> Default Project
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Premium AI Command Center Search Bar */}
+      <div 
+        className="p-5 rounded-2xl border transition-all duration-300 relative overflow-hidden" 
+        style={{ 
+          backgroundColor: '#111520', 
+          borderColor: '#1e2435',
+          background: 'linear-gradient(135deg, #111520 0%, #151a28 100%)'
+        }}
+      >
+        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
+        
+        <div className="flex flex-col md:flex-row items-center gap-4 relative z-10">
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-blue-500/10 text-blue-400 shrink-0">
+            <Sparkles className="w-5 h-5 animate-pulse" />
+          </div>
+          <div className="flex-1 w-full">
+            <form onSubmit={handleAISearchSubmit} className="flex gap-2 w-full">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <input 
+                  type="text"
+                  placeholder="Ask AI about worker salaries, material costs, site P&L, or personal expenses..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full h-12 pl-11 pr-4 bg-black/30 border border-[#1e2435] rounded-xl text-sm font-semibold text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all"
+                />
+              </div>
+              <button 
+                type="submit"
+                className="h-12 px-6 rounded-xl text-xs font-black uppercase tracking-widest text-[#0a0c12] hover:shadow-lg hover:shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
+                style={{ background: 'linear-gradient(90deg,#3b82f6,#2563eb)' }}
+              >
+                Search <Send className="w-3.5 h-3.5" />
+              </button>
+            </form>
+          </div>
         </div>
       </div>
 
@@ -274,9 +480,9 @@ export default function DashboardPage() {
               <YAxis tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}K`} />
               <Tooltip contentStyle={tooltipStyle} formatter={(v: any, name: any) => [`₹${Number(v).toLocaleString()}`, name]} cursor={{ fill: 'transparent' }} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10, color: DIM }} />
-              <Bar dataKey="Labour" fill={GOLD} radius={[3,3,0,0]} isAnimationActive={false} />
-              <Bar dataKey="Material" fill="#60a5fa" radius={[3,3,0,0]} isAnimationActive={false} />
-              <Bar dataKey="ExtraWork" fill="#f59e0b" radius={[3,3,0,0]} isAnimationActive={false} />
+              <Bar dataKey="Labour" fill={EXPENSE_COLORS['Labour']} radius={[3,3,0,0]} isAnimationActive={false} />
+              <Bar dataKey="Material" fill={EXPENSE_COLORS['Material']} radius={[3,3,0,0]} isAnimationActive={false} />
+              <Bar dataKey="ExtraWork" fill={EXPENSE_COLORS['Extra Work']} radius={[3,3,0,0]} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -290,7 +496,7 @@ export default function DashboardPage() {
             <ResponsiveContainer width="100%" height={160}>
               <PieChart>
                 <Pie data={projectCosts} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} innerRadius={30} paddingAngle={3} isAnimationActive={false}>
-                  {projectCosts.map((c, i) => <Cell key={c.name} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                  {projectCosts.map((c) => <Cell key={c.name} fill={EXPENSE_COLORS[c.name] || GOLD} />)}
                 </Pie>
                 <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Cost']} />
                 <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10, color: DIM }} />
@@ -359,18 +565,18 @@ export default function DashboardPage() {
                   <p className="font-bold text-white">{p.name}</p>
                   <p className="text-sm font-black" style={{ color: p.net >= 0 ? '#22c55e' : '#ef4444' }}>₹{p.net.toLocaleString()}</p>
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="grid grid-cols-3 gap-1 text-center">
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Revenue</p>
-                    <p className="text-xs font-bold text-[#22c55e]">₹{p.revenue.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold text-[#22c55e]">₹{p.revenue.toLocaleString()}</p>
                   </div>
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Material</p>
-                    <p className="text-xs font-bold text-[#60a5fa]">₹{p.material.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold text-[#60a5fa]">₹{p.material.toLocaleString()}</p>
                   </div>
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Extra</p>
-                    <p className="text-xs font-bold text-[#f59e0b]">₹{p.extraWork.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold text-[#f59e0b]">₹{p.extraWork.toLocaleString()}</p>
                   </div>
                 </div>
               </div>
@@ -446,6 +652,237 @@ export default function DashboardPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* AI Chat Assistant Dialog Modal */}
+      <Dialog open={aiModalOpen} onOpenChange={setAiModalOpen}>
+        <DialogContent 
+          style={{ 
+            backgroundColor: '#0d1018', 
+            border: '1px solid #1e2435', 
+            color: '#f0f0f0',
+            maxWidth: '650px',
+            borderRadius: '1.25rem'
+          }} 
+          className="max-h-[85vh] flex flex-col p-0 overflow-hidden"
+        >
+          {/* Dialog Header */}
+          <div className="px-6 py-5 border-b border-[#1e2435] bg-[#111520]/80 backdrop-blur-md flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-blue-500/10 text-blue-400">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <DialogTitle className="text-white text-base font-black uppercase tracking-wide">Sri Sai AI Assistant</DialogTitle>
+                <DialogDescription className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest flex items-center gap-1 mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Connected to Database
+                </DialogDescription>
+              </div>
+            </div>
+          </div>
+
+          {/* Chat Messages Area */}
+          <div 
+            ref={chatContainerRef}
+            className="flex-1 overflow-y-auto p-6 space-y-4 min-h-[300px] max-h-[50vh] bg-[#0a0c12]/50"
+          >
+            {messages.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-zinc-800/10 flex items-center justify-center text-blue-400">
+                  <Bot className="w-6 h-6" />
+                </div>
+                <div className="space-y-1 max-w-sm">
+                  <p className="text-sm font-bold text-white uppercase tracking-wide">Ask Anything About Your Business</p>
+                  <p className="text-xs text-zinc-500 leading-relaxed">Ask about workers, payroll, project income, material records, extra billing, and personal expenses.</p>
+                </div>
+              </div>
+            ) : (
+              messages.map((m, idx) => (
+                <div key={idx} className={`flex items-start gap-3 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  {m.role === 'assistant' && (
+                    <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center shrink-0">
+                      <Bot className="w-4 h-4" />
+                    </div>
+                  )}
+                  <div 
+                    className={`p-4 rounded-2xl text-sm leading-relaxed max-w-[80%] shadow-sm ${
+                      m.role === 'user' 
+                        ? 'bg-blue-600 text-white font-medium rounded-tr-none' 
+                        : 'bg-[#111520] border border-[#1e2435] text-zinc-200 rounded-tl-none font-medium'
+                    }`}
+                  >
+                    {m.role === 'assistant' ? (
+                      <div className="markdown-content whitespace-pre-line">
+                        {renderMarkdown(m.content)}
+                      </div>
+                    ) : (
+                      m.content
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+
+            {aiLoading && (
+              <div className="flex items-start gap-3 justify-start animate-pulse">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center shrink-0">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                </div>
+                <div className="p-4 rounded-2xl bg-[#111520] border border-[#1e2435] rounded-tl-none text-xs font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-2">
+                  Analyzing database records...
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Modal Input Form */}
+          <div className="p-4 border-t border-[#1e2435] bg-[#111520]">
+            <form onSubmit={handleAIModalSubmit} className="flex gap-2">
+              <input 
+                type="text"
+                placeholder="Ask follow-up question..."
+                value={modalQuery}
+                onChange={(e) => setModalQuery(e.target.value)}
+                className="flex-1 h-11 px-4 bg-black/40 border border-[#1e2435] rounded-xl text-sm font-medium text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all"
+                disabled={aiLoading}
+              />
+              <button 
+                type="submit"
+                disabled={aiLoading || !modalQuery.trim()}
+                className="h-11 px-5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 disabled:hover:bg-blue-600 active:scale-95 transition-all flex items-center justify-center shrink-0 cursor-pointer"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
+}
+
+function renderMarkdown(text: string) {
+  if (!text || typeof text !== 'string') return null
+
+  // Split text by lines
+  const lines = text.split('\n')
+  const elements: string[] = []
+  
+  let inList = false
+  let inTable = false
+  let tableHeaders: string[] = []
+  let tableRows: string[][] = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+    
+    // Check if line is a table row (starts and ends with pipe or contains multiple pipes)
+    if (line.startsWith('|') && line.split('|').length > 2) {
+      if (inList) {
+        elements.push('</ul>')
+        inList = false
+      }
+      
+      // Parse table cells
+      const cells = line.split('|').map(c => c.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1)
+      
+      // Skip separator row (e.g. |---------|------|)
+      if (cells.every(c => c.match(/^:?-+:?$/))) {
+        continue
+      }
+      
+      if (!inTable) {
+        inTable = true
+        tableHeaders = cells
+      } else {
+        tableRows.push(cells)
+      }
+      continue
+    } else {
+      if (inTable) {
+        // Output compiled table
+        let tableHtml = '<div class="overflow-x-auto my-3"><table class="w-full text-[11px] border-collapse rounded-xl overflow-hidden border border-[#1e2435]">'
+        tableHtml += '<thead class="bg-[#111520]"><tr>'
+        tableHeaders.forEach(h => {
+          tableHtml += `<th class="px-3 py-2 text-left font-black uppercase tracking-wider text-zinc-400 border-b border-[#1e2435]">${parseInline(h)}</th>`
+        })
+        tableHtml += '</tr></thead><tbody>'
+        tableRows.forEach(row => {
+          tableHtml += '<tr class="border-b border-[#1e2435] hover:bg-white/[0.02] transition-colors">'
+          row.forEach(cell => {
+            tableHtml += `<td class="px-3 py-2 font-medium text-white">${parseInline(cell)}</td>`
+          })
+          tableHtml += '</tr>'
+        })
+        tableHtml += '</tbody></table></div>'
+        elements.push(tableHtml)
+        
+        inTable = false
+        tableHeaders = []
+        tableRows = []
+      }
+    }
+    
+    // Check if line is a list item
+    if (line.startsWith('-') || line.startsWith('*')) {
+      if (!inList) {
+        elements.push('<ul class="list-disc pl-5 my-2 space-y-1">')
+        inList = true
+      }
+      const content = line.substring(1).trim()
+      elements.push(`<li class="text-zinc-300 font-medium">${parseInline(content)}</li>`)
+      continue
+    } else {
+      if (inList) {
+        elements.push('</ul>')
+        inList = false
+      }
+    }
+    
+    // Regular line
+    if (line !== '') {
+      elements.push(`<p class="my-1.5 text-zinc-300 font-medium">${parseInline(line)}</p>`)
+    }
+  }
+
+  // Handle any remaining open tags
+  if (inList) elements.push('</ul>')
+  if (inTable) {
+    let tableHtml = '<div class="overflow-x-auto my-3"><table class="w-full text-[11px] border-collapse rounded-xl overflow-hidden border border-[#1e2435]">'
+    tableHtml += '<thead class="bg-[#111520]"><tr>'
+    tableHeaders.forEach(h => {
+      tableHtml += `<th class="px-3 py-2 text-left font-black uppercase tracking-wider text-zinc-400 border-b border-[#1e2435]">${parseInline(h)}</th>`
+    })
+    tableHtml += '</tr></thead><tbody>'
+    tableRows.forEach(row => {
+      tableHtml += '<tr class="border-b border-[#1e2435] hover:bg-white/[0.02] transition-colors">'
+      row.forEach(cell => {
+        tableHtml += `<td class="px-3 py-2 font-medium text-white">${parseInline(cell)}</td>`
+      })
+      tableHtml += '</tr>'
+    })
+    tableHtml += '</tbody></table></div>'
+    elements.push(tableHtml)
+  }
+
+  return <div className="space-y-1" dangerouslySetInnerHTML={{ __html: elements.join('\n') }} />
+}
+
+function parseInline(text: string): string {
+  let html = text
+  
+  // Standard bold formatting
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+  
+  // Mismatched asterisk safety checks (e.g. *text** or **text*)
+  html = html.replace(/\*(.*?)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/\*\*(.*?)\*/g, '<strong>$1</strong>')
+  
+  // Standard single asterisk formatting (fallback to bold for clean presentation)
+  html = html.replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+  
+  // Indian rupees highlighting
+  html = html.replace(/(₹[0-9,]+(\.[0-9]+)?)/g, '<span class="text-blue-400 font-bold">$1</span>')
+  
+  return html
 }

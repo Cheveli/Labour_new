@@ -58,6 +58,9 @@ export default function AttendancePage() {
   const [activePopup, setActivePopup] = useState<{ worker_id: string, date: string } | null>(null)
   const [popupData, setPopupData] = useState<DayRecord>({ status: '', overtime_amount: 0, advance_amount: 0 })
 
+  // Daily grouped notes: one note per date applies to ALL workers
+  const [dailyNotes, setDailyNotes] = useState<Record<string, string>>({})
+
   const supabase = createClient()
 
   const weekDates = useMemo(() => {
@@ -113,6 +116,7 @@ export default function AttendancePage() {
       .lte('date', endStr)
 
     const newGrid: Record<string, WorkerRow> = {}
+    const notesByDate: Record<string, string> = {}
 
     if (data) {
       data.forEach((r: any) => {
@@ -139,10 +143,15 @@ export default function AttendancePage() {
           overtime_amount: Number(r.overtime_amount) || 0,
           advance_amount: Number(r.advance_amount) || 0
         }
+        // Extract per-date note (all workers on same date share same note)
+        if (r.notes && r.notes.trim() && !notesByDate[r.date]) {
+          notesByDate[r.date] = r.notes.trim()
+        }
       })
     }
 
     setGridData(newGrid)
+    setDailyNotes(notesByDate)
     setLoading(false)
   }
 
@@ -226,7 +235,7 @@ export default function AttendancePage() {
         const newDays = { ...next[wId].days }
         weekDates.forEach(d => {
           const dateStr = format(d, 'yyyy-MM-dd')
-          const currentDay = newDays[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0 }
+          const currentDay = newDays[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0, notes: '' }
           if (currentDay.status === '') {
             newDays[dateStr] = { ...currentDay, status: 'P' }
           }
@@ -247,7 +256,7 @@ export default function AttendancePage() {
         weekDates.forEach(d => {
           const dateStr = format(d, 'yyyy-MM-dd')
           if (newDays[dateStr]) {
-            newDays[dateStr] = { ...newDays[dateStr], status: '', overtime_amount: 0, advance_amount: 0 }
+            newDays[dateStr] = { ...newDays[dateStr], status: '', overtime_amount: 0, advance_amount: 0, notes: '' }
           }
         })
         next[wId] = { ...next[wId], days: newDays }
@@ -299,7 +308,8 @@ export default function AttendancePage() {
             next[wId].days[targetDateStr] = {
               status,
               overtime_amount: Number(r.overtime_amount) || 0,
-              advance_amount: Number(r.advance_amount) || 0
+              advance_amount: Number(r.advance_amount) || 0,
+              notes: r.notes || ''
             }
           }
         })
@@ -334,7 +344,9 @@ export default function AttendancePage() {
       Object.values(gridData).forEach(row => {
         weekDates.forEach(d => {
           const dateStr = format(d, 'yyyy-MM-dd')
-          const cell = row.days[dateStr] || { status: '', overtime_amount: 0 }
+          const cell = row.days[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0 }
+          // All workers on same day share the same grouped note
+          const sharedNote = dailyNotes[dateStr] || null
           
           // Save every day. If not P or H, it defaults to 0 (Absent)
           inserts.push({
@@ -346,7 +358,7 @@ export default function AttendancePage() {
             overtime_amount: cell.overtime_amount || 0,
             custom_rate: row.custom_rate,
             advance_amount: cell.advance_amount || 0,
-            notes: null
+            notes: sharedNote
           })
         })
       })
@@ -376,6 +388,19 @@ export default function AttendancePage() {
       adv += d.advance_amount || 0
     })
     return (days * row.custom_rate) + ot - adv
+  }
+
+  // Weekly tasks summary is now date-based (grouped, not per worker)
+  const getWeeklyTasksSummary = () => {
+    const tasks: string[] = []
+    weekDates.forEach(d => {
+      const dateStr = format(d, 'yyyy-MM-dd')
+      const note = dailyNotes[dateStr]
+      if (note && note.trim()) {
+        tasks.push(`${format(d, 'EEE')}: ${note.trim()}`)
+      }
+    })
+    return tasks.join(' | ')
   }
 
   const totals = useMemo(() => {
@@ -486,7 +511,7 @@ export default function AttendancePage() {
         ) : (
           <>
             {/* Desktop View */}
-            <div className="hidden xl:block overflow-x-auto hide-scrollbar" style={PANEL}>
+            <div className="hidden xl:block hide-scrollbar" style={PANEL}>
               <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-[#1e2435] bg-[#0d1018]">
@@ -576,12 +601,93 @@ export default function AttendancePage() {
                   </td>
                 </tr>
               ))}
+              {/* Work Done Row — one square input per day for the whole group */}
+              <tr className="border-t-2 border-blue-500/20 bg-blue-500/5">
+                <td className="py-3 px-4 sticky left-0 bg-[#0d0f16] z-10">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">Work Done</p>
+                    <p className="text-[9px] text-zinc-600 mt-0.5">All workers · Per day</p>
+                  </div>
+                </td>
+                {weekDates.map(d => {
+                  const dateStr = format(d, 'yyyy-MM-dd')
+                  const hasNote = !!(dailyNotes[dateStr] && dailyNotes[dateStr].trim())
+                  return (
+                    <td key={dateStr} className="py-2 px-1 text-center">
+                      <div className="flex flex-col items-center gap-1 mx-auto" style={{ width: '44px' }}>
+                        <input
+                          type="text"
+                          value={dailyNotes[dateStr] || ''}
+                          onChange={e => setDailyNotes(prev => ({ ...prev, [dateStr]: e.target.value }))}
+                          title={dailyNotes[dateStr] || 'Enter work done'}
+                          placeholder="✎"
+                          className="w-11 h-11 rounded-xl text-center text-[9px] font-semibold outline-none transition-all"
+                          style={{
+                            backgroundColor: hasNote ? 'rgba(59,130,246,0.08)' : '#0d1018',
+                            border: hasNote ? '2px solid rgba(59,130,246,0.4)' : '1px solid #1e3a5f',
+                            color: '#93c5fd'
+                          }}
+                        />
+                        {hasNote && (
+                          <button
+                            onClick={() => setDailyNotes(prev => ({ ...prev, [dateStr]: '' }))}
+                            title="Clear this day's note"
+                            className="text-[8px] font-black uppercase text-red-400/50 hover:text-red-400 transition-colors leading-none"
+                          >
+                            ✕ clear
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )
+                })}
+                <td colSpan={2} className="py-3 px-4 text-left text-[10px] text-zinc-500 italic">
+                  {getWeeklyTasksSummary() ? (
+                    <span className="text-blue-400/70 truncate block max-w-[180px]" title={getWeeklyTasksSummary()}>{getWeeklyTasksSummary()}</span>
+                  ) : 'Enter daily tasks above'}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
 
         {/* Mobile Card View */}
         <div className="xl:hidden space-y-4">
+          {/* Daily Work Done section — mobile */}
+          <div style={PANEL} className="p-4 space-y-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">Work Done · Per Day (All Workers)</p>
+            <div className="grid grid-cols-2 gap-2">
+              {weekDates.map(d => {
+                const dateStr = format(d, 'yyyy-MM-dd')
+                const hasNote = !!(dailyNotes[dateStr] && dailyNotes[dateStr].trim())
+                return (
+                  <div key={dateStr} className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-zinc-500">{format(d, 'EEE dd MMM')}</label>
+                      {hasNote && (
+                        <button
+                          onClick={() => setDailyNotes(prev => ({ ...prev, [dateStr]: '' }))}
+                          title="Clear note"
+                          className="flex items-center gap-0.5 text-[8px] font-black uppercase text-red-400/60 hover:text-red-400 transition-colors"
+                        >
+                          <X size={9} /> Clear
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={dailyNotes[dateStr] || ''}
+                      onChange={e => setDailyNotes(prev => ({ ...prev, [dateStr]: e.target.value }))}
+                      placeholder="What work was done?"
+                      className="w-full h-8 px-2 rounded-lg text-[10px] outline-none"
+                      style={{ backgroundColor: '#0d1018', border: '1px solid #1e3a5f', color: '#93c5fd' }}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
           {Object.values(gridData).sort((a, b) => a.name.localeCompare(b.name)).map(row => (
             <div key={row.worker_id} style={PANEL} className="p-4 space-y-4">
               <div className="flex justify-between items-start border-b border-[#1e2435] pb-3">
@@ -638,6 +744,7 @@ export default function AttendancePage() {
                   </div>
                 </div>
               </div>
+
             </div>
           ))}
         </div>
@@ -728,7 +835,7 @@ export default function AttendancePage() {
       {/* Attendance Detail Popup */}
       {activePopup && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setActivePopup(null)}>
-          <div className="rounded-2xl p-6 w-full max-w-[320px] space-y-6 shadow-2xl animate-in zoom-in-95" style={PANEL} onClick={e => e.stopPropagation()}>
+          <div className="rounded-2xl p-6 w-full max-w-[340px] space-y-6 shadow-2xl animate-in zoom-in-95" style={PANEL} onClick={e => e.stopPropagation()}>
             <div className="text-center space-y-1 border-b border-[#1e2435] pb-4">
               <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Attendance Details</p>
               <p className="text-sm font-bold text-white">{gridData[activePopup.worker_id]?.name}</p>
@@ -791,6 +898,7 @@ export default function AttendancePage() {
                   />
                 </div>
               </div>
+
             </div>
 
             <div className="flex gap-2">
