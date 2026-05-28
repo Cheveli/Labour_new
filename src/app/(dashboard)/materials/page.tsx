@@ -97,6 +97,7 @@ export default function MaterialsPage() {
   const [editMatData, setEditMatData] = useState({ name: '', quantity: '', unit: 'bags', cost_per_unit: '', total_amount: '', notes: '', date: '' })
   const [editSaving, setEditSaving] = useState(false)
   const [receiptFile, setReceiptFile] = useState<File | null>(null)
+  const [showAddModal, setShowAddModal] = useState(false)
   const supabase = createClient()
 
   useEffect(() => {
@@ -251,6 +252,7 @@ export default function MaterialsPage() {
       setReceiptFile(null)
       setMatPage(0)
       fetchData()
+      setShowAddModal(false)
     }
     setSaving(false)
   }
@@ -258,32 +260,43 @@ export default function MaterialsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col gap-3">
         <div>
           <h1 className="text-2xl font-black text-white tracking-tight">Material Inventory</h1>
           <p className="mt-1 text-sm text-zinc-500">Record site deliveries, stock levels, and resource costs.</p>
         </div>
-        <div className="flex flex-col sm:flex-row items-center gap-4">
-          <div className="flex items-center gap-3">
-            <label className="text-[10px] font-black uppercase tracking-widest hidden md:block text-zinc-500">Filter:</label>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all min-w-[180px]"
-            >
-              <option value="">All Projects</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedProjectId}
+            onChange={(e) => setSelectedProjectId(e.target.value)}
+            className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all flex-1 min-w-[140px]"
+          >
+            <option value="">All Projects</option>
+            {projects.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
           <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">{materials.length} entries</span>
+          <button
+            type="button"
+            onClick={() => {
+              setFormData({ project_id: selectedProjectId, name: '', quantity: '', unit: 'bags', cost_per_unit: '', base_amount: '', total_amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
+              setSupplierName(''); setSupplierPhone('');
+              setTransportEnabled(false); setTransportFee('');
+              setHamaliEnabled(false); setHamaliFee('');
+              setReceiptFile(null);
+              setShowAddModal(true);
+            }}
+            className="whitespace-nowrap h-10 px-5 rounded-xl text-xs font-black uppercase bg-blue-500 text-white flex items-center gap-2 hover:bg-blue-600 shadow-[0_4px_14px_rgba(59,130,246,0.3)] transition-all cursor-pointer"
+          >
+            + New Entry
+          </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* LEFT: Material List */}
-        <div className="lg:col-span-8">
+        {/* LEFT: Material List - Full Width */}
+        <div className="lg:col-span-12">
           <Card className="panel-elevated text-white rounded-2xl overflow-hidden min-h-full">
             <CardHeader className="p-8 border-b border-zinc-800 flex flex-row items-center justify-between gap-4">
               <CardTitle className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">Inventory History</CardTitle>
@@ -381,15 +394,15 @@ export default function MaterialsPage() {
                 <Table>
                   <TableHeader className="bg-zinc-900/80">
                     <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
-                      <TableHead className="px-6 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 w-12">S.No</TableHead>
-                      <TableHead className="px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Project</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Material</TableHead>
+                      <TableHead className="px-4 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 w-12 text-center">S.No</TableHead>
+                      <TableHead className="px-4 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Project / Material</TableHead>
                       <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Supplier</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Cost</TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Breakdown</TableHead>
                       <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Remarks</TableHead>
-                      <TableHead className="text-right px-8 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Total</TableHead>
-                      <TableHead className="py-6 w-16"></TableHead>
+                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 text-center">Receipt</TableHead>
+                      <TableHead className="text-right px-4 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Total</TableHead>
+                      <TableHead className="py-6 w-14"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -417,7 +430,7 @@ export default function MaterialsPage() {
                         const transportMatch = notes.match(/Transportation:\sRs\.([\d,.]+)/);
                         const hamaliMatch = notes.match(/Hamali:\sRs\.([\d,.]+)/);
                         const receiptMatch = notes.match(/Receipt:\s(.*?)(?:\s\||$)/);
-
+ 
                         const supplier = supplierMatch ? supplierMatch[1] : '—';
                         const supplierPhone = supplierPhoneMatch ? supplierPhoneMatch[1] : '';
                         const supplierDisplay = supplier !== '—' ? (supplierPhone ? `${supplier} (${supplierPhone})` : supplier) : '—';
@@ -425,7 +438,7 @@ export default function MaterialsPage() {
                         const transport = transportMatch ? `₹${transportMatch[1]}` : '—';
                         const hamali = hamaliMatch ? `₹${hamaliMatch[1]}` : '—';
                         const receiptUrl = item.receipt_url || (receiptMatch ? receiptMatch[1] : null);
-
+ 
                         let cleanNotes = notes
                           .replace(/Supplier:\s(.*?)(?:\s\(|$)/, '')
                           .replace(/\(\d+\)/, '')
@@ -435,19 +448,17 @@ export default function MaterialsPage() {
                           .replace(/Receipt:\s(.*?)(?:\s\||$)/, '')
                           .replace(/^[\s\|]+|[\s\|]+$/g, '')
                           .trim();
-
+ 
                         return (
                           <TableRow key={item.id} className="border-zinc-800 transition-colors hover:bg-white/5">
-                            <TableCell className="px-6 py-5 font-bold text-gray-400 text-xs text-center">{matPage * 10 + idx + 1}</TableCell>
-                            <TableCell className="px-8 py-5 font-bold text-gray-400 text-xs whitespace-nowrap">
+                            <TableCell className="px-4 py-5 font-bold text-gray-400 text-xs text-center">{matPage * 10 + idx + 1}</TableCell>
+                            <TableCell className="px-4 py-5 font-bold text-gray-400 text-xs whitespace-nowrap">
                               {format(new Date(item.date), 'dd-MM-yyyy')}
                             </TableCell>
                             <TableCell className="py-5">
                               <p className="font-bold text-white text-sm lowercase">{item.projects?.name}</p>
-                            </TableCell>
-                            <TableCell className="py-5">
-                              <p className="font-black text-gray-200 text-xs tracking-tight uppercase">{item.name}</p>
-                              <p className="font-bold text-zinc-500 text-[10px] uppercase mt-1">{item.quantity} {item.unit} {item.cost_per_unit > 0 ? ` @ ₹${item.cost_per_unit}` : ''}</p>
+                              <p className="font-black text-gray-200 text-[10px] tracking-tight uppercase mt-1">{item.name}</p>
+                              <p className="font-bold text-zinc-500 text-[10px] uppercase mt-0.5">{item.quantity} {item.unit} {item.cost_per_unit > 0 ? ` @ ₹${item.cost_per_unit}` : ''}</p>
                             </TableCell>
                             <TableCell className="py-5">
                               <p className="font-bold text-white text-sm">{supplierDisplay}</p>
@@ -457,15 +468,24 @@ export default function MaterialsPage() {
                               {transport !== '—' && <p className="text-[10px] font-bold text-zinc-400">Transport: <span className="text-white">{transport}</span></p>}
                               {hamali !== '—' && <p className="text-[10px] font-bold text-zinc-400">Hamali: <span className="text-white">{hamali}</span></p>}
                             </TableCell>
-                            <TableCell className="py-5 text-xs text-zinc-400 max-w-[220px] break-words">{cleanNotes || '—'}</TableCell>
-                            <TableCell className="py-5 text-right px-8 font-black text-white text-sm whitespace-nowrap">₹ {item.total_amount?.toLocaleString() || item.total_cost?.toLocaleString()}</TableCell>
+                            <TableCell className="py-5 text-xs text-zinc-400 max-w-[150px] truncate" title={cleanNotes}>{cleanNotes || '—'}</TableCell>
+                            <TableCell className="py-5 text-center">
+                              {receiptUrl ? (
+                                <a 
+                                  href={receiptUrl} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-black uppercase tracking-wider text-emerald-400 hover:bg-emerald-500/20 transition-all whitespace-nowrap font-sans"
+                                >
+                                  <FileText size={12} /> View Receipt
+                                </a>
+                              ) : (
+                                <span className="text-zinc-600 font-bold text-xs">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="py-5 text-right px-4 font-black text-white text-sm whitespace-nowrap">₹ {item.total_amount?.toLocaleString() || item.total_cost?.toLocaleString()}</TableCell>
                             <TableCell className="py-3 pr-4">
-                              <div className="flex items-center gap-1 justify-end">
-                                {receiptUrl && (
-                                  <a href={receiptUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg hover:bg-emerald-500/10 text-zinc-500 hover:text-emerald-400 transition-colors">
-                                    <FileText size={13} />
-                                  </a>
-                                )}
+                              <div className="flex items-center gap-1.5 justify-end">
                                 <button onClick={() => handleOpenEditMat(item)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-zinc-500 hover:text-blue-400 transition-colors"><Edit2 size={13} /></button>
                                 <button onClick={() => handleDeleteMat(item.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
                               </div>
@@ -539,17 +559,26 @@ export default function MaterialsPage() {
             </>
           )}
         </CardContent>
-          </Card>
-        </div>
+      </Card>
+    </div>
+  </div>
 
-        {/* RIGHT: Add Form */}
-        <div className="lg:col-span-4">
-          <Card className="panel-elevated text-white rounded-2xl overflow-hidden p-8">
-            <h3 className="text-lg font-black uppercase tracking-tight mb-8">Stock Entry</h3>
+      {/* Add Material Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in-50" onClick={() => setShowAddModal(false)}>
+          <div className="rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto custom-scrollbar flex flex-col space-y-6 shadow-2xl animate-in zoom-in-95" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }} onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center pb-4 border-b border-[#1e2435]">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Sri Sai Constructions</p>
+                <p className="text-sm font-bold text-white uppercase tracking-wide">New Stock Entry</p>
+              </div>
+              <button onClick={() => setShowAddModal(false)} className="text-zinc-500 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-all"><X size={18}/></button>
+            </div>
+            
             <form onSubmit={handleCreate} className="space-y-6">
               <div className="space-y-2">
                 <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Select Site</label>
-                <select value={formData.project_id} onChange={e => setFormData({ ...formData, project_id: e.target.value })} className="styled-select">
+                <select value={formData.project_id} onChange={e => setFormData({ ...formData, project_id: e.target.value })} className="styled-select w-full h-11">
                   <option value="">Delivery Location</option>
                   {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
@@ -578,10 +607,16 @@ export default function MaterialsPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Unit</label>
-                  <select value={formData.unit} onChange={e => setFormData({ ...formData, unit: e.target.value })} className="styled-select">
+                  <select value={formData.unit} onChange={e => setFormData({ ...formData, unit: e.target.value })} className="styled-select w-full h-12">
                     <option value="bags">Bags</option>
                     <option value="kgs">Kg</option>
                     <option value="tons">Tons</option>
+                    <option value="sq-ft">Square feet (sq ft)</option>
+                    <option value="boxes">Boxes</option>
+                    <option value="pieces">Pieces</option>
+                    <option value="liters">Liters</option>
+                    <option value="bricks">Number (Nos) of bricks</option>
+                    <option value="meters">Meters</option>
                     <option value="no-unit">No Unit</option>
                   </select>
                 </div>
@@ -641,7 +676,7 @@ export default function MaterialsPage() {
                   <Input
                     type="number" placeholder="Enter transport amount"
                     value={transportFee} onChange={e => setTransportFee(e.target.value)}
-                    className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
+                    className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white animate-in slide-in-from-top-1 duration-150"
                   />
                 )}
               </div>
@@ -656,7 +691,7 @@ export default function MaterialsPage() {
                   <Input
                     type="number" placeholder="Enter hamali amount"
                     value={hamaliFee} onChange={e => setHamaliFee(e.target.value)}
-                    className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
+                    className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white animate-in slide-in-from-top-1 duration-150"
                   />
                 )}
               </div>
@@ -672,8 +707,6 @@ export default function MaterialsPage() {
                   className="h-12 bg-zinc-950 border-blue-500/30 rounded-xl font-black text-blue-400 text-lg"
                 />
               </div>
-
-
 
               <div className="space-y-2">
                 <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Remarks (optional)</label>
@@ -695,7 +728,7 @@ export default function MaterialsPage() {
                 <div className="relative group">
                   <input
                     type="file"
-                    accept="image/*,application/pdf"
+                    accept="image/jpeg,image/png,image/svg+xml,application/pdf"
                     onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   />
@@ -718,14 +751,17 @@ export default function MaterialsPage() {
                 </div>
               </div>
 
-              <Button type="submit" disabled={saving} className="w-full h-14 btn-construction rounded-xl font-black uppercase tracking-tight text-lg">
-                {saving ? <Loader2 className="animate-spin mr-2" /> : null}
-                Record Delivery
-              </Button>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 h-12 rounded-xl text-xs font-black uppercase" style={{ backgroundColor: '#1a1f2e', color: '#6b7280', border: '1px solid #1e2435' }}>Cancel</button>
+                <Button type="submit" disabled={saving} className="flex-1 h-12 btn-construction rounded-xl font-black uppercase tracking-tight text-sm">
+                  {saving ? <Loader2 className="animate-spin mr-2" /> : null}
+                  Record Delivery
+                </Button>
+              </div>
             </form>
-          </Card>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Edit Material Modal */}
       {editingMat && (
@@ -744,7 +780,16 @@ export default function MaterialsPage() {
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Unit</label>
                 <select value={editMatData.unit} onChange={e => setEditMatData({ ...editMatData, unit: e.target.value })} className="styled-select">
-                  <option value="bags">Bags</option><option value="kgs">Kg</option><option value="tons">Tons</option><option value="no-unit">No Unit</option>
+                  <option value="bags">Bags</option>
+                  <option value="kgs">Kg</option>
+                  <option value="tons">Tons</option>
+                  <option value="sq-ft">Square feet (sq ft)</option>
+                  <option value="boxes">Boxes</option>
+                  <option value="pieces">Pieces</option>
+                  <option value="liters">Liters</option>
+                  <option value="bricks">Number (Nos) of bricks</option>
+                  <option value="meters">Meters</option>
+                  <option value="no-unit">No Unit</option>
                 </select>
               </div>
               <div className="space-y-1.5">

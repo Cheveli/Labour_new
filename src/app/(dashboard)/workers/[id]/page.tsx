@@ -11,6 +11,13 @@ import * as XLSX from 'xlsx'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { 
+  drawPremiumHeader, 
+  drawPremiumFooter,
+  PDF_COLORS, 
+  numberToWords,
+  COMPANY_DETAILS
+} from '@/lib/report-utils'
 
 const PANEL = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
 const GOLD = '#3b82f6'
@@ -59,51 +66,166 @@ export default function WorkerProfilePage() {
   const netBalance = grossEarned - totalAdvance - totalPaid
 
   const generateSalaryStatement = () => {
-    const doc = new jsPDF()
     const mAttDays = filteredAtt.reduce((s, r) => s + (r.days_worked || 0), 0)
     const mOT = filteredAtt.reduce((s, r) => s + (r.overtime_amount || 0), 0)
     const mAdv = filteredAtt.reduce((s, r) => s + (r.advance_amount || 0), 0)
     const mPaid = filteredPay.reduce((s, r) => s + (r.amount || 0), 0)
     const mGross = mAttDays * (worker?.daily_rate || 0) + mOT
-    doc.setFillColor(10, 12, 18); doc.rect(0, 0, 210, 297, 'F')
-    doc.setFillColor(59, 130, 246); doc.rect(0, 0, 210, 20, 'F')
-    doc.setTextColor(255, 255, 255); doc.setFontSize(14); doc.setFont('helvetica', 'bold')
-    doc.text('SSC CONSTRUCTIONS — SALARY STATEMENT', 105, 13, { align: 'center' })
-    doc.setTextColor(240, 240, 240); doc.setFontSize(11); doc.setFont('helvetica', 'bold')
-    doc.text(`Worker: ${worker.name}`, 14, 32)
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(160, 160, 160)
-    doc.text(`Type: ${worker.type}   |   Daily Rate: Rs.${worker.daily_rate}   |   Month: ${monthFilter}`, 14, 39)
-    autoTable(doc, {
-      startY: 48,
-      head: [['Date', 'Project', 'Status', 'Days', 'OT Amt', 'Advance', 'Earned']],
-      body: filteredAtt.map(r => [
+    
+    const hasOT = mOT > 0
+    const tableHeight = (filteredAtt.length + 1) * 8.5
+    const summaryBoxH = hasOT ? 42 : 35
+    const requiredHeight = 44 + 16 + tableHeight + 10 + summaryBoxH + 18 + 24 + 10 + 14
+    const pageHeight = Math.max(160, requiredHeight)
+
+    const doc = new jsPDF({
+      orientation: 'p',
+      unit: 'mm',
+      format: [210, pageHeight]
+    })
+    
+    drawPremiumHeader(doc, 'SALARY STATEMENT', '(INDIVIDUAL)')
+
+    let y = 54
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8)
+    doc.text('Worker Name', 14, y); doc.setFont('helvetica', 'normal'); doc.text(`: ${worker.name}`, 40, y)
+    doc.setFont('helvetica', 'bold'); doc.text('Role', 14, y + 6); doc.setFont('helvetica', 'normal'); doc.text(`: ${worker.type || 'N/A'}`, 40, y + 6)
+    
+    doc.setFont('helvetica', 'bold'); doc.text('Filter Month', 110, y)
+    doc.setFont('helvetica', 'normal'); doc.text(`: ${monthFilter}`, 140, y)
+    doc.setFont('helvetica', 'bold'); doc.text('Report Date', 110, y + 6)
+    doc.setFont('helvetica', 'normal'); doc.text(`: ${format(new Date(), 'dd MMM yyyy')}`, 140, y + 6)
+
+    const head = hasOT 
+      ? [['Date', 'Project', 'Status', 'Wages on the day', 'OT Amount', 'Deduction', 'Giveable Amount', 'Grand Total']]
+      : [['Date', 'Project', 'Status', 'Wages on the day', 'Deduction', 'Giveable Amount', 'Grand Total']]
+
+    const body = filteredAtt.map((r: any) => {
+      const rate = r.custom_rate || worker.daily_rate || 0
+      const daysWorked = Number(r.days_worked || 0)
+      const otAmt = Number(r.overtime_amount || 0)
+      const advAmt = Number(r.advance_amount || 0)
+      const status = daysWorked === 1 ? 'P' : daysWorked === 0.5 ? 'H' : 'A'
+
+      const row = [
         r.date,
         r.projects?.name || '—',
-        r.days_worked === 1 ? 'Full Day' : r.days_worked === 0.5 ? 'Half Day' : 'Overtime',
-        r.days_worked,
-        `Rs.${r.overtime_amount || 0}`,
-        `Rs.${r.advance_amount || 0}`,
-        `Rs.${Math.round((r.days_worked || 0) * (worker.daily_rate || 0) + (r.overtime_amount || 0))}`,
-      ]),
-      styles: { fontSize: 8, fillColor: [17, 21, 32], textColor: [240, 240, 240], lineColor: [30, 36, 53] },
-      headStyles: { fillColor: [59, 130, 246], textColor: [255, 255, 255], fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [13, 16, 24] },
+        status,
+        `Rs. ${(daysWorked * rate || 0).toLocaleString()}`
+      ]
+      if (hasOT) {
+        row.push(otAmt > 0 ? `Rs. ${(otAmt || 0).toLocaleString()}` : '-')
+      }
+      row.push(
+        advAmt > 0 ? `Rs. ${(advAmt || 0).toLocaleString()}` : '-',
+        `Rs. ${((daysWorked * rate) + otAmt - advAmt || 0).toLocaleString()}`,
+        `Rs. ${((daysWorked * rate) + otAmt || 0).toLocaleString()}`
+      )
+      return row
     })
-    const sy = (doc as any).lastAutoTable.finalY + 10
-    doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(240, 240, 240)
-    doc.text('PAYMENT SUMMARY', 14, sy)
+
     autoTable(doc, {
-      startY: sy + 5,
-      head: [['Description', 'Amount']],
-      body: [
-        ['Gross Earned', `Rs.${Math.round(mGross).toLocaleString()}`],
-        ['Advance Deducted', `Rs.${mAdv.toLocaleString()}`],
-        ['Payments Made', `Rs.${mPaid.toLocaleString()}`],
-        ['Net Balance', `Rs.${Math.round(mGross - mAdv - mPaid).toLocaleString()}`],
-      ],
-      styles: { fontSize: 9, fillColor: [17, 21, 32], textColor: [240, 240, 240] },
-      headStyles: { fillColor: [30, 36, 53], textColor: [107, 114, 128] },
+      startY: y + 14,
+      head: head,
+      body: body,
+      theme: 'grid',
+      headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+      alternateRowStyles: { fillColor: PDF_COLORS.LIGHT },
+      didDrawPage: (pageData) => {
+        if (pageData.pageNumber > 1) {
+          drawPremiumHeader(doc, 'SALARY STATEMENT (CONT.)', '(INDIVIDUAL)')
+        }
+        drawPremiumFooter(doc)
+      },
+      margin: { top: 50, left: 14, right: 14, bottom: 20 },
+      didParseCell: (cellData) => {
+        const deductionColIdx = hasOT ? 5 : 4
+        const giveableColIdx = hasOT ? 6 : 5
+        const grandTotalColIdx = hasOT ? 7 : 6
+        if (cellData.section === 'body') {
+          if (cellData.column.index === 2) { // Status column
+            const val = cellData.cell.text[0]
+            if (val === 'P') cellData.cell.styles.textColor = [34, 197, 94]
+            else if (val === 'A') cellData.cell.styles.textColor = [239, 68, 68]
+            else if (val === 'H') cellData.cell.styles.textColor = [245, 158, 11]
+            cellData.cell.styles.fontStyle = 'bold'
+          }
+          if (cellData.column.index === deductionColIdx) {
+            const val = cellData.cell.text[0]
+            if (val && val !== '-') {
+              cellData.cell.styles.textColor = PDF_COLORS.RED
+              cellData.cell.styles.fontStyle = 'bold'
+            }
+          }
+          if (cellData.column.index === giveableColIdx) {
+            cellData.cell.styles.fontStyle = 'bold'
+            cellData.cell.styles.textColor = PDF_COLORS.GREEN
+          }
+          if (cellData.column.index === grandTotalColIdx) {
+            cellData.cell.styles.fontStyle = 'bold'
+            cellData.cell.styles.textColor = PDF_COLORS.BLUE
+          }
+        }
+      }
     })
+
+    let finalY = (doc as any).lastAutoTable.finalY + 10
+    const H = doc.internal.pageSize.getHeight()
+
+    // Add new page if summary box & signatures don't fit
+    if (finalY + summaryBoxH > H - 25) {
+      doc.addPage()
+      drawPremiumHeader(doc, 'SALARY STATEMENT (CONT.)', '(STATEMENT)')
+      drawPremiumFooter(doc)
+      finalY = 50
+    }
+    
+    // Summary Box
+    doc.setFillColor(245, 247, 250)
+    doc.roundedRect(110, finalY, 86, summaryBoxH, 2, 2, 'F')
+    
+    const summaryGross = mGross
+    let boxY = finalY + 7
+    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(...PDF_COLORS.BLUE)
+    doc.text('GRAND TOTAL:', 115, boxY); doc.setFontSize(12); doc.text(`Rs. ${summaryGross.toLocaleString()}`, 185, boxY, { align: 'right' })
+    
+    boxY += 8
+    if (hasOT) {
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_COLORS.NAVY)
+      doc.text('Total Overtime:', 115, boxY); doc.text(`Rs. ${mOT.toLocaleString()}`, 185, boxY, { align: 'right' })
+      boxY += 7
+    }
+    
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.text('Total Deduction:', 115, boxY); doc.setTextColor(220, 53, 69); doc.text(`Rs. ${mAdv.toLocaleString()}`, 185, boxY, { align: 'right' })
+    
+    boxY += 4
+    doc.setDrawColor(200, 200, 200); doc.line(115, boxY, 185, boxY)
+    
+    boxY += 6
+    doc.setTextColor(...PDF_COLORS.GREEN); doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
+    doc.text('NET PAYMENT:', 115, boxY); doc.text(`Rs. ${(mGross - mAdv).toLocaleString()}`, 185, boxY, { align: 'right' })
+
+    doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(8); doc.setFont('helvetica', 'italic')
+    doc.text(`Amount in words: ${numberToWords(Math.abs(mGross - mAdv))}`, 14, finalY + 48)
+
+    // Signatory Area
+    const sigY = H - 48
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.setFontSize(8)
+    doc.text('FOR ' + COMPANY_DETAILS.name, 160, sigY + 5, { align: 'center' })
+
+    doc.setFont('times', 'italic')
+    doc.setFontSize(12)
+    doc.text('Cheveli Somaiah', 160, sigY + 16, { align: 'center' })
+    doc.line(140, sigY + 18, 180, sigY + 18)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7); doc.text('Authorized Signatory', 160, sigY + 22, { align: 'center' })
+
+    drawPremiumFooter(doc)
     doc.save(`Salary_${worker.name.replace(/\s+/g, '_')}_${monthFilter}.pdf`)
   }
 

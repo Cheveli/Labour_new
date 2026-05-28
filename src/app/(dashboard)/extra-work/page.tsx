@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Zap, Plus, Search, Loader2, Calendar, Briefcase, History, FileText, Download, Edit2, Trash2 } from 'lucide-react'
+import { Zap, Plus, Search, Loader2, Calendar, Briefcase, History, FileText, Download, Edit2, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import jsPDF from 'jspdf'
@@ -25,6 +25,7 @@ export default function ExtraWorkPage() {
   const [editingTask, setEditingTask] = useState<any>(null)
   const [editFormData, setEditFormData] = useState({ project_id: '', work_name: '', amount: '', date: '', notes: '' })
   const [editSaving, setEditSaving] = useState(false)
+  const [showAddModal, setShowAddModal] = useState(false)
 
   const [formData, setFormData] = useState({
     project_id: '',
@@ -84,6 +85,7 @@ export default function ExtraWorkPage() {
     } else {
       toast.success('Extra task recorded')
       setFormData({ project_id: '', work_name: '', amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' })
+      setShowAddModal(false)
       fetchData()
     }
     setSaving(false)
@@ -176,40 +178,50 @@ export default function ExtraWorkPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-white tracking-tight">Extra Tasks</h1>
-          <p className="mt-1 text-sm text-zinc-500">Record lumpsum payments for extra works and ad-hoc tasks.</p>
-        </div>
-        <div className="flex flex-col sm:flex-row items-center gap-4">
-          <div className="flex items-center gap-3">
-            <select 
-              value={selectedProjectId} 
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all min-w-[180px]"
-            >
-              <option value="">All Projects</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-black text-white tracking-tight">Extra Tasks</h1>
+            <p className="mt-1 text-sm text-zinc-500">Record lumpsum payments for extra works and ad-hoc tasks.</p>
           </div>
+          <span className="text-xl font-black text-blue-400">₹{tasks.reduce((s, t) => s + Number(t.amount), 0).toLocaleString()}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select 
+            value={selectedProjectId} 
+            onChange={(e) => setSelectedProjectId(e.target.value)}
+            className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all flex-1 min-w-[140px]"
+          >
+            <option value="">All Projects</option>
+            {projects.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <Button
+            onClick={() => {
+              setFormData({ project_id: selectedProjectId || '', work_name: '', amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
+              setShowAddModal(true);
+            }}
+            className="h-10 px-5 rounded-xl text-xs font-black uppercase bg-blue-500 text-white flex items-center gap-2 hover:bg-blue-600 shadow-[0_4px_14px_rgba(59,130,246,0.3)] transition-all cursor-pointer"
+          >
+            <Plus size={14} /> Record Task
+          </Button>
           {tasks.length > 0 && (
-            <div className="flex items-center gap-2">
+            <>
               <Button onClick={exportPDF} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-4 gap-2 h-10">
                 <FileText size={14} /> PDF
               </Button>
               <Button onClick={exportExcel} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-4 gap-2 h-10">
                 <Download size={14} /> Excel
               </Button>
-            </div>
+            </>
           )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* LEFT: Task History */}
-        <div className="lg:col-span-8">
+        {/* LEFT: Task History - Full Width */}
+        <div className="lg:col-span-12">
           <Card className="panel-elevated text-white rounded-2xl overflow-hidden min-h-full">
             <CardHeader className="p-8 border-b border-zinc-800">
                <CardTitle className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">Historical Tasks</CardTitle>
@@ -289,86 +301,116 @@ export default function ExtraWorkPage() {
                 ) : (
                   tasks.slice(taskPage * 10, taskPage * 10 + 10).map((task) => (
                     <div key={task.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-bold text-white text-sm">{task.projects?.name}</p>
-                          <p className="font-black text-gray-200 text-[10px] tracking-tight uppercase mt-0.5">{task.work_name}</p>
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-white text-sm truncate">{task.projects?.name}</p>
+                          <p className="font-black text-gray-200 text-[10px] tracking-tight uppercase mt-0.5 truncate">{task.work_name}</p>
                           <p className="text-[10px] font-bold text-gray-400 mt-1">{format(new Date(task.date), 'MMM dd, yyyy')}</p>
+                          {task.notes && <p className="text-xs text-zinc-400 mt-1 truncate">{task.notes}</p>}
                         </div>
-                        <p className="font-black text-blue-400 text-lg">₹ {task.amount.toLocaleString()}</p>
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                          <p className="font-black text-blue-400 text-lg">₹ {task.amount.toLocaleString()}</p>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => handleOpenEdit(task)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-zinc-500 hover:text-blue-400 transition-colors"><Edit2 size={13} /></button>
+                            <button onClick={() => handleDelete(task.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                          </div>
+                        </div>
                       </div>
-                      {task.notes && <p className="text-xs text-zinc-400">{task.notes}</p>}
                     </div>
                   ))
                 )}
               </div>
+              {/* Mobile Pagination */}
+              {tasks.length > 10 && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-800 md:hidden">
+                  <button disabled={taskPage === 0} onClick={() => setTaskPage(p => p - 1)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
+                    style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
+                  <span className="text-xs" style={{ color: '#6b7280' }}>{taskPage + 1} / {Math.ceil(tasks.length / 10)}</span>
+                  <button disabled={(taskPage + 1) * 10 >= tasks.length} onClick={() => setTaskPage(p => p + 1)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
+                    style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
+      </div>
 
-        {/* RIGHT: Add Form */}
-        <div className="lg:col-span-4">
-           <Card className="panel-elevated text-white rounded-2xl overflow-hidden p-8">
-              <h3 className="text-lg font-black uppercase tracking-tight mb-8">Record workload</h3>
-              <form onSubmit={handleCreate} className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Select Site</label>
-                  <select value={formData.project_id} onChange={e => setFormData({...formData, project_id: e.target.value})}
-                    className="w-full h-12 px-3 rounded-xl text-sm font-semibold outline-none" style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }}>
-                    <option value="">Execution site</option>
-                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
+      {/* Add Extra Work Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in-50" onClick={() => setShowAddModal(false)}>
+          <div className="rounded-2xl p-6 w-full max-w-md max-h-[85vh] overflow-y-auto custom-scrollbar flex flex-col space-y-6 shadow-2xl animate-in zoom-in-95" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }} onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center pb-4 border-b border-[#1e2435]">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Sri Sai Constructions</p>
+                <p className="text-sm font-bold text-white uppercase tracking-wide">Record Workload</p>
+              </div>
+              <button onClick={() => setShowAddModal(false)} className="text-zinc-500 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-all"><X size={18}/></button>
+            </div>
+            
+            <form onSubmit={handleCreate} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Select Site</label>
+                <select value={formData.project_id} onChange={e => setFormData({...formData, project_id: e.target.value})}
+                  className="w-full h-12 px-3 rounded-xl text-sm font-semibold outline-none" style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0' }}>
+                  <option value="">Execution site</option>
+                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Work Title / Description</label>
-                  <Input 
-                    placeholder="e.g. Wall Piling, Foundation etc." 
-                    value={formData.work_name}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, work_name: e.target.value})}
-                    className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
-                  />
-                </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Work Title / Description</label>
+                <Input 
+                  placeholder="e.g. Wall Piling, Foundation etc." 
+                  value={formData.work_name}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, work_name: e.target.value})}
+                  className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
+                />
+              </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Amount (₹)</label>
-                  <Input 
-                    placeholder="Lumpsum amount" 
-                    type="number"
-                    value={formData.amount}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, amount: e.target.value})}
-                    className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
-                  />
-                </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Amount (₹)</label>
+                <Input 
+                  placeholder="Lumpsum amount" 
+                  type="number"
+                  value={formData.amount}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, amount: e.target.value})}
+                  className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
+                />
+              </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Execution Date</label>
-                  <Input 
-                    type="date"
-                    value={formData.date}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, date: e.target.value})}
-                    className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
-                  />
-                </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Execution Date</label>
+                <Input 
+                  type="date"
+                  value={formData.date}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, date: e.target.value})}
+                  className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
+                />
+              </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Notes (optional)</label>
-                  <Textarea 
-                    placeholder="Specific details about the extra work" 
-                    value={formData.notes}
-                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({...formData, notes: e.target.value})}
-                    className="bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white p-4"
-                  />
-                </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Notes (optional)</label>
+                <Textarea 
+                  placeholder="Specific details about the extra work" 
+                  value={formData.notes}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({...formData, notes: e.target.value})}
+                  className="bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white p-4"
+                />
+              </div>
 
-                <Button type="submit" disabled={saving} className="w-full h-14 btn-construction rounded-xl font-black uppercase tracking-tight text-lg">
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 h-12 rounded-xl text-xs font-black uppercase bg-[#1a1f2e] text-[#6b7280] border border-[#1e2435]">Cancel</button>
+                <Button type="submit" disabled={saving} className="flex-1 h-12 btn-construction rounded-xl font-black uppercase tracking-tight text-sm">
                   {saving ? <Loader2 className="animate-spin mr-2" /> : null}
                   Record Task
                 </Button>
-              </form>
-           </Card>
+              </div>
+            </form>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Edit Extra Work Modal */}
       {editingTask && (

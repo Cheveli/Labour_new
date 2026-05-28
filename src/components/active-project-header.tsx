@@ -66,17 +66,17 @@ export default function ActiveProjectHeader() {
   }, [pathname])
 
   return (
-    <div className="flex items-center justify-end w-full mb-4 shrink-0" suppressHydrationWarning>
+    <div className="flex items-center justify-center w-full mb-4 shrink-0" suppressHydrationWarning>
       <div 
-        className="px-4 py-2 rounded-xl border flex items-center gap-2.5 bg-[#111520]/80 backdrop-blur-md transition-all duration-300 hover:border-blue-500/30"
+        className="px-4 py-2 rounded-xl border flex items-center gap-2.5 bg-[#111520]/80 backdrop-blur-md transition-all duration-300 hover:border-blue-500/30 max-w-full"
         style={{ borderColor: '#1e2435', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}
       >
         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-        <div className="flex items-center gap-1.5 overflow-hidden">
+        <div className="flex items-center gap-1.5">
           <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 shrink-0">Active Site:</span>
-          <span className="text-xs font-black text-white uppercase tracking-tight flex items-center gap-1.5 overflow-hidden">
+          <span className="text-xs font-black text-white uppercase tracking-tight flex items-center gap-1.5">
             <Folder size={11} className="text-blue-400 shrink-0" />
-            <span className="truncate max-w-[100px] sm:max-w-[200px] md:max-w-[300px]">{projectName}</span>
+            <span className="break-words text-center">{projectName}</span>
           </span>
         </div>
       </div>

@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({ totalProjects: 0, totalRevenue: 0, totalLabourCost: 0, totalMaterialCost: 0, totalExtraWork: 0, netCash: 0 })
+  const [recentActivities, setRecentActivities] = useState<any[]>([])
   const [detailsModalOpen, setDetailsModalOpen] = useState(false)
   const [detailsModalType, setDetailsModalType] = useState<string>('')
   const [detailsModalData, setDetailsModalData] = useState<any[]>([])
@@ -28,7 +29,7 @@ export default function DashboardPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all')
   const [isInitialized, setIsInitialized] = useState(false)
   const [defaultProjectId, setDefaultProjectId] = useState<string | null>(null)
-  
+
   // AI Command & Chat states
   const [searchQuery, setSearchQuery] = useState('')
   const [modalQuery, setModalQuery] = useState('')
@@ -42,7 +43,7 @@ export default function DashboardPage() {
   const handleAISearchSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!searchQuery.trim()) return
-    
+
     const query = searchQuery
     setSearchQuery('')
     triggerAIChat(query)
@@ -51,7 +52,7 @@ export default function DashboardPage() {
   const handleAIModalSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!modalQuery.trim()) return
-    
+
     const query = modalQuery
     setModalQuery('')
     triggerAIChat(query, true)
@@ -139,7 +140,7 @@ export default function DashboardPage() {
       }
 
       const [incomeRes, attRes, matRes, ewRes] = await Promise.all([incomeQ, attQ, matQ, ewQ])
-      
+
       const incomeData = incomeRes.data
       const attAllData = attRes.data
       const materialData = matRes.data
@@ -155,13 +156,13 @@ export default function DashboardPage() {
       const totalExtraWork = extraWorkData?.reduce((a, c) => a + Number(c.amount), 0) || 0
       const netCash = totalRevenue - (totalLabourCost + totalMaterialCost + totalExtraWork)
 
-      setStats({ 
-        totalProjects: (selectedProjectId && selectedProjectId !== 'all') ? 1 : (projList?.length || 0), 
-        totalRevenue, 
-        totalLabourCost, 
-        totalMaterialCost, 
-        totalExtraWork, 
-        netCash 
+      setStats({
+        totalProjects: (selectedProjectId && selectedProjectId !== 'all') ? 1 : (projList?.length || 0),
+        totalRevenue,
+        totalLabourCost,
+        totalMaterialCost,
+        totalExtraWork,
+        netCash
       })
 
       // Build dynamic monthly data based on project creation/transaction dates
@@ -193,7 +194,7 @@ export default function DashboardPage() {
           // Fetch from specific selected project creation date compared with its earliest transaction
           const selectedProj = projList.find(p => p.id === currentProjectId)
           let projDate = selectedProj?.created_at ? new Date(selectedProj.created_at) : null
-          
+
           let dates = [projDate, earliestTxDate].filter((d): d is Date => d !== null)
           if (dates.length > 0) {
             startDateForGraph = startOfMonth(new Date(Math.min(...dates.map(d => d.getTime()))))
@@ -203,7 +204,7 @@ export default function DashboardPage() {
           const validProjDates = projList
             .filter(p => p.created_at)
             .map(p => new Date(p.created_at))
-          
+
           let dates = [...validProjDates, earliestTxDate].filter((d): d is Date => d !== null)
           if (dates.length > 0) {
             startDateForGraph = startOfMonth(new Date(Math.min(...dates.map(d => d.getTime()))))
@@ -225,14 +226,14 @@ export default function DashboardPage() {
 
       // Always show at least 6 months starting from startDateForGraph
       const totalMonthsToShow = Math.max(6, differenceInCalendarMonths(today, startDateForGraph) + 1)
-      
+
       const months = Array.from({ length: totalMonthsToShow }, (_, i) => {
         const d = addMonths(startDateForGraph, i)
-        return { 
-          key: format(d, 'yyyy-MM'), 
-          label: format(d, 'MMM'), 
-          start: format(startOfMonth(d), 'yyyy-MM-dd'), 
-          end: format(endOfMonth(d), 'yyyy-MM-dd') 
+        return {
+          key: format(d, 'yyyy-MM'),
+          label: format(d, 'MMM'),
+          start: format(startOfMonth(d), 'yyyy-MM-dd'),
+          end: format(endOfMonth(d), 'yyyy-MM-dd')
         }
       })
 
@@ -266,6 +267,20 @@ export default function DashboardPage() {
           return { name: p.name, status: p.status, revenue: rev, material: mat, extraWork: ew, net: rev - mat - ew }
         }).filter(p => p.revenue > 0 || p.material > 0 || p.extraWork > 0)
       setProjectBreakdown(breakdown)
+
+      // Recent Activities — last 5 across income, materials, extra_work
+      const [incRecent, matRecent, ewRecent] = await Promise.all([
+        supabase.from('income').select('id, date, amount, notes, projects(name)').order('date', { ascending: false }).limit(5),
+        supabase.from('materials').select('id, date, total_amount, name, projects(name)').order('date', { ascending: false }).limit(5),
+        supabase.from('extra_work').select('id, date, amount, work_name, projects(name)').order('date', { ascending: false }).limit(5),
+      ])
+      const combined = [
+        ...(incRecent.data || []).map((r: any) => ({ date: r.date, label: r.notes || 'Revenue', sub: r.projects?.name || '—', amount: Number(r.amount), type: 'revenue' as const })),
+        ...(matRecent.data || []).map((r: any) => ({ date: r.date, label: r.name, sub: r.projects?.name || '—', amount: Number(r.total_amount || 0), type: 'material' as const })),
+        ...(ewRecent.data || []).map((r: any) => ({ date: r.date, label: r.work_name, sub: r.projects?.name || '—', amount: Number(r.amount), type: 'extra' as const })),
+      ]
+      combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      setRecentActivities(combined.slice(0, 5))
     } catch (err) {
       console.error(err)
     } finally {
@@ -274,18 +289,18 @@ export default function DashboardPage() {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
-  useEffect(() => { 
+  useEffect(() => {
     if (!isInitialized) return
-    fetchStats() 
-    
+    fetchStats()
+
     // Always save the overview selection
     localStorage.setItem('ssc_overview_selection', selectedProjectId)
-    
+
     // Only update ssc_active_project_id if a specific project is selected
     if (selectedProjectId && selectedProjectId !== 'all') {
       localStorage.setItem('ssc_active_project_id', selectedProjectId)
     }
-    
+
     window.dispatchEvent(new Event('ssc_project_changed'))
   }, [selectedProjectId, isInitialized])
 
@@ -370,37 +385,35 @@ export default function DashboardPage() {
   return (
     <div className="space-y-5 pb-6" suppressHydrationWarning>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-black text-white tracking-tight">Overview</h1>
           <p className="text-sm mt-0.5" style={{ color: DIM }}>{(selectedProjectId && selectedProjectId !== 'all') ? `Financial details for ${projects.find(p => p.id === selectedProjectId)?.name}` : 'Financial summary across all active sites.'}</p>
         </div>
-        <div className="flex flex-col md:flex-row items-start md:items-center gap-3">
-          <div className="flex items-center gap-2">
-            <label className="text-[10px] font-black uppercase tracking-widest hidden md:block" style={{ color: DIM }}>Project Filter:</label>
-            <select 
-              value={selectedProjectId} 
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all min-w-[180px]"
-            >
-              <option value="all">All Projects</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
+        <div className="flex flex-row items-center gap-2 flex-wrap">
+          <select
+            value={selectedProjectId}
+            onChange={(e) => setSelectedProjectId(e.target.value)}
+            suppressHydrationWarning
+            className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all min-w-[150px]"
+          >
+            <option value="all">All Projects</option>
+            {projects.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
 
           {selectedProjectId !== 'all' && selectedProjectId !== defaultProjectId && (
-            <button 
+            <button
               onClick={handleSetDefault}
-              className="h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 border border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+              className="h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 whitespace-nowrap"
             >
               <Zap size={12} /> Set as Default
             </button>
           )}
 
           {selectedProjectId !== 'all' && selectedProjectId === defaultProjectId && selectedProjectId !== '' && (
-            <div className="h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2 bg-blue-500/10 text-blue-400 border border-blue-500/20">
+            <div className="h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 whitespace-nowrap">
               <Zap size={12} className="fill-blue-400" /> Default Project
             </div>
           )}
@@ -408,51 +421,93 @@ export default function DashboardPage() {
       </div>
 
       {/* Premium AI Command Center Search Bar */}
-      <div 
-        className="p-5 rounded-2xl border transition-all duration-300 relative overflow-hidden" 
-        style={{ 
-          backgroundColor: '#111520', 
+      <div
+        className="p-4 rounded-2xl border transition-all duration-300 relative overflow-hidden"
+        style={{
+          backgroundColor: '#111520',
           borderColor: '#1e2435',
           background: 'linear-gradient(135deg, #111520 0%, #151a28 100%)'
         }}
       >
         <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="flex flex-col md:flex-row items-center gap-4 relative z-10">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-blue-500/10 text-blue-400 shrink-0">
-            <Sparkles className="w-5 h-5 animate-pulse" />
+
+        <div className="relative z-10 space-y-3">
+          {/* Label row */}
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-blue-500/10 text-blue-400 shrink-0">
+              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+            </div>
+            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">AI Assistant — Ask anything about your site</span>
           </div>
-          <div className="flex-1 w-full">
-            <form onSubmit={handleAISearchSubmit} className="flex gap-2 w-full">
-              <div className="relative flex-1">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                <input 
-                  type="text"
-                  placeholder="Ask AI about worker salaries, material costs, site P&L, or personal expenses..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full h-12 pl-11 pr-4 bg-black/30 border border-[#1e2435] rounded-xl text-sm font-semibold text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all"
-                />
-              </div>
-              <button 
-                type="submit"
-                className="h-12 px-6 rounded-xl text-xs font-black uppercase tracking-widest text-[#0a0c12] hover:shadow-lg hover:shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
-                style={{ background: 'linear-gradient(90deg,#3b82f6,#2563eb)' }}
-              >
-                Search <Send className="w-3.5 h-3.5" />
-              </button>
-            </form>
-          </div>
+          {/* Search row */}
+          <form onSubmit={handleAISearchSubmit} className="flex gap-2 w-full">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <input
+                type="text"
+                placeholder="Ask about worker salaries, material costs, site P&L..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                suppressHydrationWarning
+                className="w-full h-11 pl-10 pr-3 bg-black/30 border border-[#1e2435] rounded-xl text-sm font-semibold text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all"
+              />
+            </div>
+            <button
+              type="submit"
+              suppressHydrationWarning
+              className="h-11 px-4 sm:px-5 rounded-xl text-xs font-black uppercase tracking-wider text-white hover:shadow-lg hover:shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+              style={{ background: 'linear-gradient(90deg,#3b82f6,#2563eb)' }}
+            >
+              <Send className="w-3.5 h-3.5" /><span className="hidden sm:inline">Search</span>
+            </button>
+          </form>
         </div>
       </div>
 
-      {/* Top 6 Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Top Cards — mobile: 2x2 + full-width Net Cash; desktop: 3-col grid */}
+      {/* Mobile layout */}
+      <div className="block lg:hidden">
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          {topCards.slice(0, 4).map((c, i) => (
+            <div
+              key={i}
+              style={PANEL}
+              className={`p-4 ${c.clickable ? 'cursor-pointer hover:bg-white/5 transition-colors' : ''}`}
+              onClick={() => c.clickable && handleCardClick(c.type)}
+            >
+              <div className="flex items-start justify-between mb-2">
+                <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: DIM }}>{c.label}</p>
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.bg }}>{c.icon}</div>
+              </div>
+              <p className="text-xl font-black" style={{ color: c.color }}>{loading ? '—' : c.value}</p>
+              {c.clickable && <p className="text-[7px] font-bold uppercase tracking-widest mt-1" style={{ color: DIM }}>Click for full history</p>}
+            </div>
+          ))}
+        </div>
+        {/* Net Cash — full width */}
+        {topCards[4] && (
+          <div
+            style={PANEL}
+            className="p-5 cursor-default"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: DIM }}>{topCards[4].label}</p>
+                <p className="text-3xl font-black" style={{ color: topCards[4].color }}>{loading ? '—' : topCards[4].value}</p>
+              </div>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: topCards[4].bg }}>{topCards[4].icon}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Desktop layout — 3-col grid, 6 equal cards (5 stats + Pie Chart) */}
+      <div className="hidden lg:grid grid-cols-3 gap-4">
         {topCards.map((c, i) => (
-          <div 
-            key={i} 
-            style={PANEL} 
+          <div
+            key={i}
+            style={PANEL}
             className={`p-5 ${c.clickable ? 'cursor-pointer hover:bg-white/5 transition-colors' : ''}`}
             onClick={() => c.clickable && handleCardClick(c.type)}
           >
@@ -461,14 +516,45 @@ export default function DashboardPage() {
               <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.bg }}>{c.icon}</div>
             </div>
             <p className="text-2xl font-black" style={{ color: c.color }}>{loading ? '—' : c.value}</p>
-            {c.clickable && (
-              <p className="text-[8px] font-bold uppercase tracking-widest mt-2" style={{ color: DIM }}>Click for full history</p>
-            )}
+            {c.clickable && <p className="text-[8px] font-bold uppercase tracking-widest mt-2" style={{ color: DIM }}>Click for full history</p>}
           </div>
         ))}
+
+        {/* Pie Chart — 6th equal slot, same compact size as stat cards */}
+        <div style={PANEL} className="p-5">
+          <div className="flex items-start justify-between mb-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: DIM }}>Expense Split</p>
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-purple-500/10">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="#a855f7" strokeWidth="1.5" /><path d="M7 7 L7 1 A6 6 0 0 1 13 7 Z" fill="#a855f7" opacity="0.7" /></svg>
+            </div>
+          </div>
+          {projectCosts.length === 0 ? (
+            <p className="text-2xl font-black" style={{ color: DIM }}>—</p>
+          ) : (
+            <div className="flex items-center gap-3">
+              <ResponsiveContainer width={64} height={64}>
+                <PieChart>
+                  <Pie data={projectCosts} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={30} innerRadius={14} paddingAngle={2} isAnimationActive={false}>
+                    {projectCosts.map((c) => <Cell key={c.name} fill={EXPENSE_COLORS[c.name] || GOLD} />)}
+                  </Pie>
+                  <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Cost']} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="flex flex-col gap-1">
+                {projectCosts.map((c) => (
+                  <div key={c.name} className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: EXPENSE_COLORS[c.name] || GOLD }} />
+                    <span className="text-[9px] font-bold text-zinc-400 truncate">{c.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="text-[8px] font-bold uppercase tracking-widest mt-2" style={{ color: DIM }}>Cost distribution</p>
+        </div>
       </div>
 
-      {/* Charts Row: Labour vs Material vs Extra Work + Expense Pie + Quick Actions */}
+      {/* Charts Row: Bar Graph (left) + Recent Activities (right) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Labour vs Material vs Extra Work */}
         <div style={PANEL} className="p-5 lg:col-span-2">
@@ -477,29 +563,63 @@ export default function DashboardPage() {
             <BarChart data={monthlyData} margin={{ top: 4, right: 8, bottom: 0, left: -10 }} barSize={8}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e2435" />
               <XAxis dataKey="month" tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}K`} />
+              <YAxis tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
               <Tooltip contentStyle={tooltipStyle} formatter={(v: any, name: any) => [`₹${Number(v).toLocaleString()}`, name]} cursor={{ fill: 'transparent' }} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10, color: DIM }} />
-              <Bar dataKey="Labour" fill={EXPENSE_COLORS['Labour']} radius={[3,3,0,0]} isAnimationActive={false} />
-              <Bar dataKey="Material" fill={EXPENSE_COLORS['Material']} radius={[3,3,0,0]} isAnimationActive={false} />
-              <Bar dataKey="ExtraWork" fill={EXPENSE_COLORS['Extra Work']} radius={[3,3,0,0]} isAnimationActive={false} />
+              <Bar dataKey="Labour" fill={EXPENSE_COLORS['Labour']} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+              <Bar dataKey="Material" fill={EXPENSE_COLORS['Material']} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+              <Bar dataKey="ExtraWork" fill={EXPENSE_COLORS['Extra Work']} radius={[3, 3, 0, 0]} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Expense Distribution pie */}
-        <div style={PANEL} className="p-5">
+        {/* Recent Activities (replaces Pie in charts row, desktop only) */}
+        <div style={PANEL} className="p-5 flex flex-col">
+          <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: DIM }}>Recent Activities</p>
+          {loading ? (
+            <div className="flex-1 flex items-center justify-center">
+              <Loader2 className="animate-spin text-blue-500" size={20} />
+            </div>
+          ) : recentActivities.length === 0 ? (
+            <p className="text-xs text-zinc-600 font-bold">No activity yet</p>
+          ) : (
+            <div className="flex flex-col gap-3 flex-1">
+              {recentActivities.map((a, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${a.type === 'revenue' ? 'bg-emerald-500/10' :
+                    a.type === 'material' ? 'bg-cyan-500/10' : 'bg-orange-500/10'
+                    }`}>
+                    {a.type === 'revenue' ? <TrendingUp size={13} className="text-emerald-400" /> :
+                      a.type === 'material' ? <Package size={13} className="text-cyan-400" /> :
+                        <Zap size={13} className="text-orange-400" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-white truncate">{a.label}</p>
+                    <p className="text-[9px] text-zinc-500 truncate">{a.sub} · {format(new Date(a.date), 'dd MMM')}</p>
+                  </div>
+                  <p className={`text-xs font-black shrink-0 ${a.type === 'revenue' ? 'text-emerald-400' : 'text-zinc-300'
+                    }`}>
+                    {a.type === 'revenue' ? '+' : '−'}₹{a.amount.toLocaleString()}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Mobile — Pie Chart shown below bar chart on small screens */}
+        <div style={PANEL} className="p-5 lg:hidden">
           <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Expense Distribution</p>
           {projectCosts.length === 0 ? (
             <div className="h-[160px] flex items-center justify-center text-xs" style={{ color: DIM }}>No expenses yet</div>
           ) : (
-            <ResponsiveContainer width="100%" height={160}>
+            <ResponsiveContainer width="100%" height={180}>
               <PieChart>
-                <Pie data={projectCosts} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} innerRadius={30} paddingAngle={3} isAnimationActive={false}>
+                <Pie data={projectCosts} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} innerRadius={0} paddingAngle={2} isAnimationActive={false}>
                   {projectCosts.map((c) => <Cell key={c.name} fill={EXPENSE_COLORS[c.name] || GOLD} />)}
                 </Pie>
                 <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Cost']} />
-                <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10, color: DIM }} />
+                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10, color: DIM }} />
               </PieChart>
             </ResponsiveContainer>
           )}
@@ -509,7 +629,34 @@ export default function DashboardPage() {
       {/* Quick Actions */}
       <div style={PANEL} className="p-5">
         <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: DIM }}>Quick Actions</p>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+
+        {/* Mobile layout: Create Payment full-width hero, others 2x2 */}
+        <div className="block md:hidden space-y-2">
+          <Link href="/payments"
+            className="flex items-center justify-center gap-2 w-full px-4 py-3.5 rounded-xl text-sm font-black text-white transition-all"
+            style={{ background: 'linear-gradient(90deg,#3b82f6,#2563eb)', boxShadow: '0 4px 14px rgba(59,130,246,0.3)' }}
+          >
+            <Wallet size={16} /> Create Payment
+          </Link>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { href: '/labour', label: 'Add Worker', icon: <Users size={14} /> },
+              { href: '/attendance', label: 'Mark Attendance', icon: <CalendarCheck size={14} /> },
+              { href: '/materials', label: 'Add Material', icon: <Package size={14} /> },
+              { href: '/income', label: 'Record Revenue', icon: <TrendingUp size={14} /> },
+            ].map(a => (
+              <Link key={a.href} href={a.href}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-zinc-300 hover:text-white transition-all"
+                style={{ backgroundColor: '#1a1f2e' }}
+              >
+                <span style={{ color: GOLD }}>{a.icon}</span>{a.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Desktop layout: all 5 in a row */}
+        <div className="hidden md:grid grid-cols-5 gap-2">
           {[
             { href: '/labour', label: 'Add Worker', icon: <Users size={14} /> },
             { href: '/attendance', label: 'Mark Attendance', icon: <CalendarCheck size={14} /> },
@@ -587,50 +734,73 @@ export default function DashboardPage() {
 
       {/* Details Modal */}
       <Dialog open={detailsModalOpen} onOpenChange={setDetailsModalOpen}>
-        <DialogContent style={{ backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0' }} className="max-w-3xl max-h-[90vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="text-white">
-              {detailsModalType === 'REVENUE' ? 'Total Revenue' : detailsModalType === 'LABOUR' ? 'Labour Cost' : detailsModalType === 'MATERIAL' ? 'Material Cost' : 'Extra Work'} — Full History
-            </DialogTitle>
-            <DialogDescription style={{ color: '#6b7280' }}>All records from start to today — {detailsModalData.length} records</DialogDescription>
-          </DialogHeader>
+        <DialogContent
+          style={{
+            backgroundColor: '#111520',
+            border: '1px solid #1e2435',
+            color: '#f0f0f0',
+            borderRadius: '1.25rem',
+            width: 'min(90vw, 960px)',
+            maxWidth: 'min(90vw, 960px)',
+          }}
+          className="max-h-[90vh] h-[90vh] flex flex-col p-0 overflow-hidden gap-0"
+        >
+          {/* Header */}
+          <div className="px-6 py-5 border-b border-[#1e2435] bg-[#0d1018] flex items-center justify-between shrink-0">
+            <div>
+              <DialogTitle className="text-white text-base font-black uppercase tracking-wide">
+                {detailsModalType === 'REVENUE' ? '📈 Total Revenue' : detailsModalType === 'LABOUR' ? '💼 Labour Cost' : detailsModalType === 'MATERIAL' ? '📦 Material Cost' : '⚡ Extra Work'} — Full History
+              </DialogTitle>
+              <DialogDescription className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">
+                {detailsModalData.length} records found · All time
+              </DialogDescription>
+            </div>
+            <div className="px-4 py-2 rounded-xl bg-blue-500/10 border border-blue-500/20">
+              <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">
+                {detailsModalData.length} Total Entries
+              </p>
+            </div>
+          </div>
 
-          {/* Scrollable Table */}
-          <div className="overflow-y-auto flex-1" style={{ maxHeight: '55vh' }}>
+          <div className="flex-1 overflow-y-auto overflow-x-hidden">
             {detailsLoading ? (
-              <div className="flex items-center justify-center py-12"><Loader2 className="animate-spin" style={{ color: '#3b82f6' }} /></div>
+              <div className="flex items-center justify-center py-20"><Loader2 className="animate-spin" style={{ color: '#3b82f6' }} size={32} /></div>
             ) : detailsModalData.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12" style={{ color: '#6b7280' }}>
+              <div className="flex flex-col items-center justify-center py-20" style={{ color: '#6b7280' }}>
                 <p className="font-bold text-sm">No records found</p>
               </div>
             ) : (
-              <Table>
-                <TableHeader style={{ backgroundColor: '#111520', position: 'sticky', top: 0, zIndex: 10 }}>
+              <Table className="w-full table-fixed">
+                <colgroup>
+                  <col style={{ width: '120px' }} />
+                  <col />
+                  {detailsModalType === 'MATERIAL' && <col style={{ width: '90px' }} />}
+                  <col style={{ width: '130px' }} />
+                </colgroup>
+                <TableHeader style={{ backgroundColor: '#0d1018', position: 'sticky', top: 0, zIndex: 10 }}>
                   <TableRow style={{ borderColor: '#1e2435' }}>
-                    <TableHead className="text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>Date</TableHead>
-                    <TableHead className="text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>
+                    <TableHead className="px-6 py-4 text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Date</TableHead>
+                    <TableHead className="py-4 text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>
                       {detailsModalType === 'REVENUE' ? 'Source / Project' : detailsModalType === 'LABOUR' ? 'Worker / Project' : detailsModalType === 'MATERIAL' ? 'Material / Project' : 'Work / Project'}
                     </TableHead>
-                    {detailsModalType === 'MATERIAL' && <TableHead className="text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>Qty</TableHead>}
-                    <TableHead className="text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>Notes</TableHead>
-                    <TableHead className="text-right text-[10px] font-black uppercase" style={{ color: '#6b7280' }}>Amount</TableHead>
+                    {detailsModalType === 'MATERIAL' && <TableHead className="py-4 text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Qty</TableHead>}
+                    <TableHead className="pr-6 py-4 text-right text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Amount</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {detailsModalData.slice(detailsPage * 10, detailsPage * 10 + 10).map((row: any, idx: number) => (
-                    <TableRow key={idx} style={{ borderColor: '#1e2435' }}>
-                      <TableCell className="text-xs" style={{ color: '#6b7280' }}>{format(new Date(row.date), 'dd MMM yyyy')}</TableCell>
-                      <TableCell className="font-bold text-white text-sm">
-                        {detailsModalType === 'REVENUE' ? `${row.projects?.name || 'General'} ${row.notes ? '· ' + row.notes : ''}` :
-                        detailsModalType === 'LABOUR' ? `${row.labour?.name || 'Unknown'} · ${row.projects?.name || 'No Site'}` :
-                         detailsModalType === 'MATERIAL' ? `${row.name} · ${row.projects?.name || 'No Site'}` :
-                         `${row.work_name} · ${row.projects?.name || 'No Site'}`}
+                  {detailsModalData.slice(detailsPage * 25, detailsPage * 25 + 25).map((row: any, idx: number) => (
+                    <TableRow key={idx} className="hover:bg-white/[0.02] transition-colors" style={{ borderColor: '#1e2435' }}>
+                      <TableCell className="px-6 py-3.5 text-xs font-bold" style={{ color: '#6b7280' }}>{format(new Date(row.date), 'dd MMM yyyy')}</TableCell>
+                      <TableCell className="py-3.5 font-bold text-white text-sm">
+                        <span className="block truncate">
+                          {detailsModalType === 'REVENUE' ? `${row.projects?.name || 'General'} ${row.notes ? '· ' + row.notes : ''}` :
+                            detailsModalType === 'LABOUR' ? `${row.labour?.name || 'Unknown'} · ${row.projects?.name || 'No Site'}` :
+                              detailsModalType === 'MATERIAL' ? `${row.name} · ${row.projects?.name || 'No Site'}` :
+                                `${row.work_name} · ${row.projects?.name || 'No Site'}`}
+                        </span>
                       </TableCell>
-                      {detailsModalType === 'MATERIAL' && <TableCell className="text-xs" style={{ color: '#6b7280' }}>{row.quantity} {row.unit}</TableCell>}
-                      <TableCell className="text-xs max-w-[120px] truncate" style={{ color: '#6b7280' }}>
-                        {detailsModalType === 'REVENUE' ? '—' : (row.notes || '—')}
-                      </TableCell>
-                      <TableCell className="text-right font-black text-sm" style={{ color: '#3b82f6' }}>
+                      {detailsModalType === 'MATERIAL' && <TableCell className="py-3.5 text-xs" style={{ color: '#6b7280' }}>{row.quantity} {row.unit}</TableCell>}
+                      <TableCell className="pr-6 py-3.5 text-right font-black text-base" style={{ color: '#3b82f6' }}>
                         ₹{Number(row.amount || row.total_amount || (row.days_worked * (row.custom_rate || row.labour?.daily_rate || 0) + (row.overtime_amount || 0))).toLocaleString()}
                       </TableCell>
                     </TableRow>
@@ -640,29 +810,36 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Pagination */}
-          {detailsModalData.length > 10 && (
-            <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: '#1e2435' }}>
+          {/* Footer Pagination */}
+          <div className="px-6 py-4 border-t border-[#1e2435] bg-[#0d1018] flex items-center justify-between shrink-0">
+            <span className="text-xs font-bold" style={{ color: '#6b7280' }}>
+              Showing {Math.min(detailsPage * 25 + 1, detailsModalData.length)}–{Math.min(detailsPage * 25 + 25, detailsModalData.length)} of {detailsModalData.length}
+            </span>
+            <div className="flex items-center gap-2">
               <button disabled={detailsPage === 0} onClick={() => setDetailsPage(p => p - 1)}
-                className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
-              <span className="text-xs" style={{ color: '#6b7280' }}>Page {detailsPage + 1} of {Math.ceil(detailsModalData.length / 10)}</span>
-              <button disabled={(detailsPage + 1) * 10 >= detailsModalData.length} onClick={() => setDetailsPage(p => p + 1)}
-                className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
+                className="px-4 py-2 text-xs font-bold rounded-xl disabled:opacity-40 transition-all hover:bg-white/5"
+                style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
+              <span className="px-3 py-2 text-xs font-black text-white">
+                {detailsPage + 1} / {Math.ceil(detailsModalData.length / 25) || 1}
+              </span>
+              <button disabled={(detailsPage + 1) * 25 >= detailsModalData.length} onClick={() => setDetailsPage(p => p + 1)}
+                className="px-4 py-2 text-xs font-bold rounded-xl disabled:opacity-40 transition-all hover:bg-white/5"
+                style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
             </div>
-          )}
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* AI Chat Assistant Dialog Modal */}
       <Dialog open={aiModalOpen} onOpenChange={setAiModalOpen}>
-        <DialogContent 
-          style={{ 
-            backgroundColor: '#0d1018', 
-            border: '1px solid #1e2435', 
+        <DialogContent
+          style={{
+            backgroundColor: '#0d1018',
+            border: '1px solid #1e2435',
             color: '#f0f0f0',
             maxWidth: '650px',
             borderRadius: '1.25rem'
-          }} 
+          }}
           className="max-h-[85vh] flex flex-col p-0 overflow-hidden"
         >
           {/* Dialog Header */}
@@ -681,7 +858,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Chat Messages Area */}
-          <div 
+          <div
             ref={chatContainerRef}
             className="flex-1 overflow-y-auto p-6 space-y-4 min-h-[300px] max-h-[50vh] bg-[#0a0c12]/50"
           >
@@ -703,12 +880,11 @@ export default function DashboardPage() {
                       <Bot className="w-4 h-4" />
                     </div>
                   )}
-                  <div 
-                    className={`p-4 rounded-2xl text-sm leading-relaxed max-w-[80%] shadow-sm ${
-                      m.role === 'user' 
-                        ? 'bg-blue-600 text-white font-medium rounded-tr-none' 
-                        : 'bg-[#111520] border border-[#1e2435] text-zinc-200 rounded-tl-none font-medium'
-                    }`}
+                  <div
+                    className={`p-4 rounded-2xl text-sm leading-relaxed max-w-[80%] shadow-sm ${m.role === 'user'
+                      ? 'bg-blue-600 text-white font-medium rounded-tr-none'
+                      : 'bg-[#111520] border border-[#1e2435] text-zinc-200 rounded-tl-none font-medium'
+                      }`}
                   >
                     {m.role === 'assistant' ? (
                       <div className="markdown-content whitespace-pre-line">
@@ -738,7 +914,7 @@ export default function DashboardPage() {
           {/* Modal Input Form */}
           <div className="p-4 border-t border-[#1e2435] bg-[#111520]">
             <form onSubmit={handleAIModalSubmit} className="flex gap-2">
-              <input 
+              <input
                 type="text"
                 placeholder="Ask follow-up question..."
                 value={modalQuery}
@@ -746,7 +922,7 @@ export default function DashboardPage() {
                 className="flex-1 h-11 px-4 bg-black/40 border border-[#1e2435] rounded-xl text-sm font-medium text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all"
                 disabled={aiLoading}
               />
-              <button 
+              <button
                 type="submit"
                 disabled={aiLoading || !modalQuery.trim()}
                 className="h-11 px-5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 disabled:hover:bg-blue-600 active:scale-95 transition-all flex items-center justify-center shrink-0 cursor-pointer"
@@ -767,7 +943,7 @@ function renderMarkdown(text: string) {
   // Split text by lines
   const lines = text.split('\n')
   const elements: string[] = []
-  
+
   let inList = false
   let inTable = false
   let tableHeaders: string[] = []
@@ -775,22 +951,22 @@ function renderMarkdown(text: string) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
-    
+
     // Check if line is a table row (starts and ends with pipe or contains multiple pipes)
     if (line.startsWith('|') && line.split('|').length > 2) {
       if (inList) {
         elements.push('</ul>')
         inList = false
       }
-      
+
       // Parse table cells
       const cells = line.split('|').map(c => c.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1)
-      
+
       // Skip separator row (e.g. |---------|------|)
       if (cells.every(c => c.match(/^:?-+:?$/))) {
         continue
       }
-      
+
       if (!inTable) {
         inTable = true
         tableHeaders = cells
@@ -816,13 +992,13 @@ function renderMarkdown(text: string) {
         })
         tableHtml += '</tbody></table></div>'
         elements.push(tableHtml)
-        
+
         inTable = false
         tableHeaders = []
         tableRows = []
       }
     }
-    
+
     // Check if line is a list item
     if (line.startsWith('-') || line.startsWith('*')) {
       if (!inList) {
@@ -838,7 +1014,7 @@ function renderMarkdown(text: string) {
         inList = false
       }
     }
-    
+
     // Regular line
     if (line !== '') {
       elements.push(`<p class="my-1.5 text-zinc-300 font-medium">${parseInline(line)}</p>`)
@@ -870,19 +1046,19 @@ function renderMarkdown(text: string) {
 
 function parseInline(text: string): string {
   let html = text
-  
+
   // Standard bold formatting
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-  
+
   // Mismatched asterisk safety checks (e.g. *text** or **text*)
   html = html.replace(/\*(.*?)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*\*(.*?)\*/g, '<strong>$1</strong>')
-  
+
   // Standard single asterisk formatting (fallback to bold for clean presentation)
   html = html.replace(/\*(.*?)\*/g, '<strong>$1</strong>')
-  
+
   // Indian rupees highlighting
   html = html.replace(/(₹[0-9,]+(\.[0-9]+)?)/g, '<span class="text-blue-400 font-bold">$1</span>')
-  
+
   return html
 }

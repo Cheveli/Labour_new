@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table'
-import { Plus, Loader2, MessageCircle } from 'lucide-react'
+import { Plus, Loader2, MessageCircle, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -25,6 +25,7 @@ export default function ProjectsPage() {
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null)
   const [deleteOtpInput, setDeleteOtpInput] = useState('')
   const [deleteStep, setDeleteStep] = useState<'idle' | 'sending' | 'verify'>('idle')
+  const [showAddModal, setShowAddModal] = useState(false)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -61,6 +62,7 @@ export default function ProjectsPage() {
     } else {
       toast.success('Project created successfully')
       setFormData({ name: '', owner_name: '', description: '', status: 'ACTIVE' })
+      setShowAddModal(false)
       fetchProjects()
     }
     setSaving(false)
@@ -85,6 +87,7 @@ export default function ProjectsPage() {
       toast.success('Project updated successfully')
       setFormData({ name: '', owner_name: '', description: '', status: 'ACTIVE' })
       setEditingProject(null)
+      setShowAddModal(false)
       fetchProjects()
     }
     setSaving(false)
@@ -98,11 +101,13 @@ export default function ProjectsPage() {
       description: project.description || '',
       status: project.status || 'ACTIVE'
     })
+    setShowAddModal(true)
   }
 
   const handleCancelEdit = () => {
     setEditingProject(null)
     setFormData({ name: '', owner_name: '', description: '', status: 'ACTIVE' })
+    setShowAddModal(false)
   }
 
   const handleDeleteClick = async (id: string) => {
@@ -190,14 +195,18 @@ export default function ProjectsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-white tracking-tight">Projects</h1>
           <p className="mt-1 text-sm" style={{ color: DIM }}>Manage active and completed construction sites.</p>
         </div>
         <button
-          onClick={() => { setEditingProject(null); setFormData({ name: '', owner_name: '', description: '', status: 'ACTIVE' }) }}
-          className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-black uppercase text-[#0a0c12]"
+          onClick={() => {
+            setEditingProject(null);
+            setFormData({ name: '', owner_name: '', description: '', status: 'ACTIVE' });
+            setShowAddModal(true);
+          }}
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-black uppercase text-[#0a0c12] cursor-pointer self-start sm:self-auto"
           style={{ backgroundColor: GOLD, boxShadow: '0 4px 14px rgba(59,130,246,0.3)' }}
         >
           <Plus size={16} /> New Project
@@ -205,8 +214,8 @@ export default function ProjectsPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Table */}
-        <div className="lg:col-span-8">
+        {/* Table - Full Width */}
+        <div className="lg:col-span-12">
           <div style={PANEL} className="overflow-hidden">
             <div className="px-6 py-4 border-b" style={{ borderColor: '#1e2435' }}>
               <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>All Projects — {projects.length} sites</p>
@@ -294,11 +303,20 @@ export default function ProjectsPage() {
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Form */}
-        <div className="lg:col-span-4">
-          <div style={PANEL} className="p-6">
-            <p className="text-sm font-black text-white mb-6">{editingProject ? 'Edit Project' : 'New Project'}</p>
+      {/* Add/Edit Project Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in-50" onClick={handleCancelEdit}>
+          <div className="rounded-2xl p-6 w-full max-w-md max-h-[85vh] overflow-y-auto custom-scrollbar flex flex-col space-y-6 shadow-2xl animate-in zoom-in-95" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }} onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center pb-4 border-b border-[#1e2435]">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Sri Sai Constructions</p>
+                <p className="text-sm font-bold text-white uppercase tracking-wide">{editingProject ? 'Edit Project' : 'New Project'}</p>
+              </div>
+              <button onClick={handleCancelEdit} className="text-zinc-500 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-all"><X size={18}/></button>
+            </div>
+            
             <form onSubmit={editingProject ? handleUpdate : handleCreate} className="space-y-4">
               {[
                 { label: 'Project Name', key: 'name', placeholder: 'e.g. Gachibowli Tower', type: 'text' },
@@ -340,9 +358,7 @@ export default function ProjectsPage() {
               </div>
 
               <div className="flex gap-3 pt-2">
-                {editingProject && (
-                  <button type="button" onClick={handleCancelEdit} className="flex-1 h-11 rounded-xl text-sm font-bold" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Cancel</button>
-                )}
+                <button type="button" onClick={handleCancelEdit} className="flex-1 h-11 rounded-xl text-sm font-bold bg-[#1a1f2e] text-[#f0f0f0] border border-[#1e2435]">Cancel</button>
                 <button type="submit" disabled={saving} className="flex-1 h-11 rounded-xl text-sm font-black text-[#0a0c12] flex items-center justify-center gap-2" style={{ backgroundColor: GOLD }}>
                   {saving ? <Loader2 size={14} className="animate-spin text-[#0a0c12]" /> : null}
                   {editingProject ? 'Update' : 'Create Project'}
@@ -351,7 +367,7 @@ export default function ProjectsPage() {
             </form>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Delete Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={(open) => { if (!open) { setDeleteDialogOpen(false); setDeleteStep('idle'); setDeleteOtpInput(''); } }}>

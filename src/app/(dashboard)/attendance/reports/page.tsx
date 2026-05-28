@@ -143,14 +143,16 @@ export default function ReportsPage() {
         const rate = att.custom_rate || worker.daily_rate
         const baseWage = Number(att.days_worked) * Number(rate)
         const otAmount = Number(att.overtime_amount || 0)
+        const advance = Number(att.advance_amount || 0)
         return {
           date: att.date,
           project: att.projects?.name || '—',
           status: att.days_worked === 1 ? 'PRESENT' : att.days_worked === 0.5 ? 'HALF_DAY' : 'ABSENT',
           baseWage,
           overtimeAmount: otAmount,
-          advance: Number(att.advance_amount || 0),
+          advance,
           total: baseWage + otAmount,
+          giveable: baseWage + otAmount - advance,
           notes: att.notes
         }
       }) || [],
@@ -245,12 +247,12 @@ export default function ReportsPage() {
     if (!reportData) return
     const { worker, breakdown, summary } = reportData
     
-    // Calculate Dynamic Height (approximate)
-    // Header (44) + Gap (10) + Info (15) + Table (~7 per row) + Summary (30) + Footer (14)
-    const tableHeight = (breakdown.length + 1) * 7
-    const requiredHeight = 44 + 10 + 15 + tableHeight + 40 + 20 
-    const pageHeight = Math.max(297, requiredHeight) // Minimum A4
-    
+    const hasOT = (summary.totalOTAmount || 0) > 0
+    const tableHeight = (breakdown.length + 1) * 8.5
+    const summaryBoxH = 20
+    const requiredHeight = 44 + 16 + tableHeight + 10 + summaryBoxH + 18 + 24 + 10 + 14
+    const pageHeight = Math.max(160, requiredHeight)
+
     const doc = new jsPDF({
       orientation: 'p',
       unit: 'mm',
@@ -270,36 +272,96 @@ export default function ReportsPage() {
     doc.setFont('helvetica', 'bold'); doc.text('Report Date', 110, y + 6)
     doc.setFont('helvetica', 'normal'); doc.text(`: ${format(new Date(), 'dd MMM yyyy')}`, 140, y + 6)
 
-    autoTable(doc, {
-      startY: y + 14,
-      head: [['Day', 'Status', 'Basic Wage', 'OT Amount', 'Adv Taken', 'Gross Total']],
-      body: breakdown.map((r: any) => [
+    const head = hasOT 
+      ? [['Date', 'Status', 'Wages on the day', 'OT Amount', 'Deduction', 'Giveable Amount', 'Grand Total']]
+      : [['Date', 'Status', 'Wages on the day', 'Deduction', 'Giveable Amount', 'Grand Total']]
+
+    const body = breakdown.map((r: any) => {
+      const row = [
         format(new Date(r.date), 'EEEE (dd MMM)'),
         r.status,
         `Rs. ${(r.baseWage || 0).toLocaleString()}`,
-        `Rs. ${(r.overtimeAmount || 0).toLocaleString()}`,
-        `Rs. ${(r.advance || 0).toLocaleString()}`,
+      ]
+      if (hasOT) {
+        row.push(r.overtimeAmount > 0 ? `Rs. ${(r.overtimeAmount || 0).toLocaleString()}` : '-')
+      }
+      row.push(
+        r.advance > 0 ? `Rs. ${(r.advance || 0).toLocaleString()}` : '-',
+        `Rs. ${(r.giveable || 0).toLocaleString()}`,
         `Rs. ${(r.total || 0).toLocaleString()}`
-      ]),
+      )
+      return row
+    })
+
+    autoTable(doc, {
+      startY: y + 14,
+      head: head,
+      body: body,
       theme: 'grid',
       headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontSize: 8 },
       bodyStyles: { fontSize: 8 },
-      alternateRowStyles: { fillColor: PDF_COLORS.LIGHT }
+      alternateRowStyles: { fillColor: PDF_COLORS.LIGHT },
+      didDrawPage: (pageData) => {
+        if (pageData.pageNumber > 1) {
+          drawPremiumHeader(doc, 'LABOUR WEEKLY REPORT (CONT.)', '(INDIVIDUAL)')
+        }
+        drawPremiumFooter(doc)
+      },
+      margin: { top: 50, left: 14, right: 14, bottom: 20 },
+      didParseCell: (cellData) => {
+        const deductionColIdx = hasOT ? 4 : 3
+        const giveableColIdx = hasOT ? 5 : 4
+        const grandTotalColIdx = hasOT ? 6 : 5
+        if (cellData.section === 'body') {
+          if (cellData.column.index === 1) { // Status column
+            const val = cellData.cell.text[0]
+            if (val === 'P') cellData.cell.styles.textColor = [34, 197, 94]
+            else if (val === 'A') cellData.cell.styles.textColor = [239, 68, 68]
+            else if (val === 'H') cellData.cell.styles.textColor = [245, 158, 11]
+            cellData.cell.styles.fontStyle = 'bold'
+          }
+          if (cellData.column.index === deductionColIdx) {
+            const val = cellData.cell.text[0]
+            if (val && val !== '-') {
+              cellData.cell.styles.textColor = PDF_COLORS.RED
+              cellData.cell.styles.fontStyle = 'bold'
+            }
+          }
+          if (cellData.column.index === giveableColIdx) {
+            cellData.cell.styles.fontStyle = 'bold'
+            cellData.cell.styles.textColor = PDF_COLORS.GREEN
+          }
+          if (cellData.column.index === grandTotalColIdx) {
+            cellData.cell.styles.fontStyle = 'bold'
+            cellData.cell.styles.textColor = PDF_COLORS.BLUE
+          }
+        }
+      }
     })
 
-    const finalY = (doc as any).lastAutoTable.finalY + 10
+    let finalY = (doc as any).lastAutoTable.finalY + 10
+    const H = doc.internal.pageSize.getHeight()
+
+    // Add new page if summary box & signatures don't fit
+    if (finalY + summaryBoxH > H - 25) {
+      doc.addPage()
+      drawPremiumHeader(doc, 'LABOUR WEEKLY REPORT (CONT.)', '(INDIVIDUAL)')
+      drawPremiumFooter(doc)
+      finalY = 50
+    }
     
     // Summary Boxes
-    const boxW = 45, boxH = 20
+    const boxW = hasOT ? 45 : 60
+    const boxH = 20
     const isNeg = (summary.netPayable || 0) < 0
     const boxes = [
-      { l: 'Gross Amount', v: `Rs. ${(summary.totalWages + summary.totalOTAmount || 0).toLocaleString()}` },
-      { l: 'Advances', v: `Rs. ${(summary.totalAdvances || 0).toLocaleString()}` },
-      { l: isNeg ? 'WORKER OWES' : 'NET PAYABLE', v: `Rs. ${Math.abs(summary.netPayable || 0).toLocaleString()}`, hi: true }
+      { l: 'Total Payment', v: `Rs. ${(summary.totalWages + summary.totalOTAmount || 0).toLocaleString()}` },
+      { l: 'Deduction', v: `Rs. ${(summary.totalAdvances || 0).toLocaleString()}` },
+      { l: isNeg ? 'WORKER OWES' : 'GIVEABLE AMOUNT', v: `Rs. ${Math.abs(summary.netPayable || 0).toLocaleString()}`, hi: true }
     ]
     
     boxes.forEach((b, i) => {
-      const bx = 14 + (i * (boxW + 2))
+      const bx = 14 + (i * (boxW + 3))
       if (b.hi && isNeg) { doc.setFillColor(...PDF_COLORS.RED); doc.setTextColor(255, 255, 255) }
       else if (b.hi) { doc.setFillColor(...PDF_COLORS.BLUE); doc.setTextColor(255, 255, 255) }
       else { doc.setFillColor(240, 245, 255); doc.setTextColor(...PDF_COLORS.NAVY) }
@@ -312,11 +374,22 @@ export default function ReportsPage() {
     doc.setFontSize(8); doc.text('Amount in Words:', 14, finalY + boxH + 8)
     doc.setFont('helvetica', 'italic'); doc.text(numberToWords(Math.abs(summary.netPayable || 0)), 42, finalY + boxH + 8)
 
-    // Dynamic Footer positioning
-    doc.setFillColor(...PDF_COLORS.NAVY)
-    doc.rect(0, pageHeight - 14, 210, 14, 'F')
-    doc.setTextColor(100, 116, 139); doc.setFontSize(8); doc.setFont('helvetica', 'italic')
-    doc.text('This is a system generated report.', 105, pageHeight - 6, { align: 'center' })
+    // Signatory Area
+    const sigY = H - 48
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.setFontSize(8)
+    doc.text('FOR ' + COMPANY_DETAILS.name, 160, sigY + 5, { align: 'center' })
+
+    doc.setFont('times', 'italic')
+    doc.setFontSize(12)
+    doc.text('Cheveli Somaiah', 160, sigY + 16, { align: 'center' })
+    doc.line(140, sigY + 18, 180, sigY + 18)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7); doc.text('Authorized Signatory', 160, sigY + 22, { align: 'center' })
+
+    // Premium Footer positioning
+    drawPremiumFooter(doc)
 
     const safeName = worker.name.replace(/[^a-zA-Z0-9]/g, '_')
     doc.save(`Attendance_${safeName}_${format(new Date(startDate), 'dd-MMM')}_to_${format(new Date(endDate), 'dd-MMM-yyyy')}.pdf`)
@@ -336,7 +409,7 @@ export default function ReportsPage() {
     doc.setFont('helvetica', 'bold'); doc.text('Project Name', 14, y); doc.setFont('helvetica', 'normal'); doc.text(`: ${project?.name || 'All Projects'}`, 40, y)
     doc.setFont('helvetica', 'bold'); doc.text('Week Range', 14, y + 6); doc.setFont('helvetica', 'normal'); doc.text(`: ${startDate} to ${endDate}`, 40, y + 6)
 
-    const head = [['S.No', 'Worker Name', 'Role', ...days.map((d: any) => format(d, 'EEE (dd)')), 'Days', 'Total (Gross)']]
+    const head = [['S.No', 'Worker Name', 'Role', ...days.map((d: any) => format(d, 'EEE (dd)')), 'Days', 'Total Payment', 'Reductions', 'Giveable Amount']]
     const body = workers.map((w: any, i: number) => [
       i + 1,
       w.worker.name,
@@ -347,17 +420,21 @@ export default function ReportsPage() {
         return att.days_worked === 1 ? 'P' : att.days_worked === 0.5 ? 'H' : 'A'
       }),
       w.totals.days.toFixed(1),
-      `Rs. ${w.totals.gross.toLocaleString()}`
+      `Rs. ${w.totals.gross.toLocaleString()}`,
+      `Rs. ${w.totals.advances.toLocaleString()}`,
+      `Rs. ${w.totals.net.toLocaleString()}`
     ])
 
     // Append a dedicated "Work Done (All Workers)" row at the bottom of the table
     const workDoneRow = [
       '', 'WORK DONE (ALL WORKERS)', '',
       ...days.map((d: any) => notesByDate[format(d, 'yyyy-MM-dd')] || '-'),
-      '', ''
+      '', '', '', ''
     ]
 
     const totalGross = workers.reduce((acc: number, w: any) => acc + w.totals.gross, 0)
+    const totalAdvances = workers.reduce((acc: number, w: any) => acc + w.totals.advances, 0)
+    const totalNet = workers.reduce((acc: number, w: any) => acc + w.totals.net, 0)
 
     autoTable(doc, {
       startY: y + 14,
@@ -367,7 +444,7 @@ export default function ReportsPage() {
       headStyles: { fillColor: PDF_COLORS.BLUE, fontSize: 7 },
       bodyStyles: { fontSize: 7 },
       alternateRowStyles: { fillColor: PDF_COLORS.LIGHT },
-      foot: [['', '', '', ...days.map(() => ''), 'TOTAL', `Rs. ${totalGross.toLocaleString()}`]],
+      foot: [['', '', '', ...days.map(() => ''), 'TOTAL', `Rs. ${totalGross.toLocaleString()}`, `Rs. ${totalAdvances.toLocaleString()}`, `Rs. ${totalNet.toLocaleString()}`]],
       footStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontStyle: 'bold', fontSize: 7 },
       didParseCell: (data) => {
         if (data.section === 'body' && data.column.index > 2 && data.column.index < 3 + days.length) {
@@ -377,8 +454,29 @@ export default function ReportsPage() {
       }
     })
 
-    doc.setTextColor(100, 116, 139); doc.setFontSize(8); doc.setFont('helvetica', 'italic')
-    doc.text('This is a system generated report.', 148, 200, { align: 'center' })
+    const finalTableY = (doc as any).lastAutoTable.finalY || y + 20
+    let sigY = finalTableY + 8
+    if (sigY > 165) {
+      doc.addPage()
+      drawPremiumHeader(doc, 'PROJECT WEEKLY REPORT (CONT.)', 'SIGNATURE PAGE')
+      drawPremiumFooter(doc)
+      sigY = 55
+    }
+
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.setFontSize(8)
+    doc.text('FOR ' + COMPANY_DETAILS.name, 245, sigY + 5, { align: 'center' })
+
+    doc.setFont('times', 'italic')
+    doc.setFontSize(12)
+    doc.text('Cheveli Somaiah', 245, sigY + 16, { align: 'center' })
+    doc.line(225, sigY + 18, 265, sigY + 18)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7); doc.text('Authorized Signatory', 245, sigY + 22, { align: 'center' })
+
+    doc.setTextColor(100, 116, 139); doc.setFontSize(7.5); doc.setFont('helvetica', 'italic')
+    doc.text('This is a system generated report.', 148.5, 192, { align: 'center' })
 
     drawPremiumFooter(doc)
     const projName = project ? project.name.replace(/[^a-zA-Z0-9]/g, '_') : 'All_Projects'
@@ -434,8 +532,8 @@ export default function ReportsPage() {
         ['Worker', reportData.worker.name],
         ['Period', `${startDate} to ${endDate}`],
         [],
-        ['Date', 'Status', 'Basic Wage', 'OT Amount', 'Total'],
-        ...reportData.breakdown.map((r: any) => [r.date, r.status, r.baseWage, r.overtimeAmount, r.total])
+        ['Date', 'Status', 'Basic Wage', 'OT Amount', 'Advance', 'Total (Gross)', 'Giveable (Net)'],
+        ...reportData.breakdown.map((r: any) => [r.date, r.status, r.baseWage, r.overtimeAmount, r.advance, r.total, r.giveable])
       ]
       fileName = `Labour_${reportData.worker.name}`
     } else if (activeTab === 'PROJECT_WEEKLY') {
@@ -445,7 +543,7 @@ export default function ReportsPage() {
         ['Project', reportData.project?.name || 'All'],
         ['Period', `${startDate} to ${endDate}`],
         [],
-        ['Worker', 'Type', ...reportData.days.map((d: any) => format(d, 'EEE dd')), 'Total Days', 'Total Amount'],
+        ['Worker', 'Type', ...reportData.days.map((d: any) => format(d, 'EEE dd')), 'Total Days', 'Total (Gross)', 'Advances', 'Giveable (Net)'],
         ...reportData.workers.map((w: any) => [
           w.worker.name,
           w.worker.type,
@@ -454,11 +552,13 @@ export default function ReportsPage() {
             return att ? att.days_worked : 0
           }),
           w.totals.days,
-          w.totals.gross
+          w.totals.gross,
+          w.totals.advances,
+          w.totals.net
         ]),
         [],
         // Grouped daily notes row
-        ['WORK DONE (ALL WORKERS)', '', ...reportData.days.map((d: any) => notesByDate[format(d, 'yyyy-MM-dd')] || '-'), '', '']
+        ['WORK DONE (ALL WORKERS)', '', ...reportData.days.map((d: any) => notesByDate[format(d, 'yyyy-MM-dd')] || '-'), '', '', '', '']
       ]
       fileName = `Project_${reportData.project?.name || 'All'}`
     } else {
@@ -625,8 +725,9 @@ export default function ReportsPage() {
                           <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500">Date (Day)</TableHead>
                           <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500">Project</TableHead>
                           <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500 text-center">Status</TableHead>
-                          <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500 text-right">Earned</TableHead>
-                          <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500 text-right text-red-500">Adv Taken</TableHead>
+                          <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500 text-right">Total Payment</TableHead>
+                          <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500 text-right text-red-500">Reductions</TableHead>
+                          <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500 text-right text-emerald-500">Giveable Amount</TableHead>
                           <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500">Remarks</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -650,6 +751,9 @@ export default function ReportsPage() {
                             </TableCell>
                             <TableCell className="py-4 text-right font-black text-xs text-red-500">
                                {row.advance > 0 ? `₹ ${row.advance.toLocaleString()}` : '—'}
+                            </TableCell>
+                            <TableCell className="py-4 text-right font-black text-xs text-emerald-400">
+                               ₹ {row.giveable.toLocaleString()}
                             </TableCell>
                             <TableCell className="py-4 text-[10px] text-zinc-500 italic max-w-[150px] truncate">
                                {row.notes || '—'}
@@ -676,36 +780,42 @@ export default function ReportsPage() {
                             <p className="text-xs text-zinc-300 truncate max-w-[150px]">{row.project}</p>
                           </div>
                           <div className="text-right">
-                            <p className="text-[10px] font-black text-zinc-500 uppercase">Earned</p>
+                            <p className="text-[10px] font-black text-zinc-500 uppercase">Total Payment</p>
                             <p className="font-black text-sm text-zinc-200">₹ {row.total.toLocaleString()}</p>
                           </div>
                         </div>
                         {row.advance > 0 && (
                           <div className="flex justify-between items-center bg-red-500/10 p-2 rounded border border-red-500/20 mt-1">
-                            <p className="text-[10px] font-black text-red-400 uppercase">Advance Taken</p>
+                            <p className="text-[10px] font-black text-red-400 uppercase">Reductions</p>
                             <p className="font-black text-xs text-red-500">₹ {row.advance.toLocaleString()}</p>
                           </div>
                         )}
+                        <div className="flex justify-between items-center bg-emerald-500/10 p-2 rounded border border-emerald-500/20 mt-1">
+                          <p className="text-[10px] font-black text-emerald-400 uppercase">Giveable Amount</p>
+                          <p className="font-black text-xs text-emerald-400">₹ {row.giveable.toLocaleString()}</p>
+                        </div>
                         {row.notes && <p className="text-[10px] text-zinc-500 italic mt-1 bg-zinc-950 p-2 rounded">{row.notes}</p>}
                       </div>
                     ))}
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-8 pt-8 border-t border-zinc-800">
+                  <div className={cn("grid grid-cols-1 gap-4 mt-8 pt-8 border-t border-zinc-800", reportData.summary.totalOTAmount > 0 ? "md:grid-cols-4" : "md:grid-cols-3")}>
                     <div className="bg-zinc-950/50 p-6 rounded-2xl border border-zinc-800">
-                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Total Wages</p>
+                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Basic Wages</p>
                        <p className="text-xl font-black text-white mt-1">₹ {reportData.summary.totalWages.toLocaleString()}</p>
                     </div>
-                    <div className="bg-zinc-950/50 p-6 rounded-2xl border border-zinc-800">
-                       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Overtime</p>
-                       <p className="text-xl font-black text-white mt-1">₹ {reportData.summary.totalOTAmount.toLocaleString()}</p>
-                    </div>
+                    {reportData.summary.totalOTAmount > 0 && (
+                      <div className="bg-zinc-950/50 p-6 rounded-2xl border border-zinc-800">
+                         <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Overtime</p>
+                         <p className="text-xl font-black text-white mt-1">₹ {reportData.summary.totalOTAmount.toLocaleString()}</p>
+                      </div>
+                    )}
                     <div className="bg-red-500/5 p-6 rounded-2xl border border-red-500/10">
-                       <p className="text-[10px] font-black uppercase tracking-widest text-red-400">Advances</p>
+                       <p className="text-[10px] font-black uppercase tracking-widest text-red-400">Reductions</p>
                        <p className="text-xl font-black text-red-500 mt-1">₹ {reportData.summary.totalAdvances.toLocaleString()}</p>
                     </div>
                     <div className="bg-blue-600 p-6 rounded-2xl border border-blue-500 shadow-lg shadow-blue-600/20">
-                       <p className="text-[10px] font-black uppercase tracking-widest text-blue-100">Net Payable</p>
+                       <p className="text-[10px] font-black uppercase tracking-widest text-blue-100">Giveable Amount</p>
                        <p className="text-2xl font-black text-white mt-1">₹ {reportData.summary.netPayable.toLocaleString()}</p>
                     </div>
                   </div>
@@ -736,7 +846,9 @@ export default function ReportsPage() {
                           ))}
                           <TableHead className="py-4 text-center text-[10px] font-black uppercase text-zinc-500">Days</TableHead>
                           <TableHead className="py-4 text-left text-[10px] font-black uppercase text-zinc-500">Work Done</TableHead>
-                          <TableHead className="py-4 text-right pr-8 text-[10px] font-black uppercase text-zinc-500">Total (Gross)</TableHead>
+                          <TableHead className="py-4 text-right text-[10px] font-black uppercase text-blue-500 w-[110px]">Total (Gross)</TableHead>
+                          <TableHead className="py-4 text-right text-[10px] font-black uppercase text-red-500 w-[95px]">Advances</TableHead>
+                          <TableHead className="py-4 text-right pr-8 text-[10px] font-black uppercase text-emerald-500 w-[110px]">Giveable (Net)</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -773,8 +885,14 @@ export default function ReportsPage() {
                               <TableCell className="py-5 text-left text-xs text-zinc-400 max-w-[200px] truncate" title={weeklyTasks}>
                                  {weeklyTasks || <span className="text-zinc-600 italic">No notes</span>}
                               </TableCell>
-                              <TableCell className="py-5 text-right pr-8 font-black text-blue-400 text-xs leading-none">
+                              <TableCell className="py-5 text-right font-black text-blue-400 text-xs leading-none">
                                  ₹ {w.totals.gross.toLocaleString()}
+                              </TableCell>
+                              <TableCell className="py-5 text-right font-black text-red-500 text-xs leading-none">
+                                 {w.totals.advances > 0 ? `₹ ${w.totals.advances.toLocaleString()}` : '—'}
+                              </TableCell>
+                              <TableCell className="py-5 text-right pr-8 font-black text-emerald-400 text-xs leading-none">
+                                 ₹ {w.totals.net.toLocaleString()}
                               </TableCell>
                             </TableRow>
                           )
@@ -791,11 +909,23 @@ export default function ReportsPage() {
                           <div>
                             <p className="font-bold text-white text-base leading-tight">{w.worker.name}</p>
                             <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1">{w.worker.type || 'N/A'}</p>
+                            <p className="text-[10px] font-bold text-zinc-400 mt-1">{w.totals.days.toFixed(1)} Days Worked</p>
                           </div>
-                          <div className="text-right">
-                            <p className="text-[10px] font-black uppercase text-zinc-500">Total (Gross)</p>
-                            <p className="font-black text-blue-400 text-lg leading-tight mt-0.5">₹ {w.totals.gross.toLocaleString()}</p>
-                            <p className="text-[10px] font-bold text-zinc-400 mt-1">{w.totals.days.toFixed(1)} Days</p>
+                          <div className="text-right space-y-1">
+                            <div>
+                              <span className="text-[8px] font-black uppercase text-zinc-500">Gross: </span>
+                              <span className="font-bold text-xs text-blue-400">₹{w.totals.gross.toLocaleString()}</span>
+                            </div>
+                            {w.totals.advances > 0 && (
+                              <div>
+                                <span className="text-[8px] font-black uppercase text-red-400">Adv: </span>
+                                <span className="font-bold text-xs text-red-500">₹{w.totals.advances.toLocaleString()}</span>
+                              </div>
+                            )}
+                            <div className="bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 inline-block mt-0.5">
+                              <span className="text-[8px] font-black uppercase text-emerald-400">Net: </span>
+                              <span className="font-black text-xs text-emerald-400">₹{w.totals.net.toLocaleString()}</span>
+                            </div>
                           </div>
                         </div>
                         <div className="flex justify-between mt-1">
@@ -832,9 +962,19 @@ export default function ReportsPage() {
                       </div>
                     ))}
                   </div>
-                  <div className="p-8 bg-zinc-950/30 flex justify-end items-center gap-4">
-                     <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Total Project Liability (Gross)</p>
-                     <p className="text-3xl font-black text-white">₹ {reportData.workers.reduce((acc: number, w: any) => acc + w.totals.gross, 0).toLocaleString()}</p>
+                  <div className="p-8 bg-zinc-950/30 flex justify-end items-center gap-8 flex-wrap">
+                     <div className="text-right">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Total Project Liability (Gross)</p>
+                        <p className="text-2xl font-black text-white mt-1">₹ {reportData.workers.reduce((acc: number, w: any) => acc + w.totals.gross, 0).toLocaleString()}</p>
+                     </div>
+                     <div className="text-right">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-red-400">Total Advances Deducted</p>
+                        <p className="text-2xl font-black text-red-500 mt-1">₹ {reportData.workers.reduce((acc: number, w: any) => acc + w.totals.advances, 0).toLocaleString()}</p>
+                     </div>
+                     <div className="text-right">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Total Giveable Amount (Net)</p>
+                        <p className="text-3xl font-black text-emerald-400 mt-1">₹ {reportData.workers.reduce((acc: number, w: any) => acc + w.totals.net, 0).toLocaleString()}</p>
+                     </div>
                   </div>
                 </div>
               )}

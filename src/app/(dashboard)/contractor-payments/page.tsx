@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { UserPlus, Loader2, FileText, Download, Trash2, Plus } from 'lucide-react'
+import { UserPlus, Loader2, FileText, Download, Trash2, Plus, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import jsPDF from 'jspdf'
@@ -51,6 +51,7 @@ export default function ContractorPaymentsPage() {
   const [selectedContractor, setSelectedContractor] = useState<any>(null)
   const [viewContractor, setViewContractor] = useState<any | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [showAddModal, setShowAddModal] = useState(false)
   
   const supabase = createClient()
 
@@ -115,6 +116,7 @@ export default function ContractorPaymentsPage() {
     } else {
       toast.success('Contractor payment recorded')
       setFormData({ name: '', mobile: '', work_nature: '', custom_work: '', site_project: '', amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' })
+      setShowAddModal(false)
       fetchContractors()
     }
     setSaving(false)
@@ -370,22 +372,32 @@ export default function ContractorPaymentsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-white tracking-tight uppercase">Contractor Payments</h1>
           <p className="mt-1 text-sm text-zinc-500">Track contractor payments in installments (separate from revenue).</p>
         </div>
+        <button
+          onClick={() => {
+            setFormData({ name: '', mobile: '', work_nature: '', custom_work: '', site_project: '', amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
+            setShowAddModal(true);
+          }}
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-black uppercase text-[#0a0c12] transition-all cursor-pointer bg-blue-500 hover:bg-blue-600 shadow-[0_4px_14px_rgba(59,130,246,0.3)] self-start sm:self-auto"
+        >
+          <Plus size={16} /> Add Contractor
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* LEFT: Contractor List */}
-        <div className="lg:col-span-8">
+        {/* LEFT: Contractor List - Full Width */}
+        <div className="lg:col-span-12">
           <Card className="panel-elevated text-white overflow-hidden min-h-full border-[#1e2435] bg-[#0d1018]">
             <CardHeader className="p-8 border-b border-[#1e2435]">
                <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 italic">Payment History</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              {/* Desktop Table */}
+              <div className="hidden md:block overflow-x-auto">
                 <Table>
                   <TableHeader className="bg-black/20">
                     <TableRow className="border-[#1e2435] hover:bg-transparent">
@@ -450,9 +462,50 @@ export default function ContractorPaymentsPage() {
                   </TableBody>
                 </Table>
               </div>
-              
+
+              {/* Mobile Cards */}
+              <div className="md:hidden flex flex-col gap-3 p-4 bg-[#05070B]">
+                {loading ? (
+                  Array(3).fill(0).map((_, i) => <div key={i} className="h-24 animate-pulse bg-zinc-900 rounded-xl" />)
+                ) : contractors.length === 0 ? (
+                  <div className="flex flex-col items-center gap-4 text-zinc-600 py-10">
+                    <UserPlus size={48} className="opacity-10" />
+                    <p className="text-sm font-bold uppercase tracking-widest">No contractor payments recorded</p>
+                  </div>
+                ) : (
+                  contractors.slice(page * 10, page * 10 + 10).map((contractor) => (
+                    <div key={contractor.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-white text-sm truncate">{contractor.name}</p>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mt-0.5">{contractor.work_nature}</p>
+                          <p className="text-[10px] font-bold text-zinc-400 mt-1">{format(new Date(contractor.date), 'MMM dd, yyyy')} · {contractor.mobile}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="font-black text-blue-400 text-base">₹{contractor.total_paid.toLocaleString()}</p>
+                          <p className="text-[9px] text-zinc-500 mt-0.5">Total Paid</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
+                        <button
+                          onClick={() => setViewContractor(contractor)}
+                          className="px-2 py-1 rounded-md bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 font-bold text-xs border border-amber-500/20 transition-all cursor-pointer"
+                        >
+                          {contractor.installments?.length || 0} Receipts
+                        </button>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => setSelectedContractor(contractor)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-zinc-500 hover:text-blue-400 transition-colors" title="Add Installment"><Plus size={13} /></button>
+                          <button onClick={() => exportPDF(contractor)} className="p-1.5 rounded-lg hover:bg-green-500/10 text-zinc-500 hover:text-green-400 transition-colors" title="PDF"><Download size={13} /></button>
+                          <button onClick={() => handleDelete(contractor.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors" title="Delete"><Trash2 size={13} /></button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              {/* Desktop Pagination */}
               {contractors.length > 10 && (
-                <div className="flex items-center justify-between px-6 py-4 border-t border-[#1e2435]">
+                <div className="hidden md:flex items-center justify-between px-6 py-4 border-t border-[#1e2435]">
                   <button disabled={page === 0} onClick={() => setPage(p => p - 1)}
                     className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40 bg-zinc-900 text-gray-300">← Prev</button>
                   <span className="text-xs text-zinc-500">Page {page + 1} / {Math.ceil(contractors.length / 10)}</span>
@@ -460,14 +513,33 @@ export default function ContractorPaymentsPage() {
                     className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40 bg-zinc-900 text-gray-300">Next →</button>
                 </div>
               )}
+              {/* Mobile Pagination */}
+              {contractors.length > 10 && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-[#1e2435] md:hidden">
+                  <button disabled={page === 0} onClick={() => setPage(p => p - 1)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40 bg-zinc-900 text-gray-300">← Prev</button>
+                  <span className="text-xs text-zinc-500">{page + 1} / {Math.ceil(contractors.length / 10)}</span>
+                  <button disabled={(page + 1) * 10 >= contractors.length} onClick={() => setPage(p => p + 1)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40 bg-zinc-900 text-gray-300">Next →</button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
+      </div>
 
-        {/* RIGHT: Add Form */}
-        <div className="lg:col-span-4">
-          <Card className="panel-elevated text-white rounded-2xl overflow-hidden p-8 bg-[#0d1018] border-[#1e2435]">
-            <h3 className="text-lg font-black uppercase tracking-tight mb-6">Add Contractor Payment</h3>
+      {/* Add Contractor Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in-50" onClick={() => setShowAddModal(false)}>
+          <div className="rounded-2xl p-6 w-full max-w-md max-h-[85vh] overflow-y-auto custom-scrollbar flex flex-col space-y-6 shadow-2xl animate-in zoom-in-95" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }} onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center pb-4 border-b border-[#1e2435]">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Sri Sai Constructions</p>
+                <p className="text-sm font-bold text-white uppercase tracking-wide">Add Contractor Payment</p>
+              </div>
+              <button onClick={() => setShowAddModal(false)} className="text-zinc-500 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-all"><X size={18}/></button>
+            </div>
+            
             <form onSubmit={handleCreate} className="space-y-5">
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Name</label>
@@ -475,7 +547,7 @@ export default function ContractorPaymentsPage() {
                   placeholder="Contractor name" 
                   value={formData.name}
                   onChange={e => setFormData({...formData, name: e.target.value})}
-                  className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
+                  className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
                 />
               </div>
 
@@ -485,7 +557,7 @@ export default function ContractorPaymentsPage() {
                   placeholder="9876543210" 
                   value={formData.mobile}
                   onChange={e => setFormData({...formData, mobile: e.target.value})}
-                  className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
+                  className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
                 />
               </div>
 
@@ -508,7 +580,7 @@ export default function ContractorPaymentsPage() {
                     placeholder="Enter work type" 
                     value={formData.custom_work}
                     onChange={e => setFormData({...formData, custom_work: e.target.value})}
-                    className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
+                    className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
                   />
                 </div>
               )}
@@ -519,7 +591,7 @@ export default function ContractorPaymentsPage() {
                   placeholder="e.g. Sai Residency, Boduppal" 
                   value={formData.site_project}
                   onChange={e => setFormData({...formData, site_project: e.target.value})}
-                  className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
+                  className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
                 />
               </div>
 
@@ -530,7 +602,7 @@ export default function ContractorPaymentsPage() {
                   placeholder="Enter installment amount" 
                   value={formData.amount}
                   onChange={e => setFormData({...formData, amount: e.target.value})}
-                  className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
+                  className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
                 />
               </div>
 
@@ -554,14 +626,17 @@ export default function ContractorPaymentsPage() {
                 />
               </div>
 
-              <Button type="submit" disabled={saving} className="w-full h-12 bg-blue-600 hover:bg-blue-500 rounded-xl font-black uppercase tracking-widest text-sm">
-                {saving ? <Loader2 className="animate-spin mr-2" /> : null}
-                Add Payment
-              </Button>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 h-12 rounded-xl text-xs font-black uppercase bg-[#1a1f2e] text-[#6b7280] border border-[#1e2435]">Cancel</button>
+                <Button type="submit" disabled={saving} className="flex-1 h-12 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black uppercase tracking-widest text-xs">
+                  {saving ? <Loader2 className="animate-spin mr-2" /> : null}
+                  Add Payment
+                </Button>
+              </div>
             </form>
-          </Card>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Add Installment Dialog Modal */}
       <Dialog open={!!selectedContractor} onOpenChange={(open) => !open && setSelectedContractor(null)}>

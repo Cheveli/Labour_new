@@ -21,7 +21,8 @@ import {
   drawPremiumHeader, 
   drawPremiumFooter,
   PDF_COLORS, 
-  numberToWords
+  numberToWords,
+  COMPANY_DETAILS
 } from '@/lib/report-utils'
 
 export default function PaymentsPage() {
@@ -200,13 +201,21 @@ export default function PaymentsPage() {
     }
     setPdfLoading(false)
     return result
-  }
-
-  const generatePDF = async (mode: 'download' | 'whatsapp') => {
+  }  const generatePDF = async (mode: 'download' | 'whatsapp') => {
     const data = await fetchWorkerReportData()
     if (!data) return
 
-    const doc = new jsPDF()
+    const hasOT = (data.totalOt || 0) > 0
+    const tableHeight = (data.breakdown.length + 1) * 8.5
+    const summaryBoxH = hasOT ? 42 : 35
+    const requiredHeight = 44 + 16 + tableHeight + 10 + summaryBoxH + 18 + 24 + 10 + 14
+    const pageHeight = Math.max(160, requiredHeight)
+
+    const doc = new jsPDF({
+      orientation: 'p',
+      unit: 'mm',
+      format: [210, pageHeight]
+    })
     drawPremiumHeader(doc, 'SALARY SLIP / RECEIPT', '(AUTO-GENERATED)')
 
     const infoY = 54
@@ -217,53 +226,130 @@ export default function PaymentsPage() {
     doc.setFont('helvetica', 'bold'); doc.text('Period', 120, infoY); doc.setFont('helvetica', 'normal'); doc.text(`: ${data.period}`, 145, infoY)
     doc.setFont('helvetica', 'bold'); doc.text('Role', 120, infoY + 7); doc.setFont('helvetica', 'normal'); doc.text(`: ${data.worker.type || '-'}`, 145, infoY + 7)
 
-    // Daily breakdown table
-    const tableBody = data.breakdown.map((row: any) => [
-      format(new Date(row.date), 'EEEE (dd MMM)'),
-      row.status,
-      `Rs. ${row.rate}`,
-      `Rs. ${row.wage}`,
-      row.ot > 0 ? `Rs. ${row.ot}` : '-',
-      row.adv > 0 ? `Rs. ${row.adv}` : '-',
-      `Rs. ${row.total}`
-    ])
+    // Daily breakdown table (Date, Status, Wages on the day, OT Amount, Reductions, Giveable Amount, Grand Total)
+    const tableBody = data.breakdown.map((row: any) => {
+      const r = [
+        format(new Date(row.date), 'EEEE (dd MMM)'),
+        row.status,
+        `Rs. ${(row.wage || 0).toLocaleString()}`
+      ]
+      if (hasOT) {
+        r.push(row.ot > 0 ? `Rs. ${(row.ot || 0).toLocaleString()}` : '-')
+      }
+      r.push(
+        row.adv > 0 ? `Rs. ${(row.adv || 0).toLocaleString()}` : '-',
+        `Rs. ${(row.total || 0).toLocaleString()}`,
+        `Rs. ${(row.wage + row.ot || 0).toLocaleString()}`
+      )
+      return r
+    })
+
+    const head = hasOT 
+      ? [['Date', 'Stat', 'Wages on the day', 'OT Amount', 'Deduction', 'Giveable Amount', 'Grand Total']]
+      : [['Date', 'Stat', 'Wages on the day', 'Deduction', 'Giveable Amount', 'Grand Total']]
 
     autoTable(doc, {
       startY: infoY + 16,
-      head: [['Date', 'Stat', 'Rate', 'Wage', 'OT', 'Deduction', 'Total']],
+      head: head,
       body: tableBody,
       theme: 'grid',
       headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: 8 },
       bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 8 },
       alternateRowStyles: { fillColor: PDF_COLORS.LIGHT },
       styles: { cellPadding: 2.5 },
-      didParseCell: (data) => {
-        if (data.column.index === 1) { // Stat column
-          const val = data.cell.text[0]
-          if (val === 'P') data.cell.styles.textColor = [34, 197, 94] // Emerald 500
-          else if (val === 'A') data.cell.styles.textColor = [239, 68, 68] // Red 500
-          else if (val === 'H') data.cell.styles.textColor = [245, 158, 11] // Amber 500
-          data.cell.styles.fontStyle = 'bold'
+      didDrawPage: (pageData) => {
+        if (pageData.pageNumber > 1) {
+          drawPremiumHeader(doc, 'SALARY SLIP / RECEIPT (CONT.)', '(AUTO-GENERATED)')
+        }
+        drawPremiumFooter(doc)
+      },
+      margin: { top: 50, left: 14, right: 14, bottom: 20 },
+      didParseCell: (cellData) => {
+        const deductionColIdx = hasOT ? 4 : 3
+        const giveableColIdx = hasOT ? 5 : 4
+        const grandTotalColIdx = hasOT ? 6 : 5
+        if (cellData.section === 'body') {
+          if (cellData.column.index === 1) { // Stat column
+            const val = cellData.cell.text[0]
+            if (val === 'P') cellData.cell.styles.textColor = [34, 197, 94] // Emerald 500
+            else if (val === 'A') cellData.cell.styles.textColor = [239, 68, 68] // Red 500
+            else if (val === 'H') cellData.cell.styles.textColor = [245, 158, 11] // Amber 500
+            cellData.cell.styles.fontStyle = 'bold'
+          }
+          if (cellData.column.index === deductionColIdx) {
+            const val = cellData.cell.text[0]
+            if (val && val !== '-') {
+              cellData.cell.styles.textColor = PDF_COLORS.RED
+              cellData.cell.styles.fontStyle = 'bold'
+            }
+          }
+          if (cellData.column.index === giveableColIdx) {
+            cellData.cell.styles.fontStyle = 'bold'
+            cellData.cell.styles.textColor = PDF_COLORS.GREEN
+          }
+          if (cellData.column.index === grandTotalColIdx) {
+            cellData.cell.styles.fontStyle = 'bold'
+            cellData.cell.styles.textColor = PDF_COLORS.BLUE
+          }
         }
       }
     })
 
-    const finalY = (doc as any).lastAutoTable.finalY + 10
+    let finalY = (doc as any).lastAutoTable.finalY + 10
+    const H = doc.internal.pageSize.getHeight()
+
+    // Add new page if summary box & signatures don't fit
+    if (finalY + summaryBoxH > H - 25) {
+      doc.addPage()
+      drawPremiumHeader(doc, 'SALARY SLIP / RECEIPT (CONT.)', '(STATEMENT)')
+      drawPremiumFooter(doc)
+      finalY = 50
+    }
     
     // Summary Box
     doc.setFillColor(245, 247, 250)
-    doc.roundedRect(120, finalY, 76, 35, 2, 2, 'F')
-    doc.setFontSize(8); doc.setFont('helvetica', 'normal')
-    doc.text('Gross Wage:', 125, finalY + 8); doc.text(`Rs. ${data.totalWage.toLocaleString()}`, 190, finalY + 8, { align: 'right' })
-    doc.text('Total Overtime:', 125, finalY + 15); doc.text(`Rs. ${data.totalOt.toLocaleString()}`, 190, finalY + 15, { align: 'right' })
-    doc.text('Total Deductions:', 125, finalY + 22); doc.setTextColor(220, 53, 69); doc.text(`Rs. ${data.totalAdv.toLocaleString()}`, 190, finalY + 22, { align: 'right' })
+    doc.roundedRect(110, finalY, 86, summaryBoxH, 2, 2, 'F')
     
-    doc.setDrawColor(200, 200, 200); doc.line(125, finalY + 26, 191, finalY + 26)
-    doc.setTextColor(...PDF_COLORS.BLUE); doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
-    doc.text('NET PAID:', 125, finalY + 31); doc.text(`Rs. ${data.netPayable.toLocaleString()}`, 190, finalY + 31, { align: 'right' })
+    const summaryGross = data.totalWage + data.totalOt
+    let boxY = finalY + 7
+    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(...PDF_COLORS.BLUE)
+    doc.text('GRAND TOTAL:', 115, boxY); doc.setFontSize(12); doc.text(`Rs. ${summaryGross.toLocaleString()}`, 185, boxY, { align: 'right' })
+    
+    boxY += 8
+    if (hasOT) {
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_COLORS.NAVY)
+      doc.text('Total Overtime:', 115, boxY); doc.text(`Rs. ${data.totalOt.toLocaleString()}`, 185, boxY, { align: 'right' })
+      boxY += 7
+    }
+    
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.text('Total Deduction:', 115, boxY); doc.setTextColor(220, 53, 69); doc.text(`Rs. ${data.totalAdv.toLocaleString()}`, 185, boxY, { align: 'right' })
+    
+    boxY += 4
+    doc.setDrawColor(200, 200, 200); doc.line(115, boxY, 185, boxY)
+    
+    boxY += 6
+    doc.setTextColor(...PDF_COLORS.GREEN); doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
+    doc.text('NET PAYMENT:', 115, boxY); doc.text(`Rs. ${data.netPayable.toLocaleString()}`, 185, boxY, { align: 'right' })
 
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(8); doc.setFont('helvetica', 'italic')
-    doc.text(`Amount in words: ${numberToWords(Math.abs(data.netPayable))}`, 14, finalY + 45)
+    doc.text(`Amount in words: ${numberToWords(Math.abs(data.netPayable))}`, 14, finalY + 48)
+
+    // Signatory Area
+    const sigY = H - 48
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.setFontSize(8)
+    doc.text('FOR ' + COMPANY_DETAILS.name, 160, sigY + 5, { align: 'center' })
+
+    doc.setFont('times', 'italic')
+    doc.setFontSize(12)
+    doc.text('Cheveli Somaiah', 160, sigY + 16, { align: 'center' })
+    doc.line(140, sigY + 18, 180, sigY + 18)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7); doc.text('Authorized Signatory', 160, sigY + 22, { align: 'center' })
+
+    drawPremiumFooter(doc)
 
     if (mode === 'download') {
       doc.save(`${data.worker.name}_Receipt_${format(currentWeekStart, 'dd_MMM')}.pdf`)
@@ -308,39 +394,75 @@ export default function PaymentsPage() {
       end: endOfWeek(currentWeekStart, { weekStartsOn: 0 }) 
     })
 
-    const head = [['#', 'Worker Name', ...weekDays.map(d => format(d, 'EEE (dd)')), 'Days', 'OT', 'Ded', 'Net Total']]
+    const hasOT = summaryData.some(s => s.totalOt > 0)
+
+    const head = hasOT
+      ? [['#', 'Worker Name', ...weekDays.map(d => format(d, 'EEE (dd)')), 'Days', 'OT Amount', 'Deduction', 'Giveable Amount', 'Grand Total']]
+      : [['#', 'Worker Name', ...weekDays.map(d => format(d, 'EEE (dd)')), 'Days', 'Deduction', 'Giveable Amount', 'Grand Total']]
     
     const grandOt = summaryData.reduce((acc, s) => acc + s.totalOt, 0)
     const grandDed = summaryData.reduce((acc, s) => acc + s.totalDed, 0)
     const grandNet = summaryData.reduce((acc, s) => acc + s.net, 0)
+    const grandGross = summaryData.reduce((acc, s) => acc + (s.totalDays * s.rate + s.totalOt), 0)
 
-    const body = summaryData.map((s, i) => [
-      i + 1,
-      s.name,
-      ...weekDays.map(d => {
-        const dateStr = format(d, 'yyyy-MM-dd')
-        const day = s.days[dateStr]
-        if (!day) {
-          return dateStr < s.maxDate ? 'A' : '-'
-        }
-        return day.status 
-      }),
-      s.totalDays,
-      `Rs.${s.totalOt.toLocaleString()}`,
-      `Rs.${s.totalDed.toLocaleString()}`,
-      `Rs.${s.net.toLocaleString()}`
-    ])
+    const body = summaryData.map((s, i) => {
+      const row = [
+        i + 1,
+        s.name,
+        ...weekDays.map(d => {
+          const dateStr = format(d, 'yyyy-MM-dd')
+          const day = s.days[dateStr]
+          if (!day) {
+            return dateStr < s.maxDate ? 'A' : '-'
+          }
+          return day.status 
+        }),
+        s.totalDays,
+      ]
+      if (hasOT) {
+        row.push(`Rs. ${s.totalOt.toLocaleString()}`)
+      }
+      row.push(
+        `Rs. ${s.totalDed.toLocaleString()}`,
+        `Rs. ${s.net.toLocaleString()}`,
+        `Rs. ${(s.totalDays * s.rate + s.totalOt).toLocaleString()}`
+      )
+      return row
+    })
 
     // Add Grand Total row (Remove Days total as requested)
-    body.push([
+    const grandTotalRow = [
       '',
       'GRAND TOTAL',
       ...weekDays.map(() => ''),
       '', // Total days removed as requested
-      `Rs.${grandOt.toLocaleString()}`,
-      `Rs.${grandDed.toLocaleString()}`,
-      `Rs.${grandNet.toLocaleString()}`
-    ])
+    ]
+    if (hasOT) {
+      grandTotalRow.push(`Rs. ${grandOt.toLocaleString()}`)
+    }
+    grandTotalRow.push(
+      `Rs. ${grandDed.toLocaleString()}`,
+      `Rs. ${grandNet.toLocaleString()}`,
+      `Rs. ${grandGross.toLocaleString()}`
+    )
+    body.push(grandTotalRow)
+
+    const columnStyles: any = {
+      0: { cellWidth: 8 }, // #
+      1: { cellWidth: 35, halign: 'left', fontStyle: 'bold' }, // Name
+      ...Object.fromEntries(Array.from({ length: 7 }, (_, i) => [i + 2, { cellWidth: 16 }])), // Days
+      9: { cellWidth: 12 }, // Days count
+    }
+    if (hasOT) {
+      columnStyles[10] = { cellWidth: 20 } // OT
+      columnStyles[11] = { cellWidth: 20 } // Ded
+      columnStyles[12] = { cellWidth: 26, halign: 'right', fontStyle: 'bold' } // Net
+      columnStyles[13] = { cellWidth: 26, halign: 'right', fontStyle: 'bold' } // Gross
+    } else {
+      columnStyles[10] = { cellWidth: 24 } // Ded
+      columnStyles[11] = { cellWidth: 28, halign: 'right', fontStyle: 'bold' } // Net
+      columnStyles[12] = { cellWidth: 28, halign: 'right', fontStyle: 'bold' } // Gross
+    }
 
     autoTable(doc, {
       startY: 50,
@@ -349,36 +471,50 @@ export default function PaymentsPage() {
       theme: 'grid',
       headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
       bodyStyles: { fontSize: 8, cellPadding: 3, textColor: PDF_COLORS.NAVY, halign: 'center' },
-      columnStyles: {
-        0: { cellWidth: 8 }, // #
-        1: { cellWidth: 35, halign: 'left', fontStyle: 'bold' }, // Name
-        ...Object.fromEntries(Array.from({ length: 7 }, (_, i) => [i + 2, { cellWidth: 18 }])), // Days
-        9: { cellWidth: 12 }, // Days count
-        10: { cellWidth: 22 }, // OT
-        11: { cellWidth: 22 }, // Ded
-        12: { cellWidth: 28, halign: 'right', fontStyle: 'bold' } // Net
-      },
+      columnStyles,
       alternateRowStyles: { fillColor: [248, 250, 255] },
-      didParseCell: (data) => {
+      didParseCell: (cellData) => {
         // Attendance columns (indices 2 to 8)
-        if (data.column.index >= 2 && data.column.index <= 8 && data.row.index < body.length - 1) {
-          const val = data.cell.text[0]
-          if (val === 'P') data.cell.styles.textColor = [34, 197, 94]
-          else if (val === 'A') data.cell.styles.textColor = [239, 68, 68]
-          else if (val === 'H') data.cell.styles.textColor = [245, 158, 11]
-          data.cell.styles.fontStyle = 'bold'
+        if (cellData.column.index >= 2 && cellData.column.index <= 8 && cellData.row.index < body.length - 1) {
+          const val = cellData.cell.text[0]
+          if (val === 'P') cellData.cell.styles.textColor = [34, 197, 94]
+          else if (val === 'A') cellData.cell.styles.textColor = [239, 68, 68]
+          else if (val === 'H') cellData.cell.styles.textColor = [245, 158, 11]
+          cellData.cell.styles.fontStyle = 'bold'
         }
 
-        if (data.row.index === body.length - 1) {
-          data.cell.styles.fillColor = PDF_COLORS.BLUE;
-          data.cell.styles.textColor = 255;
-          data.cell.styles.fontStyle = 'bold';
+        const grandTotalIdx = hasOT ? 13 : 12
+        const giveableIdx = hasOT ? 12 : 11
+        const deductionIdx = hasOT ? 11 : 10
+
+        if (cellData.section === 'body' && cellData.row.index < body.length - 1) {
+          if (cellData.column.index === deductionIdx) {
+            const val = cellData.cell.text[0]
+            if (val && val !== 'Rs. 0' && val !== 'Rs.0' && !val.includes('Rs. 0') && val !== '-') {
+              cellData.cell.styles.textColor = PDF_COLORS.RED
+              cellData.cell.styles.fontStyle = 'bold'
+            }
+          }
+          if (cellData.column.index === giveableIdx) {
+            cellData.cell.styles.fontStyle = 'bold'
+            cellData.cell.styles.textColor = PDF_COLORS.GREEN
+          }
+          if (cellData.column.index === grandTotalIdx) {
+            cellData.cell.styles.fontStyle = 'bold'
+            cellData.cell.styles.textColor = PDF_COLORS.BLUE
+          }
+        }
+
+        if (cellData.row.index === body.length - 1) {
+          cellData.cell.styles.fillColor = PDF_COLORS.BLUE;
+          cellData.cell.styles.textColor = 255;
+          cellData.cell.styles.fontStyle = 'bold';
         }
       },
       margin: { top: 50, left: 10, right: 10, bottom: 20 },
-      didDrawPage: (data) => {
+      didDrawPage: (pageData) => {
         const period = `${format(currentWeekStart, 'dd MMM')} - ${format(endOfWeek(currentWeekStart, { weekStartsOn: 0 }), 'dd MMM yyyy')}`
-        drawPremiumHeader(doc, 'WEEKLY LABOUR REGISTER', `${period} (Page ${data.pageNumber})`)
+        drawPremiumHeader(doc, 'WEEKLY LABOUR REGISTER', `${period} (Page ${pageData.pageNumber})`)
         drawPremiumFooter(doc)
       }
     })
@@ -389,9 +525,30 @@ export default function PaymentsPage() {
       doc.text(`Total Amount in Words: ${numberToWords(Math.abs(grandNet))}`, 14, finalY)
     }
 
+    // Signatory Area in Weekly Register
+    let sigY = finalY + 10
+    if (sigY > H - 35) {
+      doc.addPage()
+      drawPremiumHeader(doc, 'WEEKLY LABOUR REGISTER (CONT.)', 'SIGNATURE PAGE')
+      drawPremiumFooter(doc)
+      sigY = 55
+    }
+
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.setFontSize(8)
+    doc.text('FOR ' + COMPANY_DETAILS.name, 245, sigY + 5, { align: 'center' })
+
+    doc.setFont('times', 'italic')
+    doc.setFontSize(12)
+    doc.text('Cheveli Somaiah', 245, sigY + 16, { align: 'center' })
+    doc.line(225, sigY + 18, 265, sigY + 18)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7); doc.text('Authorized Signatory', 245, sigY + 22, { align: 'center' })
+
+    drawPremiumFooter(doc)
     doc.save(`Weekly_Register_${format(currentWeekStart, 'dd_MMM')}.pdf`)
   }
-
   const weekDates = useMemo(() => {
     return eachDayOfInterval({ 
       start: currentWeekStart, 

@@ -84,7 +84,7 @@ export default function Sidebar() {
           </div>
           <span className="font-black text-sm tracking-widest uppercase text-white">Nirmana</span>
         </div>
-        <button onClick={() => setIsOpen(true)} className="text-zinc-400 hover:text-white">
+        <button onClick={() => setIsOpen(true)} className="text-zinc-400 hover:text-white" suppressHydrationWarning>
           <Menu size={22} />
         </button>
       </div>
@@ -120,7 +120,7 @@ export default function Sidebar() {
                   <p className="text-[9px] uppercase tracking-[0.18em] font-bold mt-0.5" style={{ color: '#3b82f6' }}>Site Management Hub</p>
                 </div>
               </div>
-              <button onClick={() => setIsOpen(false)} className="lg:hidden text-zinc-400 hover:text-white">
+              <button onClick={() => setIsOpen(false)} className="lg:hidden text-zinc-400 hover:text-white" suppressHydrationWarning>
                 <X size={20} />
               </button>
             </div>
@@ -168,6 +168,7 @@ export default function Sidebar() {
             </div>
             <button
               onClick={handleLogout}
+              suppressHydrationWarning
               className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white transition-colors"
               style={{ background: '#1a1f2e' }}
             >

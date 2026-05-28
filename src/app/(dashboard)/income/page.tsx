@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, Search, TrendingUp, Calendar, Briefcase, Loader2, DollarSign, History, FileText, Download, Receipt, Zap, Edit2, Trash2 } from 'lucide-react'
+import { Plus, Search, TrendingUp, Calendar, Briefcase, Loader2, DollarSign, History, FileText, Download, Receipt, Zap, Edit2, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import jsPDF from 'jspdf'
@@ -32,6 +32,7 @@ export default function IncomePage() {
   const [editingItem, setEditingItem] = useState<any>(null)
   const [editFormData, setEditFormData] = useState({ project_id: '', amount: '', date: '', notes: '' })
   const [editSaving, setEditSaving] = useState(false)
+  const [showAddModal, setShowAddModal] = useState(false)
 
   const [formData, setFormData] = useState({
     project_id: '',
@@ -91,6 +92,7 @@ export default function IncomePage() {
     } else {
       toast.success('Income recorded')
       setFormData({ project_id: '', amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' })
+      setShowAddModal(false)
       fetchData()
     }
     setSaving(false)
@@ -167,6 +169,9 @@ export default function IncomePage() {
       return
     }
 
+    const sameDayTransactions = history.filter((item: any) => item.date === currentItem.date)
+    const sameDayTotal = sameDayTransactions.reduce((acc: number, item: any) => acc + Number(item.amount), 0)
+
     const doc = new jsPDF()
     const projectName = currentItem.projects?.name || 'Unknown Project'
 
@@ -213,7 +218,7 @@ export default function IncomePage() {
     doc.roundedRect(140, y + 8, 48, 18, 1, 1, 'F')
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(7); doc.text('AMOUNT RECEIVED', 145, y + 14)
-    doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${Number(currentItem.amount).toLocaleString()}`, 145, y + 22)
+    doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${sameDayTotal.toLocaleString()}`, 145, y + 22)
 
     y += 45
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.text('PAYMENT HISTORY & STATEMENT', 14, y)
@@ -239,7 +244,7 @@ export default function IncomePage() {
       margin: { top: 45, left: 14, right: 14, bottom: 20 },
       didParseCell: (data) => {
         const rowIndex = data.row.index
-        if (history[rowIndex]?.id === currentItem.id) {
+        if (history[rowIndex]?.date === currentItem.date) {
           data.cell.styles.fillColor = [255, 252, 235]
           data.cell.styles.fontStyle = 'bold'
         }
@@ -267,7 +272,7 @@ export default function IncomePage() {
 
     finalY += 32
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
-    doc.text(`AMOUNT IN WORDS: ${numberToWords(cumulativeTotal).toUpperCase()} RUPEES ONLY`, 14, finalY)
+    doc.text(`AMOUNT IN WORDS: ${numberToWords(sameDayTotal).toUpperCase()} RUPEES ONLY`, 14, finalY)
 
     finalY += 12
     doc.setTextColor(...PDF_COLORS.MUTED); doc.setFontSize(7.5); doc.setFont('helvetica', 'normal')
@@ -276,19 +281,18 @@ export default function IncomePage() {
     doc.text('2. Payments are subject to realization of Cheque/DD/Digital Transfers.', 14, finalY + 10)
 
     // Signatory Area
-    finalY += 5
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(...PDF_COLORS.NAVY)
-    doc.setFontSize(9)
+    doc.setFontSize(8)
     doc.text('FOR ' + COMPANY_DETAILS.name, 160, finalY + 10, { align: 'center' })
 
     // Signature Text
     doc.setFont('times', 'italic')
-    doc.setFontSize(14)
-    doc.text('Cheveli Somaiah', 160, finalY + 32, { align: 'center' })
-    doc.line(140, finalY + 34, 180, finalY + 34)
+    doc.setFontSize(12)
+    doc.text('Cheveli Somaiah', 160, finalY + 22, { align: 'center' })
+    doc.line(140, finalY + 24, 180, finalY + 24)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8); doc.text('Signature', 160, finalY + 38, { align: 'center' })
+    doc.setFontSize(7); doc.text('Authorized Signatory', 160, finalY + 28, { align: 'center' })
 
     drawPremiumFooter(doc)
     doc.save(`Receipt_${projectName.replace(/\s+/g, '_')}_${format(new Date(), 'ddMMMyy')}.pdf`)
@@ -322,44 +326,50 @@ export default function IncomePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-white tracking-tight">Revenue</h1>
-          <p className="mt-1 text-sm text-zinc-500">Record site-wide collections and progress payments.</p>
-        </div>
-        <div className="flex flex-col sm:flex-row items-center gap-4">
-          <div className="flex items-center gap-3">
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all min-w-[180px]"
-            >
-              <option value="">All Projects</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-black text-white tracking-tight">Revenue</h1>
+            <p className="mt-1 text-sm text-zinc-500">Record site-wide collections and progress payments.</p>
           </div>
+          <span className="text-xl font-black" style={{ color: '#22c55e' }}>₹{income.reduce((s, i) => s + Number(i.amount), 0).toLocaleString()}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedProjectId}
+            onChange={(e) => setSelectedProjectId(e.target.value)}
+            className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all flex-1 min-w-[140px]"
+          >
+            <option value="">All Projects</option>
+            {projects.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <Button
+            onClick={() => {
+              setFormData({ project_id: selectedProjectId || '', amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
+              setShowAddModal(true);
+            }}
+            className="h-10 px-5 rounded-xl text-xs font-black uppercase bg-blue-500 text-white flex items-center gap-2 hover:bg-blue-600 shadow-[0_4px_14px_rgba(59,130,246,0.3)] transition-all cursor-pointer"
+          >
+            <Plus size={14} /> Record Entry
+          </Button>
           {income.length > 0 && (
-            <div className="flex items-center gap-2">
+            <>
               <Button onClick={exportPDF} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-4 gap-2 h-10">
                 <FileText size={14} /> PDF
               </Button>
               <Button onClick={exportExcel} variant="outline" className="border-zinc-700 bg-zinc-900 text-gray-300 rounded-xl font-bold uppercase tracking-tight px-4 gap-2 h-10">
                 <Download size={14} /> Excel
               </Button>
-            </div>
+            </>
           )}
-        </div>
-        <div className="flex flex-col items-end">
-          <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Total Revenue</span>
-          <span className="text-xl font-black" style={{ color: '#22c55e' }}>₹{income.reduce((s, i) => s + Number(i.amount), 0).toLocaleString()}</span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* LEFT: History */}
-        <div className="lg:col-span-8">
+        {/* LEFT: History - Full Width */}
+        <div className="lg:col-span-12">
           <Card className="panel-elevated text-white overflow-hidden min-h-full">
             <CardHeader className="p-8 border-b border-slate-800">
               <CardTitle className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">Collection Ledger</CardTitle>
@@ -448,36 +458,61 @@ export default function IncomePage() {
                 ) : (
                   income.slice(incomePage * 10, incomePage * 10 + 10).map((item) => (
                     <div key={item.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-bold text-white text-sm">{item.projects?.name}</p>
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-white text-sm truncate">{item.projects?.name}</p>
                           <p className="text-[10px] font-bold text-gray-400 mt-1">{format(new Date(item.date), 'MMM dd, yyyy')}</p>
+                          {item.notes && <p className="text-xs text-zinc-400 mt-1 truncate">{item.notes}</p>}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-end gap-2 shrink-0">
                           <p className="font-black text-blue-400 text-lg">₹ {item.amount.toLocaleString()}</p>
-                          <Button
-                            onClick={() => generateReceipt(item)}
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-zinc-500 hover:text-blue-400"
-                          >
-                            <Receipt size={16} />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              onClick={() => generateReceipt(item)}
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-zinc-500 hover:text-blue-400"
+                            >
+                              <Receipt size={14} />
+                            </Button>
+                            <button onClick={() => handleOpenEdit(item)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-zinc-500 hover:text-blue-400 transition-colors"><Edit2 size={13} /></button>
+                            <button onClick={() => handleDelete(item.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                          </div>
                         </div>
                       </div>
-                      {item.notes && <p className="text-xs text-zinc-400">{item.notes}</p>}
                     </div>
                   ))
                 )}
               </div>
+              {/* Mobile Pagination */}
+              {income.length > 10 && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-800 md:hidden">
+                  <button disabled={incomePage === 0} onClick={() => setIncomePage(p => p - 1)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
+                    style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
+                  <span className="text-xs" style={{ color: '#6b7280' }}>{incomePage + 1} / {Math.ceil(income.length / 10)}</span>
+                  <button disabled={(incomePage + 1) * 10 >= income.length} onClick={() => setIncomePage(p => p + 1)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
+                    style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
+      </div>
 
-        {/* RIGHT: Add Form */}
-        <div className="lg:col-span-4">
-          <Card className="panel-elevated text-white overflow-hidden p-8">
-            <h3 className="text-lg font-black uppercase tracking-tight mb-8">Record collection</h3>
+      {/* Add Income Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in-50" onClick={() => setShowAddModal(false)}>
+          <div className="rounded-2xl p-6 w-full max-w-md max-h-[85vh] overflow-y-auto custom-scrollbar flex flex-col space-y-6 shadow-2xl animate-in zoom-in-95" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }} onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center pb-4 border-b border-[#1e2435]">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Sri Sai Constructions</p>
+                <p className="text-sm font-bold text-white uppercase tracking-wide">Record Collection</p>
+              </div>
+              <button onClick={() => setShowAddModal(false)} className="text-zinc-500 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-all"><X size={18}/></button>
+            </div>
+            
             <form onSubmit={handleCreate} className="space-y-6">
               <div className="space-y-2">
                 <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Select Site</label>
@@ -495,9 +530,8 @@ export default function IncomePage() {
                   type="number"
                   value={formData.amount}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, amount: e.target.value })}
-                  className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
+                  className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white px-4"
                 />
-                <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mt-1">Confirmed collection</p>
               </div>
 
               <div className="space-y-2">
@@ -520,14 +554,17 @@ export default function IncomePage() {
                 />
               </div>
 
-              <Button type="submit" disabled={saving} className="w-full h-14 btn-construction rounded-xl font-black uppercase tracking-tight text-lg">
-                {saving ? <Loader2 className="animate-spin mr-2" /> : null}
-                Record Entry
-              </Button>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 h-12 rounded-xl text-xs font-black uppercase bg-[#1a1f2e] text-[#6b7280] border border-[#1e2435]">Cancel</button>
+                <Button type="submit" disabled={saving} className="flex-1 h-12 btn-construction rounded-xl font-black uppercase tracking-tight text-sm">
+                  {saving ? <Loader2 className="animate-spin mr-2" /> : null}
+                  Record Entry
+                </Button>
+              </div>
             </form>
-          </Card>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Edit Income Modal */}
       {editingItem && (

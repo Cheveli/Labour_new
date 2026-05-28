@@ -142,7 +142,15 @@ export default function ReportsPage() {
         const ha = hMatch ? `Hamali: Rs.${hMatch[1]}` : ''
         const cost = [matAmt, tr, ha].filter(Boolean).join('\n') || '—'
         
-        const cleanNotes = notes.replace(/Supplier:\s(.*?)(?:\s\(|$)/, '').replace(/\(\d+\)/, '').replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/^[\s\|]+|[\s\|]+$/g, '').trim()
+        const cleanNotes = notes
+          .replace(/Supplier:\s(.*?)(?:\s\(|$)/, '')
+          .replace(/\(\d+\)/, '')
+          .replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+          .replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+          .replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+          .replace(/Receipt:\s(.*?)(?:\s\||$)/, '')
+          .replace(/^[\s\|]+|[\s\|]+$/g, '')
+          .trim()
         
         const materialQty = `${r.name} ${r.quantity > 0 ? `(${r.quantity} ${r.unit})` : ''}`
         const project = r.projects?.name || '—'
@@ -152,7 +160,7 @@ export default function ReportsPage() {
       foot = [['', '', '', '', '', '', 'TOTAL', `Rs.${getTotal().toLocaleString()}`]]
     }
 
-    autoTable(doc, {
+    const options: any = {
       startY: 54,
       head: head,
       body: body,
@@ -163,7 +171,22 @@ export default function ReportsPage() {
       footStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontStyle: 'bold', fontSize: 8 },
       alternateRowStyles: { fillColor: PDF_COLORS.LIGHT },
       styles: { cellPadding: 2.5 }
-    })
+    }
+
+    if (reportType === 'materials') {
+      options.columnStyles = {
+        0: { cellWidth: 10, halign: 'center' }, // S.No
+        1: { cellWidth: 20 },                  // Date
+        2: { cellWidth: 32 },                  // Project
+        3: { cellWidth: 32 },                  // Material
+        4: { cellWidth: 21 },                  // Supplier
+        5: { cellWidth: 25 },                  // Cost
+        6: { cellWidth: 32 },                  // Remarks
+        7: { cellWidth: 18, halign: 'right' }  // Total
+      }
+    }
+
+    autoTable(doc, options)
     drawPremiumFooter(doc)
     
     const fileNameSuffix = reportType === 'labour' ? `${startDate}-to-${endDate}` : 'all-time'
@@ -269,13 +292,32 @@ export default function ReportsPage() {
                     const mMatch = notes.match(/Material Amount:\sRs\.([\d,.]+)/)
                     const tMatch = notes.match(/Transportation:\sRs\.([\d,.]+)/)
                     const hMatch = notes.match(/Hamali:\sRs\.([\d,.]+)/)
+                    const receiptMatch = notes.match(/Receipt:\s(.*?)(?:\s\||$)/)
                     
                     const supp = sMatch ? sMatch[1] : '—'
                     const matAmt = mMatch ? `Material Amount: ₹${mMatch[1]}` : ''
                     const tr = tMatch ? `Transport: ₹${tMatch[1]}` : ''
                     const ha = hMatch ? `Hamali: ₹${hMatch[1]}` : ''
                     
-                    const cleanNotes = notes.replace(/Supplier:\s(.*?)(?:\s\||$)/, '').replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/^[\s\|]+|[\s\|]+$/g, '').trim() || '—'
+                    const cleanNotes = notes
+                      .replace(/Supplier:\s(.*?)(?:\s\||$)/, '')
+                      .replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+                      .replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+                      .replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+                      .replace(/Receipt:\s(.*?)(?:\s\||$)/, '')
+                      .replace(/^[\s\|]+|[\s\|]+$/g, '')
+                      .trim()
+
+                    const receiptUrl = receiptMatch ? receiptMatch[1] : null
+                    let attachmentLabel = ''
+                    if (receiptUrl) {
+                      const lower = receiptUrl.toLowerCase()
+                      if (lower.endsWith('.pdf')) {
+                        attachmentLabel = '[1 pdf attached]'
+                      } else {
+                        attachmentLabel = '[1 image attached]'
+                      }
+                    }
 
                     return (
                       <tr key={i} style={{ borderBottom: '1px solid #1e2435' }} className="hover:bg-white/[0.02] transition-colors">
@@ -295,7 +337,17 @@ export default function ReportsPage() {
                             {!matAmt && !tr && !ha && '—'}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-xs" style={{ color: DIM }}>{cleanNotes}</td>
+                        <td className="px-4 py-3 text-xs" style={{ color: DIM }}>
+                          <div className="flex flex-col gap-1">
+                            {cleanNotes && <span>{cleanNotes}</span>}
+                            {attachmentLabel && (
+                              <span className="text-emerald-400 font-bold uppercase text-[9px] tracking-wide mt-0.5">
+                                📎 {attachmentLabel}
+                              </span>
+                            )}
+                            {!cleanNotes && !attachmentLabel && '—'}
+                          </div>
+                        </td>
                         <td className="px-6 py-3 text-right font-black text-sm" style={{ color: GOLD }}>₹{Number(r.total_amount || 0).toLocaleString()}</td>
                       </tr>
                     )

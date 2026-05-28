@@ -60,6 +60,8 @@ export default function AttendancePage() {
 
   // Daily grouped notes: one note per date applies to ALL workers
   const [dailyNotes, setDailyNotes] = useState<Record<string, string>>({})
+  const [activeNotePopup, setActiveNotePopup] = useState<{ date: string } | null>(null)
+  const [noteDraft, setNoteDraft] = useState<string>('')
 
   const supabase = createClient()
 
@@ -324,11 +326,17 @@ export default function AttendancePage() {
   // Save Logic
   const handleSave = async () => {
     if (!selectedProject) return
+    
+    const workerIds = Object.keys(gridData)
+    if (workerIds.length === 0) {
+      toast.error('Cannot save: Please add at least one worker to the grid to save attendance and daily logs.')
+      return
+    }
+
     setSaving(true)
     
     const startStr = format(currentWeekStart, 'yyyy-MM-dd')
     const endStr = format(endOfWeek(currentWeekStart, { weekStartsOn: 0 }), 'yyyy-MM-dd')
-    const workerIds = Object.keys(gridData)
 
     try {
       // Delete ALL existing attendance records for this project and week
@@ -376,17 +384,27 @@ export default function AttendancePage() {
   }
 
   // Calculations
-  const calcRowTotal = (row: WorkerRow) => {
+  const calcRowGross = (row: WorkerRow) => {
     let days = 0
     let ot = 0
-    let adv = 0
     Object.values(row.days).forEach(d => {
       if (d.status === 'P') days += 1
       else if (d.status === 'H') days += 0.5
       ot += d.overtime_amount || 0
+    })
+    return (days * row.custom_rate) + ot
+  }
+
+  const calcRowAdvance = (row: WorkerRow) => {
+    let adv = 0
+    Object.values(row.days).forEach(d => {
       adv += d.advance_amount || 0
     })
-    return (days * row.custom_rate) + ot - adv
+    return adv
+  }
+
+  const calcRowGiveable = (row: WorkerRow) => {
+    return calcRowGross(row) - calcRowAdvance(row)
   }
 
   // Weekly tasks summary is now date-based (grouped, not per worker)
@@ -408,7 +426,8 @@ export default function AttendancePage() {
     let lDays = 0 // Labour
     let pDays = 0 // Parakadu
     let ot = 0
-    let cost = 0
+    let cost = 0 // Net cost
+    let grossCost = 0 // Gross cost
 
     Object.values(gridData).forEach(row => {
       let activeInWeek = false
@@ -428,10 +447,11 @@ export default function AttendancePage() {
         ot += d.overtime_amount || 0
       })
       if (activeInWeek) wCount++
-      cost += calcRowTotal(row)
+      cost += calcRowGiveable(row)
+      grossCost += calcRowGross(row)
     })
 
-    return { wCount, mDays, lDays, pDays, ot, cost }
+    return { wCount, mDays, lDays, pDays, ot, cost, grossCost }
   }, [gridData])
 
   // UI Styles
@@ -441,18 +461,16 @@ export default function AttendancePage() {
   return (
     <div className="space-y-6 pb-20">
       {/* Top Bar Controller */}
-      <div style={PANEL} className="p-4 flex flex-col xl:flex-row gap-4 items-center justify-between shadow-2xl">
-        <div className="flex flex-col sm:flex-row gap-4 items-center w-full xl:w-auto">
-          <div className="flex items-center gap-2">
-            <select 
-              value={selectedProject} 
-              onChange={e => setSelectedProject(e.target.value)}
-              className="styled-select h-11 min-w-[200px]"
-            >
-              <option value="" disabled>Select Project...</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
+      <div style={PANEL} className="p-4 flex flex-col xl:flex-row gap-4 items-start xl:items-center justify-between shadow-2xl">
+        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center w-full xl:w-auto">
+          <select 
+            value={selectedProject} 
+            onChange={e => setSelectedProject(e.target.value)}
+            className="styled-select h-11 w-full sm:w-auto sm:min-w-[200px]"
+          >
+            <option value="" disabled>Select Project...</option>
+            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
 
           <div className="flex items-center gap-2 bg-[#0d1018] rounded-xl border border-[#1e2435] p-1 h-11">
             <button onClick={() => setCurrentWeekStart(subWeeks(currentWeekStart, 1))} className="p-2 hover:bg-white/5 rounded-lg text-zinc-400 transition-colors">
@@ -467,7 +485,7 @@ export default function AttendancePage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0 hide-scrollbar">
+        <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
           <button onClick={() => setShowAddWorker(true)} className="whitespace-nowrap h-11 px-4 rounded-xl text-xs font-black uppercase bg-[#1a1f2e] text-white border border-[#1e2435] flex items-center gap-2 hover:bg-[#23293b] transition-colors">
             <Plus size={16} /> Add Worker
           </button>
@@ -478,12 +496,13 @@ export default function AttendancePage() {
       </div>
 
       {/* Week Summary Panel */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[
           { label: 'Active Workers', value: totals.wCount },
           { label: 'Man-Days (M,L,P)', value: `M-${totals.mDays}, L-${totals.lDays}, P-${totals.pDays}` },
           { label: 'Total Overtime', value: `₹${totals.ot.toLocaleString()}` },
-          { label: 'Week Labour Cost', value: `₹${totals.cost.toLocaleString()}` }
+          { label: 'Week Labour Cost (Gross)', value: `₹${totals.grossCost.toLocaleString()}` },
+          { label: 'Week Net Payable (Giveable)', value: `₹${totals.cost.toLocaleString()}` }
         ].map((stat, i) => (
           <div key={i} style={PANEL} className="p-4 flex flex-col justify-center shadow-lg">
             <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{stat.label}</p>
@@ -521,7 +540,9 @@ export default function AttendancePage() {
                   </th>
                 ))}
                 <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-right min-w-[100px]">Custom Rate</th>
-                <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-right min-w-[100px]">Total (₹)</th>
+                <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-right min-w-[110px]">Grand Total (₹)</th>
+                <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-right min-w-[90px]">Advance (₹)</th>
+                <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-right min-w-[110px]">Giveable (₹)</th>
               </tr>
             </thead>
             <tbody>
@@ -595,8 +616,14 @@ export default function AttendancePage() {
                       className="w-20 h-9 text-right bg-[#0d1018] border border-[#1e2435] rounded-lg px-2 text-sm font-bold text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
                     />
                   </td>
+                  <td className="py-3 px-4 text-right text-sm font-black text-blue-400 whitespace-nowrap">
+                    ₹{Math.round(calcRowGross(row)).toLocaleString()}
+                  </td>
+                  <td className="py-3 px-4 text-right text-sm font-black text-red-500 whitespace-nowrap">
+                    {calcRowAdvance(row) > 0 ? `₹${Math.round(calcRowAdvance(row)).toLocaleString()}` : '—'}
+                  </td>
                   <td className="py-3 px-4 text-right text-sm font-black text-emerald-400 whitespace-nowrap">
-                    ₹{Math.round(calcRowTotal(row)).toLocaleString()}
+                    ₹{Math.round(calcRowGiveable(row)).toLocaleString()}
                   </td>
                 </tr>
               ))}
@@ -614,19 +641,27 @@ export default function AttendancePage() {
                   return (
                     <td key={dateStr} className="py-2 px-1 text-center">
                       <div className="flex flex-col items-center gap-1 mx-auto" style={{ width: '44px' }}>
-                        <input
-                          type="text"
-                          value={dailyNotes[dateStr] || ''}
-                          onChange={e => setDailyNotes(prev => ({ ...prev, [dateStr]: e.target.value }))}
-                          title={dailyNotes[dateStr] || 'Enter work done'}
-                          placeholder="✎"
-                          className="w-11 h-11 rounded-xl text-center text-[9px] font-semibold outline-none transition-all"
-                          style={{
-                            backgroundColor: hasNote ? 'rgba(59,130,246,0.08)' : '#0d1018',
-                            border: hasNote ? '2px solid rgba(59,130,246,0.4)' : '1px solid #1e3a5f',
-                            color: '#93c5fd'
+                        <button
+                          onClick={() => {
+                            setNoteDraft(dailyNotes[dateStr] || '')
+                            setActiveNotePopup({ date: dateStr })
                           }}
-                        />
+                          title={dailyNotes[dateStr] || "Click to add work log"}
+                          className={cn(
+                            "w-11 h-11 rounded-xl flex flex-col items-center justify-center cursor-pointer select-none transition-all border-2 relative overflow-hidden group/note",
+                            hasNote 
+                              ? "bg-blue-500/10 border-blue-500/40 text-blue-300 hover:border-blue-400 hover:bg-blue-500/20 shadow-[0_0_8px_rgba(59,130,246,0.15)]" 
+                              : "bg-[#0d1018] border-[#1e2435] border-dashed text-zinc-500 hover:border-zinc-500 hover:bg-[#1a1f2e]"
+                          )}
+                        >
+                          {hasNote ? (
+                            <span className="text-[9px] font-bold tracking-tight px-1 truncate w-full text-center">
+                              {dailyNotes[dateStr]}
+                            </span>
+                          ) : (
+                            <span className="text-xs font-black text-zinc-600 group-hover/note:text-zinc-400 transition-colors">✎</span>
+                          )}
+                        </button>
                         {hasNote && (
                           <button
                             onClick={() => setDailyNotes(prev => ({ ...prev, [dateStr]: '' }))}
@@ -640,9 +675,9 @@ export default function AttendancePage() {
                     </td>
                   )
                 })}
-                <td colSpan={2} className="py-3 px-4 text-left text-[10px] text-zinc-500 italic">
+                <td colSpan={4} className="py-3 px-4 text-left text-[10px] text-zinc-500 italic">
                   {getWeeklyTasksSummary() ? (
-                    <span className="text-blue-400/70 truncate block max-w-[180px]" title={getWeeklyTasksSummary()}>{getWeeklyTasksSummary()}</span>
+                    <span className="text-blue-400/70 block whitespace-normal" title={getWeeklyTasksSummary()}>{getWeeklyTasksSummary()}</span>
                   ) : 'Enter daily tasks above'}
                 </td>
               </tr>
@@ -673,14 +708,23 @@ export default function AttendancePage() {
                         </button>
                       )}
                     </div>
-                    <input
-                      type="text"
-                      value={dailyNotes[dateStr] || ''}
-                      onChange={e => setDailyNotes(prev => ({ ...prev, [dateStr]: e.target.value }))}
-                      placeholder="What work was done?"
-                      className="w-full h-8 px-2 rounded-lg text-[10px] outline-none"
-                      style={{ backgroundColor: '#0d1018', border: '1px solid #1e3a5f', color: '#93c5fd' }}
-                    />
+                    <button
+                      onClick={() => {
+                        setNoteDraft(dailyNotes[dateStr] || '')
+                        setActiveNotePopup({ date: dateStr })
+                      }}
+                      className={cn(
+                        "w-full h-9 px-3 rounded-xl text-[10px] font-semibold text-left transition-all border flex items-center justify-between outline-none",
+                        hasNote 
+                          ? "bg-blue-500/10 border-blue-500/30 text-blue-300 shadow-[0_0_6px_rgba(59,130,246,0.1)]" 
+                          : "bg-[#0d1018] border-[#1e2435] border-dashed text-zinc-500 hover:border-zinc-700"
+                      )}
+                    >
+                      <span className="truncate pr-2">
+                        {hasNote ? dailyNotes[dateStr] : "Add work log..."}
+                      </span>
+                      <span className="text-zinc-600 font-bold shrink-0">✎</span>
+                    </button>
                   </div>
                 )
               })}
@@ -736,10 +780,26 @@ export default function AttendancePage() {
                     </div>
                   )
                 })}
+              </div>
+
+              {/* Totals Row */}
+              <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-[#1e2435]/50">
                 <div className="flex flex-col items-center gap-1">
-                  <span className="text-[8px] font-black text-zinc-600 uppercase">Total</span>
-                  <div className="w-full h-10 rounded-lg bg-emerald-500/5 border border-emerald-500/20 flex items-center justify-center">
-                    <span className="text-[10px] font-black text-emerald-400">₹{Math.round(calcRowTotal(row))}</span>
+                  <span className="text-[8px] font-black text-zinc-500 uppercase">Grand Total</span>
+                  <div className="w-full h-9 rounded-lg bg-blue-500/5 border border-blue-500/20 flex items-center justify-center">
+                    <span className="text-[10px] font-black text-blue-400">₹{Math.round(calcRowGross(row)).toLocaleString()}</span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-[8px] font-black text-zinc-500 uppercase">Advance</span>
+                  <div className="w-full h-9 rounded-lg bg-red-500/5 border border-red-500/20 flex items-center justify-center">
+                    <span className="text-[10px] font-black text-red-400">₹{Math.round(calcRowAdvance(row)).toLocaleString()}</span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-[8px] font-black text-zinc-500 uppercase">Giveable</span>
+                  <div className="w-full h-9 rounded-lg bg-emerald-500/5 border border-emerald-500/20 flex items-center justify-center">
+                    <span className="text-[10px] font-black text-emerald-400">₹{Math.round(calcRowGiveable(row)).toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -903,6 +963,112 @@ export default function AttendancePage() {
             <div className="flex gap-2">
               <button onClick={() => setActivePopup(null)} className="flex-1 h-11 rounded-xl text-xs font-black uppercase bg-zinc-800 text-white hover:bg-zinc-700 transition-colors">Cancel</button>
               <button onClick={handleApplyPopup} className="flex-1 h-11 rounded-xl text-xs font-black uppercase bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20">Apply</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Daily Work Done Log Popup */}
+      {activeNotePopup && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setActiveNotePopup(null)}>
+          <div className="rounded-2xl p-6 w-full max-w-[380px] space-y-6 shadow-2xl animate-in zoom-in-95" style={PANEL} onClick={e => e.stopPropagation()}>
+            <div className="text-center space-y-1 border-b border-[#1e2435] pb-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Sri Sai Constructions</p>
+              <p className="text-sm font-bold text-white">Daily Work Done Log</p>
+              <p className="text-[10px] text-zinc-500 font-bold">{format(parseISO(activeNotePopup.date), 'EEEE, dd MMM yyyy')}</p>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Work Details</label>
+                <textarea 
+                  value={noteDraft}
+                  autoFocus
+                  onChange={e => setNoteDraft(e.target.value)}
+                  placeholder="Type today's work details (e.g. granite plastering, wall construction, watering, etc.)..."
+                  className="w-full h-24 p-3 bg-[#0d1018] border border-[#1e2435] rounded-xl text-xs font-semibold text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all resize-none"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      setDailyNotes(prev => ({ ...prev, [activeNotePopup.date]: noteDraft }));
+                      setActiveNotePopup(null);
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Quick suggestions row */}
+              <div className="space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-widest text-zinc-500 block">Quick Suggestions</label>
+                <div className="flex flex-wrap gap-1.5 max-h-[100px] overflow-y-auto pr-1">
+                  {[
+                    "granite",
+                    "lental",
+                    "wall",
+                    "water",
+                    "sanna mal",
+                    "doddu ma",
+                    "sand filter"
+                  ].map(tag => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => {
+                        const current = noteDraft.trim();
+                        if (current) {
+                          if (current.toLowerCase().includes(tag.toLowerCase())) return;
+                          setNoteDraft(current + ", " + tag);
+                        } else {
+                          setNoteDraft(tag);
+                        }
+                      }}
+                      className="px-2 py-1 rounded-lg bg-zinc-800/40 border border-zinc-700/30 text-[9px] font-black text-zinc-400 uppercase tracking-wider hover:bg-blue-500/10 hover:border-blue-500/30 hover:text-blue-400 transition-all"
+                    >
+                      + {tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Empty grid warning warning */}
+              {Object.keys(gridData).length === 0 && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2.5">
+                  <span className="text-amber-500 text-sm shrink-0">⚠️</span>
+                  <p className="text-[9px] font-semibold text-amber-300/80 leading-relaxed">
+                    No workers are in the grid. Please add at least one worker first so your daily work log can be saved to Supabase.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <button 
+                type="button"
+                onClick={() => {
+                  setNoteDraft('');
+                }} 
+                className="px-3 h-11 rounded-xl text-xs font-black uppercase bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/25 transition-colors"
+                title="Clear draft text"
+              >
+                Clear
+              </button>
+              <button 
+                type="button"
+                onClick={() => setActiveNotePopup(null)} 
+                className="flex-1 h-11 rounded-xl text-xs font-black uppercase bg-zinc-800 text-white hover:bg-zinc-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  setDailyNotes(prev => ({ ...prev, [activeNotePopup.date]: noteDraft }));
+                  setActiveNotePopup(null);
+                }} 
+                className="flex-1 h-11 rounded-xl text-xs font-black uppercase bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20"
+              >
+                Apply
+              </button>
             </div>
           </div>
         </div>
