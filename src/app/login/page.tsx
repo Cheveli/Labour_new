@@ -93,8 +93,10 @@ export default function LoginPage() {
               <HardHat className="h-5 w-5 text-blue-400" />
             </div>
             <div>
-              <p className="text-lg font-black tracking-wide">LABOUR</p>
-              <p className="text-[10px] uppercase tracking-[0.2em] text-blue-300/70">Management System</p>
+              <p className="text-lg font-black tracking-wide">Nirmana</p>
+              <p className="text-[10px] uppercase tracking-[0.2em] text-blue-300/70">Site Management Hub
+
+              </p>
             </div>
           </div>
 
