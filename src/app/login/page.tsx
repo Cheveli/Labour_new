@@ -1,12 +1,15 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
+
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { signInWithPasskey } from '@/lib/passkey-helpers'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
-import { Loader2, HardHat, ShieldCheck } from 'lucide-react'
+import { Loader2, HardHat, ShieldCheck, Fingerprint } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 export default function LoginPage() {
@@ -15,6 +18,21 @@ export default function LoginPage() {
   const [step, setStep] = useState<'email' | 'otp'>('email')
   const [loading, setLoading] = useState(false)
   const supabase = createClient()
+
+  const handleFingerprintLogin = async () => {
+    setLoading(true)
+    try {
+      await signInWithPasskey(supabase)
+
+      toast.success('Biometric verification successful!')
+      window.location.href = '/'
+    } catch (error: any) {
+      console.error(error)
+      toast.error(error.message || 'Biometric authentication failed. Ensure your fingerprint is registered.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -126,31 +144,52 @@ export default function LoginPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {step === 'email' ? (
-                <form onSubmit={handleSendOTP} className="space-y-4">
-                  <Input
-                    type="email"
-                    placeholder="admin@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="h-12 bg-zinc-900 border-zinc-800 text-white"
-                  />
+               {step === 'email' ? (
+                <div className="space-y-4">
+                  <form onSubmit={handleSendOTP} className="space-y-4">
+                    <Input
+                      type="email"
+                      placeholder="admin@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      className="h-12 bg-zinc-900 border-zinc-800 text-white"
+                    />
+                    <Button
+                      type="submit"
+                      className="w-full h-12 text-base font-black bg-blue-500 hover:bg-blue-600 text-zinc-900 cursor-pointer"
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                          Sending OTP...
+                        </>
+                      ) : (
+                        'Send OTP'
+                      )}
+                    </Button>
+                  </form>
+
+                  <div className="relative my-4 flex items-center justify-center">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-zinc-800"></div>
+                    </div>
+                    <div className="relative flex justify-center text-[10px] uppercase tracking-wider">
+                      <span className="bg-zinc-950 px-2 text-zinc-500 font-bold">Or use biometrics</span>
+                    </div>
+                  </div>
+
                   <Button
-                    type="submit"
-                    className="w-full h-12 text-base font-black bg-blue-500 hover:bg-blue-600 text-zinc-900"
+                    type="button"
+                    onClick={handleFingerprintLogin}
+                    className="w-full h-12 text-xs font-black bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-blue-400 hover:text-blue-300 flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider"
                     disabled={loading}
                   >
-                    {loading ? (
-                      <>
-                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                        Sending OTP...
-                      </>
-                    ) : (
-                      'Send OTP'
-                    )}
+                    <Fingerprint className="h-4 w-4 text-blue-400 animate-pulse" />
+                    Login with Fingerprint
                   </Button>
-                </form>
+                </div>
               ) : (
                 <form onSubmit={handleVerifyOTP} className="space-y-4">
                   <Input

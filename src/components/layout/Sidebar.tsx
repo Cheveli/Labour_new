@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 'use client'
+
 
 import React, { useState } from 'react'
 import Link from 'next/link'
@@ -21,9 +23,16 @@ import {
   Calculator,
   BarChart3,
   Phone,
+  Fingerprint,
+  Trash2,
+  Loader2,
+  ShieldCheck
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { registerPasskey } from '@/lib/passkey-helpers'
 import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useEffect } from 'react'
 
 const menuItems = [
   { label: 'Overview', href: '/', icon: LayoutDashboard },
@@ -45,6 +54,77 @@ export default function Sidebar() {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
   const supabase = createClient()
+
+  // Passkey Biometrics states
+  const [showBiometricsModal, setShowBiometricsModal] = useState(false)
+  const [passkeys, setPasskeys] = useState<any[]>([])
+  const [loadingPasskeys, setLoadingPasskeys] = useState(false)
+  const [registeringPasskey, setRegisteringPasskey] = useState(false)
+  const [friendlyName, setFriendlyName] = useState('')
+
+  const fetchPasskeys = async () => {
+    setLoadingPasskeys(true)
+    try {
+      const { data, error } = await supabase.auth.passkey.list()
+      if (error) throw error
+      setPasskeys(data || [])
+    } catch (err: any) {
+      console.error("Error listing passkeys:", err)
+    } finally {
+      setLoadingPasskeys(false)
+    }
+  }
+
+  const handleRegisterPasskey = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!friendlyName.trim()) {
+      toast.error("Please enter a name for this fingerprint.")
+      return
+    }
+    if (passkeys.length >= 2) {
+      toast.error("Maximum limit of 2 fingerprints reached. Delete one first.")
+      return
+    }
+
+    setRegisteringPasskey(true)
+    try {
+      await registerPasskey(supabase, friendlyName.trim())
+
+      toast.success("Fingerprint registered successfully!")
+      setFriendlyName('')
+      fetchPasskeys()
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err.message || "Failed to register fingerprint. Ensure your device biometrics are set up.")
+    } finally {
+      setRegisteringPasskey(false)
+    }
+  }
+
+  const handleDeletePasskey = async (id: string) => {
+    try {
+      const { error } = await supabase.auth.passkey.delete({
+        passkeyId: id
+      })
+      if (error) throw error
+
+      toast.success("Fingerprint deleted successfully.")
+      fetchPasskeys()
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err.message || "Failed to delete fingerprint.")
+    }
+  }
+
+  useEffect(() => {
+    if (showBiometricsModal) {
+      const timer = setTimeout(() => {
+        fetchPasskeys()
+      }, 0)
+      return () => clearTimeout(timer)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showBiometricsModal])
 
   const handleLogout = async () => {
     // 1. Supabase SignOut
@@ -167,9 +247,20 @@ export default function Sidebar() {
               </div>
             </div>
             <button
+              onClick={() => {
+                setIsOpen(false)
+                setShowBiometricsModal(true)
+              }}
+              suppressHydrationWarning
+              className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-xs font-black uppercase tracking-widest text-zinc-400 hover:text-white transition-colors mb-2 border border-zinc-800 hover:bg-white/5 cursor-pointer"
+            >
+              <Fingerprint size={14} className="text-blue-400" />
+              Manage Fingerprints
+            </button>
+            <button
               onClick={handleLogout}
               suppressHydrationWarning
-              className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white transition-colors"
+              className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-xs font-black uppercase tracking-widest text-zinc-400 hover:text-white transition-colors cursor-pointer"
               style={{ background: '#1a1f2e' }}
             >
               <LogOut size={14} />
@@ -178,6 +269,111 @@ export default function Sidebar() {
           </div>
         </div>
       </div>
+
+      {/* Biometrics Management Dialog Modal */}
+      <Dialog open={showBiometricsModal} onOpenChange={setShowBiometricsModal}>
+        <DialogContent
+          style={{
+            backgroundColor: '#0d1018',
+            border: '1px solid #1e2435',
+            color: '#f0f0f0',
+            maxWidth: '480px',
+            borderRadius: '1.25rem'
+          }}
+          className="p-6 space-y-6"
+        >
+          <DialogHeader className="border-b border-[#1e2435] pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-blue-500/10 text-blue-400">
+                <Fingerprint className="w-4 h-4 animate-pulse" />
+              </div>
+              <div>
+                <DialogTitle className="text-white text-base font-black uppercase tracking-wide">Manage Fingerprints</DialogTitle>
+                <DialogDescription className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">
+                  Register up to 2 fingerprints for secure login
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* List of enrolled fingerprints */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Registered Fingerprints ({passkeys.length}/2)</p>
+              {loadingPasskeys ? (
+                <div className="flex items-center justify-center py-6 text-zinc-500 text-xs font-bold gap-2">
+                  <Loader2 className="animate-spin text-blue-500" size={16} /> Loading fingerprints...
+                </div>
+              ) : passkeys.length === 0 ? (
+                <div className="text-center py-6 border border-dashed border-[#1e2435] rounded-xl text-zinc-500 text-xs font-semibold">
+                  No fingerprints registered yet.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {passkeys.map((pk) => (
+                    <div key={pk.id} className="flex items-center justify-between p-3 rounded-xl bg-[#111520] border border-[#1e2435]">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-white truncate">{pk.friendly_name || 'Biometric Key'}</p>
+                          <p className="text-[9px] text-zinc-500 font-medium truncate">Added: {new Date(pk.created_at).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeletePasskey(pk.id)}
+                        className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors cursor-pointer shrink-0"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Registration Form */}
+            {passkeys.length < 2 ? (
+              <form onSubmit={handleRegisterPasskey} className="space-y-3 pt-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Add New Fingerprint</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. Father's Phone, Backup"
+                    value={friendlyName}
+                    onChange={(e) => setFriendlyName(e.target.value)}
+                    className="flex-1 h-10 px-3 bg-black/40 border border-[#1e2435] rounded-xl text-xs font-semibold text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500/50"
+                    disabled={registeringPasskey}
+                  />
+                  <button
+                    type="submit"
+                    className="h-10 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                    disabled={registeringPasskey || !friendlyName.trim()}
+                  >
+                    {registeringPasskey ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <>Add</>
+                    )}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/10 text-[10px] text-amber-500/80 font-bold uppercase tracking-wider text-center">
+                Maximum 2 fingerprints limit reached.
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-[#1e2435]">
+            <button
+              onClick={() => setShowBiometricsModal(false)}
+              className="w-full h-10 rounded-xl bg-[#1a1f2e] text-[#f0f0f0] border border-[#1e2435] text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+            >
+              Done
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
