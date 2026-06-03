@@ -13,7 +13,7 @@ export async function GET(req: Request) {
     if (!hfToken) {
       throw new Error('HF_API_TOKEN environment variable is not set')
     }
-    const hfModel = 'SYSPIN/Telugu_Male_TTS'
+    const hfModel = 'facebook/mms-tts-tel'
     const hfUrl = `https://api-inference.huggingface.co/models/${hfModel}`
 
     console.log('[TTS API] Calling Hugging Face TTS model:', hfModel)
