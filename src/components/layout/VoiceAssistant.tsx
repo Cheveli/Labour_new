@@ -83,6 +83,12 @@ export default function VoiceAssistant() {
       }
 
       recognitionRef.current = rec
+
+      return () => {
+        try {
+          rec.abort()
+        } catch (e) {}
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -172,8 +178,11 @@ export default function VoiceAssistant() {
     }
 
     if (status === 'listening') {
-      recognitionRef.current?.stop()
-      setStatus('idle')
+      setStatus('thinking')
+      try {
+        recognitionRef.current?.stop()
+      } catch (e) {}
+      handleProcessVoice()
     } else {
       // Cancel speech synthesis if AI was talking
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -262,6 +271,9 @@ export default function VoiceAssistant() {
 
       // Update state slots
       setCurrentState(data.slots)
+      if (data.slots?.project_id) {
+        localStorage.setItem('ssc_active_project_id', data.slots.project_id)
+      }
 
       // Add AI reply to UI log
       setMessages(prev => [...prev, { sender: 'ai', text: data.replyText }])

@@ -122,6 +122,21 @@ export default function MaterialsPage() {
     fetchData()
   }, [selectedProjectId])
 
+  useEffect(() => {
+    const handleProjectChanged = () => {
+      const activeProjId = localStorage.getItem('ssc_active_project_id')
+      if (activeProjId && activeProjId !== selectedProjectId) {
+        setSelectedProjectId(activeProjId || '')
+      } else {
+        fetchData()
+      }
+    }
+    window.addEventListener('ssc_project_changed', handleProjectChanged)
+    return () => {
+      window.removeEventListener('ssc_project_changed', handleProjectChanged)
+    }
+  }, [selectedProjectId])
+
   const handleDeleteMat = async (id: string) => {
     if (!confirm('Delete this material entry?')) return
     const { error } = await supabase.from('materials').delete().eq('id', id)

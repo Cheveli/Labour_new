@@ -105,6 +105,21 @@ export default function AttendancePage() {
     }
   }, [selectedProject, currentWeekStart])
 
+  useEffect(() => {
+    const handleProjectChanged = () => {
+      const activeProjId = localStorage.getItem('ssc_active_project_id')
+      if (activeProjId && activeProjId !== selectedProject) {
+        setSelectedProject(activeProjId || '')
+      } else if (selectedProject) {
+        loadWeekData(selectedProject, currentWeekStart)
+      }
+    }
+    window.addEventListener('ssc_project_changed', handleProjectChanged)
+    return () => {
+      window.removeEventListener('ssc_project_changed', handleProjectChanged)
+    }
+  }, [selectedProject, currentWeekStart])
+
   async function loadWeekData(projectId: string, weekStart: Date) {
     setLoading(true)
     const startStr = format(weekStart, 'yyyy-MM-dd')
