@@ -1,5 +1,6 @@
 import Sidebar from '@/components/layout/Sidebar'
 import ActiveProjectHeader from '@/components/active-project-header'
+import VoiceAssistant from '@/components/layout/VoiceAssistant'
 
 export default function DashboardLayout({
   children,
@@ -17,6 +18,7 @@ export default function DashboardLayout({
           </div>
         </div>
       </main>
+      <VoiceAssistant />
     </div>
   )
 }
