@@ -173,6 +173,7 @@ export default function VoiceAssistant() {
 
     if (status === 'listening') {
       recognitionRef.current?.stop()
+      setStatus('idle')
     } else {
       // Cancel speech synthesis if AI was talking
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -186,11 +187,20 @@ export default function VoiceAssistant() {
           console.error('[TTS] Error pausing audio player in toggleListening:', err)
         }
       }
+      setStatus('idle')
       try {
-        recognitionRef.current?.start()
-      } catch (err) {
-        console.error('Failed to start recognition:', err)
-      }
+        recognitionRef.current?.stop()
+      } catch (e) {}
+      
+      setTimeout(() => {
+        try {
+          recognitionRef.current?.start()
+        } catch (err) {
+          console.error('Failed to start recognition:', err)
+          toast.error('Microphone failed to start. Please try again.')
+          setStatus('idle')
+        }
+      }, 100)
     }
   }
 
@@ -206,6 +216,14 @@ export default function VoiceAssistant() {
     ])
     setTranscript('')
     setStatus('idle')
+    
+    // Explicitly stop the speech recognition to prevent background ghosting
+    try {
+      recognitionRef.current?.stop()
+    } catch (e) {
+      console.error('Error stopping recognition on reset:', e)
+    }
+    
     speakText(welcomeText)
   }
 
