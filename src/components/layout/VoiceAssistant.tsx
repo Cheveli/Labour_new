@@ -3,15 +3,146 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff, Volume2, Loader2, X, RefreshCw, Bot, User, HelpCircle } from 'lucide-react'
+import { Mic, MicOff, Volume2, Loader2, X, RefreshCw, Bot, User, HelpCircle, AlertCircle, CheckCircle } from 'lucide-react'
 import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
 
 interface Message {
   sender: 'user' | 'ai';
   text: string;
 }
 
+function PreviewCard({
+  slots,
+  onConfirm,
+  onCancel,
+  onRetry,
+  isSaving
+}: {
+  slots: any;
+  onConfirm: () => void;
+  onCancel: () => void;
+  onRetry: () => void;
+  isSaving: boolean;
+}) {
+  if (!slots || !slots.mode) return null
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mt-4 p-4 rounded-xl border border-blue-500/20 bg-blue-950/20 space-y-3 max-w-[85%] mr-auto shadow-lg"
+    >
+      <div className="flex items-center justify-between border-b border-[#1e2435] pb-2">
+        <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">
+          {slots.mode === 'material' && 'Material Preview'}
+          {slots.mode === 'attendance' && 'Attendance Preview'}
+          {slots.mode === 'expense' && 'Expense Preview'}
+          {slots.mode === 'payment' && 'Payment Preview'}
+          {slots.mode === 'worker' && 'Worker Preview'}
+        </span>
+        <span className="text-[9px] font-bold text-zinc-500">{slots.date || 'Today'}</span>
+      </div>
+
+      <div className="space-y-2 text-xs text-zinc-200">
+        {slots.mode === 'material' && slots.material && (
+          <div className="space-y-1">
+            <div><span className="text-zinc-500 font-bold uppercase text-[9px]">Material:</span> <span className="font-bold text-white">{slots.material.material_name}</span></div>
+            <div><span className="text-zinc-500 font-bold uppercase text-[9px]">Quantity:</span> <span className="font-bold text-white">{slots.material.quantity} {slots.material.unit || 'bags'}</span></div>
+            {slots.material.cost_per_unit > 0 && (
+              <>
+                <div><span className="text-zinc-500 font-bold uppercase text-[9px]">Rate:</span> <span className="font-bold text-white">₹{slots.material.cost_per_unit}</span></div>
+                <div className="text-sm font-black text-emerald-400">
+                  <span className="text-zinc-500 font-bold uppercase text-[9px]">Total:</span> ₹{(slots.material.quantity * slots.material.cost_per_unit).toLocaleString()}
+                </div>
+              </>
+            )}
+            {slots.material.supplier_name && <div><span className="text-zinc-500 font-bold uppercase text-[9px]">Supplier:</span> <span className="font-bold text-white">{slots.material.supplier_name}</span></div>}
+          </div>
+        )}
+
+        {slots.mode === 'attendance' && slots.attendance && (
+          <div className="space-y-2">
+            <span className="text-zinc-500 font-bold uppercase text-[9px] block">Workers Marked:</span>
+            <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+              {slots.attendance.records?.map((r: any, idx: number) => (
+                <div key={idx} className="flex justify-between items-center bg-[#0d1018] px-2.5 py-1.5 rounded-lg border border-[#1e2435]">
+                  <span className="font-bold text-zinc-200">{r.labour_name}</span>
+                  <span className={`px-2 py-0.5 rounded text-[8px] font-black tracking-wider ${
+                    r.status === 'P' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                    r.status === 'H' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                    'bg-red-500/10 text-red-400 border border-red-500/20'
+                  }`}>
+                    {r.status === 'P' ? 'PRESENT' : r.status === 'H' ? 'HALF DAY' : 'ABSENT'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {slots.mode === 'expense' && slots.expense && (
+          <div className="space-y-1">
+            <div><span className="text-zinc-500 font-bold uppercase text-[9px]">Person:</span> <span className="font-bold text-white">{slots.expense.person_name}</span></div>
+            <div><span className="text-zinc-500 font-bold uppercase text-[9px]">Purpose:</span> <span className="font-bold text-white">{slots.expense.purpose}</span></div>
+            <div className="text-sm font-black text-rose-400"><span className="text-zinc-500 font-bold uppercase text-[9px]">Amount:</span> ₹{slots.expense.amount}</div>
+          </div>
+        )}
+
+        {slots.mode === 'payment' && slots.payment && (
+          <div className="space-y-1">
+            <div><span className="text-zinc-500 font-bold uppercase text-[9px]">Worker:</span> <span className="font-bold text-white">{slots.payment.labour_name}</span></div>
+            <div><span className="text-zinc-500 font-bold uppercase text-[9px]">Type:</span> <span className="font-bold text-white">{slots.payment.payment_type || 'REGULAR'}</span></div>
+            <div className="text-sm font-black text-emerald-400"><span className="text-zinc-500 font-bold uppercase text-[9px]">Amount:</span> ₹{slots.payment.amount}</div>
+          </div>
+        )}
+
+        {slots.mode === 'worker' && slots.worker && (
+          <div className="space-y-1">
+            <div><span className="text-zinc-500 font-bold uppercase text-[9px]">Name:</span> <span className="font-bold text-white">{slots.worker.name}</span></div>
+            <div><span className="text-zinc-500 font-bold uppercase text-[9px]">Role:</span> <span className="font-bold text-white">{slots.worker.type || 'Labour (Unskilled)'}</span></div>
+            <div><span className="text-zinc-500 font-bold uppercase text-[9px]">Daily Rate:</span> <span className="font-bold text-white">₹{slots.worker.daily_rate}</span></div>
+            {slots.worker.phone && <div><span className="text-zinc-500 font-bold uppercase text-[9px]">Phone:</span> <span className="font-bold text-white">{slots.worker.phone}</span></div>}
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-2 pt-2 border-t border-[#1e2435]">
+        {slots.status === 'failed' ? (
+          <button
+            onClick={onRetry}
+            disabled={isSaving}
+            className="flex-1 h-9 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5"
+          >
+            <RefreshCw size={12} className={isSaving ? 'animate-spin' : ''} />
+            Retry Save (మళ్ళీ ప్రయత్నించు)
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={onCancel}
+              disabled={isSaving}
+              className="flex-1 h-9 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
+            >
+              Cancel (రద్దు)
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={isSaving}
+              className="flex-1 h-9 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20"
+            >
+              {isSaving ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+              Confirm (సేవ్ చెయ్)
+            </button>
+          </>
+        )}
+      </div>
+    </motion.div>
+  )
+}
+
 export default function VoiceAssistant() {
+  const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking' | 'unsupported'>('idle')
   const welcomeText = 'నమస్కారం సోమయ్య గారు! చెప్పండి ఏం చేయాలి? మెటీరియల్ యాడ్ చేయాలా లేదా అటెండెన్స్ వేయాలా?'
@@ -22,7 +153,8 @@ export default function VoiceAssistant() {
   const [currentState, setCurrentState] = useState<any>({
     mode: null,
     project_id: null,
-    date: null
+    date: null,
+    status: 'collecting'
   })
 
   // Refs to prevent stale closures in speech recognition event handlers
@@ -37,8 +169,11 @@ export default function VoiceAssistant() {
 
   const recognitionRef = useRef<any>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
-  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null)
+  
+  // Microphone lifecycle flags and silence timeouts
+  const isListeningRef = useRef(false)
+  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Initialize Speech Recognition once on mount
   useEffect(() => {
@@ -51,7 +186,7 @@ export default function VoiceAssistant() {
       }
 
       const rec = new SpeechRecognition()
-      rec.continuous = false
+      rec.continuous = true // Keep listening across pauses
       rec.interimResults = true
       rec.lang = 'te-IN' // Primary recognition language is Telugu
 
@@ -61,24 +196,63 @@ export default function VoiceAssistant() {
       }
 
       rec.onresult = (event: any) => {
-        const currentResult = event.results[event.results.length - 1]
-        const text = currentResult[0].transcript
-        setTranscript(text)
+        let interimTranscript = ''
+        let finalTranscript = ''
+        
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const transcriptText = event.results[i][0].transcript
+          if (event.results[i].isFinal) {
+            finalTranscript += transcriptText
+          } else {
+            interimTranscript += transcriptText
+          }
+        }
+
+        const accumulatedText = (finalTranscript || interimTranscript).trim()
+        if (accumulatedText) {
+          setTranscript(accumulatedText)
+        }
+
+        // Reset silence timeout of 1.5 seconds of silence
+        if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current)
+        silenceTimeoutRef.current = setTimeout(() => {
+          if (isListeningRef.current) {
+            console.log('[Mic] 1.5s silence detected. Auto-stopping and processing voice.')
+            stopListening()
+          }
+        }, 1500)
       }
 
       rec.onerror = (event: any) => {
         console.error('Speech recognition error:', event.error)
-        if (event.error !== 'no-speech') {
-          toast.error(`Recognition error: ${event.error}`)
+        
+        // Handle permissions or persistent errors
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          toast.error(`Microphone error: ${event.error}. Please check permissions.`)
           setStatus('idle')
+          isListeningRef.current = false
         }
       }
 
       rec.onend = () => {
-        // Use statusRef.current inside event handler to avoid stale state closure
-        if (statusRef.current === 'listening') {
-          setStatus('thinking')
-          handleProcessVoice()
+        console.log('[Mic] onend triggered')
+        // Auto-recover/restart if status was supposed to be listening and we got cut off unexpectedly
+        if (isListeningRef.current) {
+          if (transcriptRef.current.trim()) {
+            stopListening()
+          } else {
+            console.log('[Mic] Cut off without speech. Reconnecting...')
+            try {
+              rec.start()
+            } catch (e) {
+              console.error('[Mic] Failed to restart:', e)
+            }
+          }
+        } else {
+          // If stopped intentionally and state is thinking, process speech
+          if (statusRef.current === 'thinking') {
+            handleProcessVoice()
+          }
         }
       }
 
@@ -86,6 +260,7 @@ export default function VoiceAssistant() {
 
       return () => {
         try {
+          if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current)
           rec.abort()
         } catch (e) {}
       }
@@ -96,7 +271,7 @@ export default function VoiceAssistant() {
   // Scroll to bottom of chat log
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, currentState])
 
   // Pre-load synthesis voices on mount
   useEffect(() => {
@@ -121,12 +296,10 @@ export default function VoiceAssistant() {
       return
     }
 
-    // Cancel any active native speech synthesis if running
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel()
     }
 
-    // Stop the persistent HTML5 audio player if it was playing
     if (audioPlayerRef.current) {
       try {
         audioPlayerRef.current.pause()
@@ -136,11 +309,33 @@ export default function VoiceAssistant() {
       }
     }
     
-    // Always use the server-side Hugging Face API proxy endpoint to play the custom male voice
+    const cleanText = text.replace(/Preview|Date:|Workers:|Status:|Material:|Quantity:|Rate:|Total:|Expense Type:|Amount:|Worker:|Type:|Name:|Role:|Daily Rate:|Phone:|Save:|Confirm:|Confirm cheyyala\?/gi, '').trim()
+
+    // Native Speech Synthesis Fallback function
+    const speakWithNativeFallback = (textToSpeak: string) => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        console.log('[TTS] Falling back to browser native speech synthesis...')
+        setStatus('speaking')
+        const utterance = new SpeechSynthesisUtterance(textToSpeak)
+        utterance.lang = 'te-IN'
+        utterance.onend = () => {
+          console.log('[TTS] Native speech synthesis completed')
+          setStatus('idle')
+        }
+        utterance.onerror = (err) => {
+          console.error('[TTS] Native speech synthesis error:', err)
+          setStatus('idle')
+        }
+        window.speechSynthesis.speak(utterance)
+      } else {
+        setStatus('idle')
+      }
+    }
+
     console.log('[TTS] Requesting voice audio from Hugging Face proxy...')
     if (audioPlayerRef.current) {
       setStatus('speaking')
-      const audioUrl = `/api/tts?text=${encodeURIComponent(text)}&t=${Date.now()}`
+      const audioUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&t=${Date.now()}`
       
       audioPlayerRef.current.src = audioUrl
       audioPlayerRef.current.defaultPlaybackRate = 1.25
@@ -152,73 +347,93 @@ export default function VoiceAssistant() {
       }
       
       audioPlayerRef.current.onerror = (e) => {
-        console.error('[TTS] Speech audio error:', e)
-        setStatus('idle')
+        const mediaError = audioPlayerRef.current?.error
+        console.error('[TTS] Speech audio error:', e, 'Details:', mediaError ? { code: mediaError.code, message: mediaError.message } : 'none')
+        console.log('[TTS] Trying native TTS fallback...')
+        speakWithNativeFallback(cleanText)
       }
       
       audioPlayerRef.current.play().catch(err => {
         console.error('[TTS] Audio play failed:', err)
-        setStatus('idle')
+        console.log('[TTS] Trying native TTS fallback...')
+        speakWithNativeFallback(cleanText)
       })
     }
   }
 
-  // Trigger microphone toggle
-  const toggleListening = () => {
+  const startListening = () => {
     if (status === 'unsupported') {
-      toast.error('Voice recognition is not supported in this browser. Please use Google Chrome.')
+      toast.error('Voice recognition is not supported in this browser.')
       return
     }
 
-    // Unlock speech synthesis context on user gesture
+    // Cancel speech synthesis if active
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
+    if (audioPlayerRef.current) {
+      try {
+        audioPlayerRef.current.pause()
+        audioPlayerRef.current.src = ''
+      } catch (err) {
+        console.error('[TTS] Error pausing audio player in startListening:', err)
+      }
+    }
+
+    // Unlock context
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       const unlockUtterance = new SpeechSynthesisUtterance('')
       unlockUtterance.volume = 0
       window.speechSynthesis.speak(unlockUtterance)
     }
 
+    setTranscript('')
+    setStatus('listening')
+    isListeningRef.current = true
+
+    try {
+      recognitionRef.current?.start()
+    } catch (err) {
+      console.error('[Mic] Start failed:', err)
+    }
+  }
+
+  const stopListening = () => {
+    isListeningRef.current = false
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current)
+      silenceTimeoutRef.current = null
+    }
+
+    setStatus('thinking')
+    try {
+      recognitionRef.current?.stop()
+    } catch (e) {
+      console.error('[Mic] Stop failed:', e)
+    }
+  }
+
+  const toggleListening = () => {
     if (status === 'listening') {
-      setStatus('thinking')
-      try {
-        recognitionRef.current?.stop()
-      } catch (e) {}
-      handleProcessVoice()
+      stopListening()
     } else {
-      // Cancel speech synthesis if AI was talking
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel()
-      }
-      if (audioPlayerRef.current) {
-        try {
-          audioPlayerRef.current.pause()
-          audioPlayerRef.current.src = ''
-        } catch (err) {
-          console.error('[TTS] Error pausing audio player in toggleListening:', err)
-        }
-      }
-      setStatus('idle')
-      try {
-        recognitionRef.current?.stop()
-      } catch (e) {}
-      
-      setTimeout(() => {
-        try {
-          recognitionRef.current?.start()
-        } catch (err) {
-          console.error('Failed to start recognition:', err)
-          toast.error('Microphone failed to start. Please try again.')
-          setStatus('idle')
-        }
-      }, 100)
+      startListening()
     }
   }
 
   // Reset conversation session state
   const resetSession = () => {
+    isListeningRef.current = false
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current)
+      silenceTimeoutRef.current = null
+    }
+
     setCurrentState({
       mode: null,
       project_id: null,
-      date: null
+      date: null,
+      status: 'collecting'
     })
     setMessages([
       { sender: 'ai', text: welcomeText }
@@ -226,7 +441,6 @@ export default function VoiceAssistant() {
     setTranscript('')
     setStatus('idle')
     
-    // Explicitly stop the speech recognition to prevent background ghosting
     try {
       recognitionRef.current?.stop()
     } catch (e) {
@@ -236,9 +450,101 @@ export default function VoiceAssistant() {
     speakText(welcomeText)
   }
 
+  // Confirm and save via API (Manual click action)
+  const handleConfirmSave = async () => {
+    setStatus('thinking')
+    try {
+      const res = await fetch('/api/voice-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userSpeechText: 'confirm_save_action',
+          currentState
+        })
+      })
+
+      if (!res.ok) throw new Error('Failed to confirm save')
+      const data = await res.json()
+
+      if (data.dbError) {
+        toast.error('Save failed. Try again.')
+        setCurrentState((prev: any) => ({ ...prev, status: 'failed' }))
+        setMessages((prev: Message[]) => [...prev, { sender: 'ai', text: 'సేవ్ చేయడం ఫెయిల్ అయింది. దయచేసి మళ్ళీ ట్రై చేయండి.' }])
+        speakText('సేవ్ చేయడం ఫెయిల్ అయింది. దయచేసి మళ్ళీ ట్రై చేయండి.')
+      } else {
+        toast.success('Successfully saved!')
+        setMessages((prev: Message[]) => [...prev, { sender: 'ai', text: data.replyText }])
+        speakText(data.replyText)
+        setCurrentState({
+          mode: null,
+          project_id: null,
+          date: null,
+          status: 'completed'
+        })
+        window.dispatchEvent(new Event('ssc_project_changed'))
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Network error. Failed to save.')
+      setCurrentState((prev: any) => ({ ...prev, status: 'failed' }))
+    } finally {
+      setStatus('idle')
+    }
+  }
+
+  // Cancel pending log
+  const handleCancel = () => {
+    setCurrentState({
+      mode: null,
+      project_id: null,
+      date: null,
+      status: 'collecting'
+    })
+    setMessages((prev: Message[]) => [...prev, { sender: 'ai', text: 'సేవ్ చేయడం రద్దు చేసినా భాయ్. ఇంకేం చేయాలి?' }])
+    speakText('సేవ్ చేయడం రద్దు చేసినా భాయ్. ఇంకేం చేయాలి?')
+  }
+
+  // Retry failed log
+  const handleRetrySave = async () => {
+    setStatus('thinking')
+    try {
+      const res = await fetch('/api/voice-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userSpeechText: 'retry_save',
+          currentState
+        })
+      })
+
+      if (!res.ok) throw new Error('Retry failed')
+      const data = await res.json()
+
+      if (data.dbError) {
+        toast.error('Retry failed. Try again.')
+        setCurrentState((prev: any) => ({ ...prev, status: 'failed' }))
+      } else {
+        toast.success('Successfully saved!')
+        setMessages((prev: Message[]) => [...prev, { sender: 'ai', text: data.replyText }])
+        speakText(data.replyText)
+        setCurrentState({
+          mode: null,
+          project_id: null,
+          date: null,
+          status: 'completed'
+        })
+        window.dispatchEvent(new Event('ssc_project_changed'))
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Network error during retry.')
+    } finally {
+      setStatus('idle')
+    }
+  }
+
   // Send captured speech to the Next.js API Route for processing
   const handleProcessVoice = async () => {
-    // Read from transcriptRef.current to avoid stale state closure
     const textToSend = transcriptRef.current.trim()
     if (!textToSend) {
       setStatus('idle')
@@ -255,7 +561,7 @@ export default function VoiceAssistant() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userSpeechText: textToSend,
-          currentState: currentStateRef.current // Read from currentStateRef.current to avoid stale state closure
+          currentState: currentStateRef.current
         })
       })
 
@@ -281,25 +587,25 @@ export default function VoiceAssistant() {
       // Speak reply out loud
       speakText(data.replyText)
 
-      // If complete, trigger updates to other dashboard pages (like materials history / attendance tables)
-      if (data.isComplete) {
-        toast.success('Successfully logged into the database!')
-        // Dispatch global events to reload page tables in real-time
-        window.dispatchEvent(new Event('ssc_project_changed'))
-        // Reset slots after successful log
+      // Handle voice controlled redirect
+      if (data.redirectUrl) {
+        toast.success(`Redirecting to ${data.redirectUrl}`)
         setTimeout(() => {
-          setCurrentState({
-            mode: null,
-            project_id: null,
-            date: null
-          })
+          router.push(data.redirectUrl)
+          setIsOpen(false)
         }, 1500)
+      }
+
+      // If database write completed successfully
+      if (data.isComplete && data.slots?.status === 'completed') {
+        toast.success('Successfully logged into the database!')
+        window.dispatchEvent(new Event('ssc_project_changed'))
       }
 
     } catch (err: any) {
       console.error(err)
       toast.error('Failed to parse command. Please try again.')
-      setMessages(prev => [...prev, { sender: 'ai', text: 'క్షమించండి, మీ కమాండ్ ప్రాసెస్ చేయలేకపోయాను. దయచేసి మళ్ళీ చెప్పండి.' }])
+      setMessages((prev: Message[]) => [...prev, { sender: 'ai', text: 'క్షమించండి, మీ కమాండ్ ప్రాసెస్ చేయలేకపోయాను. దయచేసి మళ్ళీ చెప్పండి.' }])
       speakText('క్షమించండి, మీ కమాండ్ ప్రాసెస్ చేయలేకపోయాను. దయచేసి మళ్ళీ చెప్పండి.')
       setStatus('idle')
     }
@@ -314,7 +620,7 @@ export default function VoiceAssistant() {
           whileTap={{ scale: 0.9 }}
           onClick={() => {
             setIsOpen(true)
-            speakText(messages[0].text)
+            speakText(messages[messages.length - 1].text)
           }}
           className="w-14 h-14 rounded-full flex items-center justify-center text-white shadow-2xl hover:shadow-blue-500/30 transition-all cursor-pointer relative"
           style={{
@@ -364,7 +670,7 @@ export default function VoiceAssistant() {
                   </div>
                   <div>
                     <h3 className="text-white text-xs font-black uppercase tracking-wider">Nirmana Voice Assistant</h3>
-                    <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">Telugu Conversational AI</p>
+                    <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">Telangana Conversational AI</p>
                   </div>
                 </div>
 
@@ -404,11 +710,22 @@ export default function VoiceAssistant() {
                         ? 'bg-blue-600 text-white rounded-tr-none'
                         : 'bg-[#111520] border border-[#1e2435] text-zinc-100 rounded-tl-none'
                     }`}>
-                      <p className="leading-relaxed">{msg.text}</p>
+                      <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                     </div>
                   </div>
                 ))}
                 
+                {/* Visual Preview Card (Verbal confirmation backup) */}
+                {(currentState.status === 'confirming' || currentState.status === 'failed') && (
+                  <PreviewCard
+                    slots={currentState}
+                    onConfirm={handleConfirmSave}
+                    onCancel={handleCancel}
+                    onRetry={handleRetrySave}
+                    isSaving={status === 'thinking'}
+                  />
+                )}
+
                 {/* Interim Transcript display */}
                 {status === 'listening' && transcript && (
                   <div className="flex items-start gap-2.5 flex-row-reverse opacity-70">
@@ -444,13 +761,13 @@ export default function VoiceAssistant() {
                 <div className="text-center">
                   <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
                     {status === 'idle' && 'Tap to Speak (మాట్లాడటానికి నొక్కండి)'}
-                    {status === 'listening' && 'Listening... Speak now (వింటున్నాను... మాట్లాడండి)'}
+                    {status === 'listening' && 'Listening... Speak now (వింటున్నాను...)'}
                     {status === 'thinking' && 'AI processing... (ప్రాసెస్ చేస్తున్నాను...)'}
                     {status === 'speaking' && 'AI speaking... (AI మాట్లాడుతోంది...)'}
                     {status === 'unsupported' && 'Web Speech API Not Supported'}
                   </p>
                   {status === 'listening' && (
-                    <p className="text-[9px] text-red-400 font-bold mt-1 animate-pulse uppercase tracking-wider">Tap Mic again to stop</p>
+                    <p className="text-[9px] text-red-400 font-bold mt-1 animate-pulse uppercase tracking-wider">Tap Mic again to stop and send</p>
                   )}
                 </div>
 
@@ -507,7 +824,7 @@ export default function VoiceAssistant() {
                 <div className="flex gap-2.5 items-center justify-center p-2 rounded-xl bg-blue-500/5 border border-blue-500/10 text-[9px] font-bold text-zinc-500 tracking-wide uppercase text-center w-full max-w-sm">
                   <HelpCircle size={12} className="text-blue-400" />
                   <span>
-                    Try: "Raju vacchindu" (రాజు వచ్చిండు) / "Eeda 2 bags cement add cheyyi"
+                    Try: "Today cement 50 bags vachayi" / "Attendance open cheyyi"
                   </span>
                 </div>
 

@@ -4,6 +4,7 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
     const text = searchParams.get('text')
+    console.log('[TTS Route] Generating speech for text:', text)
 
     if (!text) {
       return NextResponse.json({ error: 'Text parameter is required' }, { status: 400 })
@@ -11,6 +12,7 @@ export async function GET(req: Request) {
 
     // Google Translate TTS endpoint
     const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=te&client=tw-ob&q=${encodeURIComponent(text)}`
+    console.log('[TTS Route] Fetching from Google TTS URL:', googleTtsUrl)
 
     const res = await fetch(googleTtsUrl, {
       headers: {
