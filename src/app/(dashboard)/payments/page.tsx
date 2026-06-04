@@ -70,7 +70,7 @@ export default function PaymentsPage() {
 
     const { data } = await supabase
       .from('attendance')
-      .select('*, labour(name, type, daily_rate)')
+      .select('*, labour(name, type, daily_rate, phone)')
       .eq('project_id', selectedProjectId)
       .gte('date', startStr)
       .lte('date', endStr)
@@ -140,7 +140,7 @@ export default function PaymentsPage() {
 
     const { data: attData } = await supabase
       .from('attendance')
-      .select('*, projects(name), labour(name, type, daily_rate)')
+      .select('*, projects(name), labour(name, type, daily_rate, phone)')
       .eq('labour_id', selectedWorkerId)
       .eq('project_id', selectedProjectId)
       .gte('date', startStr)
@@ -306,6 +306,51 @@ export default function PaymentsPage() {
       finalY = 50
     }
     
+    // Left Box: Calculation Overview
+    doc.setFillColor(245, 247, 250)
+    doc.roundedRect(14, finalY, 86, summaryBoxH, 2, 2, 'F')
+    
+    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(...PDF_COLORS.BLUE)
+    doc.text('CALCULATION OVERVIEW', 19, finalY + 7)
+    
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_COLORS.NAVY)
+    const totalDays = data.breakdown.reduce((acc: number, curr: any) => acc + curr.daysWorked, 0)
+    const rate = data.worker.daily_rate || 0
+    const wagesCalculated = totalDays * rate
+
+    if (hasOT) {
+      doc.text('Wages:', 19, finalY + 14)
+      doc.text(`${totalDays} days × Rs. ${rate.toLocaleString()} = Rs. ${wagesCalculated.toLocaleString()}`, 94, finalY + 14, { align: 'right' })
+      
+      doc.text('Overtime Amount:', 19, finalY + 20)
+      doc.text(`Rs. ${data.totalOt.toLocaleString()}`, 94, finalY + 20, { align: 'right' })
+      
+      doc.text('Less: Advance/Deduction:', 19, finalY + 26)
+      doc.setTextColor(220, 53, 69)
+      doc.text(`-Rs. ${data.totalAdv.toLocaleString()}`, 94, finalY + 26, { align: 'right' })
+      doc.setTextColor(...PDF_COLORS.NAVY)
+      
+      doc.setDrawColor(200, 200, 200); doc.line(19, finalY + 30, 94, finalY + 30)
+      
+      doc.setTextColor(...PDF_COLORS.GREEN); doc.setFont('helvetica', 'bold'); doc.setFontSize(9)
+      doc.text('NET PAYABLE:', 19, finalY + 36)
+      doc.text(`Rs. ${data.netPayable.toLocaleString()}`, 94, finalY + 36, { align: 'right' })
+    } else {
+      doc.text('Wages:', 19, finalY + 14)
+      doc.text(`${totalDays} days × Rs. ${rate.toLocaleString()} = Rs. ${wagesCalculated.toLocaleString()}`, 94, finalY + 14, { align: 'right' })
+      
+      doc.text('Less: Advance/Deduction:', 19, finalY + 20)
+      doc.setTextColor(220, 53, 69)
+      doc.text(`-Rs. ${data.totalAdv.toLocaleString()}`, 94, finalY + 20, { align: 'right' })
+      doc.setTextColor(...PDF_COLORS.NAVY)
+      
+      doc.setDrawColor(200, 200, 200); doc.line(19, finalY + 24, 94, finalY + 24)
+      
+      doc.setTextColor(...PDF_COLORS.GREEN); doc.setFont('helvetica', 'bold'); doc.setFontSize(9)
+      doc.text('NET PAYABLE:', 19, finalY + 30)
+      doc.text(`Rs. ${data.netPayable.toLocaleString()}`, 94, finalY + 30, { align: 'right' })
+    }
+
     // Summary Box
     doc.setFillColor(245, 247, 250)
     doc.roundedRect(110, finalY, 86, summaryBoxH, 2, 2, 'F')
@@ -355,32 +400,76 @@ export default function PaymentsPage() {
       doc.save(`${data.worker.name}_Receipt_${format(currentWeekStart, 'dd_MMM')}.pdf`)
       toast.success('Receipt downloaded')
     } else {
-      // WhatsApp logic
+      // Create PDF file object
       const pdfBlob = doc.output('blob')
-      const fileName = `Receipt_${data.worker.id}_${Date.now()}.pdf`
+      const fileName = `${data.worker.name.replace(/\s+/g, '_')}_Receipt_${format(currentWeekStart, 'dd_MMM')}.pdf`
       const file = new File([pdfBlob], fileName, { type: 'application/pdf' })
 
-      const { error: uploadError } = await supabase.storage
-        .from('receipts')
-        .upload(fileName, file)
-
-      if (uploadError) {
-        toast.error('Failed to upload PDF for sharing')
-        return
+      const totalDays = data.breakdown.reduce((acc: number, curr: any) => acc + curr.daysWorked, 0)
+      const rate = data.worker.daily_rate || 0
+      const wageText = `${totalDays} days × ₹${rate} = ₹${(totalDays * rate).toLocaleString()}`
+      const grandTotal = (totalDays * rate) + data.totalOt
+      
+      let phone = data.worker.phone || ''
+      phone = phone.replace(/\D/g, '')
+      if (phone.startsWith('0') && phone.length === 11) {
+        phone = phone.substring(1)
+      }
+      if (phone.length === 10) {
+        phone = '91' + phone
       }
 
-      const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(fileName)
-      
-      const message = `*SS CONSTRUCTIONS - PAYMENT SLIP*\n\n` +
-                      `👷 *Worker:* ${data.worker.name}\n` +
-                      `📅 *Period:* ${data.period}\n` +
-                      `💰 *Net Amount:* Rs. ${data.netPayable.toLocaleString()}\n\n` +
-                      `View / Download Receipt:\n${publicUrl}\n\n` +
-                      `_This is an auto-generated receipt based on attendance records._`
-      
-      const phone = data.worker.phone?.replace(/\D/g, '') || ''
-      window.open(`https://wa.me/91${phone}?text=${encodeURIComponent(message)}`, '_blank')
-      toast.success('Shared to WhatsApp')
+      // 1. Try native Web Share API first so the user can send the actual PDF document directly (Option A)
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          const shareMsg = `*SS CONSTRUCTIONS - PAYMENT SLIP*\n\n` +
+                           `👷 *Worker:* ${data.worker.name}\n` +
+                           `📅 *Period:* ${data.period}\n\n` +
+                           `*Overview:*\n` +
+                           `- Work: ${wageText}\n` +
+                           (data.totalOt > 0 ? `- Overtime: ₹${data.totalOt.toLocaleString()}\n` : '') +
+                           (data.totalAdv > 0 ? `- Advance/Deduction: -₹${data.totalAdv.toLocaleString()}\n` : '') +
+                           `- Grand Total: ₹${grandTotal.toLocaleString()}\n` +
+                           `*Net Payable:* *₹${data.netPayable.toLocaleString()}*\n\n` +
+                           `_Please find the detailed PDF receipt attached._`
+
+          await navigator.share({
+            files: [file],
+            title: `${data.worker.name} Payment Receipt`,
+            text: shareMsg
+          })
+          toast.success('Opened share options')
+          return
+        } catch (err: any) {
+          if (err.name !== 'AbortError') {
+            console.error('Web Share failed, falling back:', err)
+          } else {
+            return // User cancelled the share dialog
+          }
+        }
+      }
+
+      // 2. Fallback: If Web Share is not supported by the browser (e.g. Desktop Chrome):
+      // Download the PDF file directly, then open the targeted WhatsApp chat.
+      doc.save(fileName)
+
+      if (phone) {
+        toast.info('Receipt PDF downloaded. Opening WhatsApp chat... Please attach the PDF.')
+        const message = `*SS CONSTRUCTIONS - PAYMENT SLIP*\n\n` +
+                        `👷 *Worker:* ${data.worker.name}\n` +
+                        `📅 *Period:* ${data.period}\n\n` +
+                        `*Overview:*\n` +
+                        `- Work: ${wageText}\n` +
+                        (data.totalOt > 0 ? `- Overtime: ₹${data.totalOt.toLocaleString()}\n` : '') +
+                        (data.totalAdv > 0 ? `- Advance/Deduction: -₹${data.totalAdv.toLocaleString()}\n` : '') +
+                        `- Grand Total: ₹${grandTotal.toLocaleString()}\n` +
+                        `*Net Payable:* *₹${data.netPayable.toLocaleString()}*\n\n` +
+                        `_Please attach the downloaded PDF receipt below._`
+
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank')
+      } else {
+        toast.error('No phone number registered for this worker, and native sharing is not supported by your browser. PDF downloaded.')
+      }
     }
   }
 

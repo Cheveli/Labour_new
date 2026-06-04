@@ -22,7 +22,6 @@ export async function POST(req: Request) {
       { data: materials },
       { data: attendance },
       { data: income },
-      { data: extra_work },
       { data: contractor_payments },
       { data: personal_expenses }
     ] = await Promise.all([
@@ -32,8 +31,7 @@ export async function POST(req: Request) {
       supabase.from('materials').select('date, name, total_amount, quantity, unit, notes, project:project_id(name)'),
       supabase.from('attendance').select('date, days_worked, custom_rate, overtime_amount, advance_amount, labour:labour_id(name), project:project_id(name)'),
       supabase.from('income').select('date, amount, notes, project:project_id(name)'),
-      supabase.from('extra_work').select('date, amount, work_name, notes, project:project_id(name)'),
-      supabase.from('contractor_payments').select('date, name, work_nature, total_amount, total_paid, notes'),
+      supabase.from('contractor_payments').select('date, name, work_nature, total_amount, total_paid, notes, installments'),
       supabase.from('personal_expenses').select('date, person_name, purpose, amount')
     ])
 
@@ -162,6 +160,29 @@ export async function POST(req: Request) {
       return true
     })
 
+    // Parse contractor payments to extract subcontracts work entries & installments
+    const subcontracts = contractor_payments?.map(cp => {
+      let parsedNotes = { description: '', work_entries: [] };
+      try {
+        if (cp.notes && (cp.notes.startsWith('{') || cp.notes.startsWith('['))) {
+          parsedNotes = JSON.parse(cp.notes);
+        } else {
+          parsedNotes = { description: cp.notes || '', work_entries: [] };
+        }
+      } catch (e) {}
+      
+      return {
+        contractor: cp.name,
+        department: cp.work_nature,
+        grand_total_earned: cp.total_amount,
+        total_paid: cp.total_paid,
+        balance_due: Number(cp.total_amount || 0) - Number(cp.total_paid || 0),
+        notes: parsedNotes.description,
+        work_entries: parsedNotes.work_entries || [],
+        installments: cp.installments || []
+      };
+    }) || [];
+
     // Format the optimized context for the LLM
     const context = {
       projects: projects?.map(p => ({ name: p.name, status: p.status, owner: p.owner_name })) || [],
@@ -169,8 +190,7 @@ export async function POST(req: Request) {
       worker_payments: filteredPayments?.map(p => ({ date: p.date, worker: (p.labour as any)?.name, amount: p.amount, type: p.payment_type })) || [],
       materials: filteredMaterials?.map(m => ({ date: m.date, item: m.name, amount: m.total_amount, quantity: `${m.quantity} ${m.unit || ''}`.trim(), notes: m.notes, project: (m.project as any)?.name })) || [],
       income: income?.map(i => ({ date: i.date, amount: i.amount, notes: i.notes, project: (i.project as any)?.name })) || [],
-      extra_work: extra_work?.map(ew => ({ date: ew.date, amount: ew.amount, work: ew.work_name, notes: ew.notes, project: (ew.project as any)?.name })) || [],
-      contractor_payments: contractor_payments?.map(cp => ({ date: cp.date, contractor: cp.name, work_nature: cp.work_nature, total_amount: cp.total_amount, total_paid: cp.total_paid, notes: cp.notes })) || [],
+      subcontracts,
       personal_expenses: filteredExpenses?.map(pe => ({ date: pe.date, person: pe.person_name, purpose: pe.purpose, amount: pe.amount })) || []
     }
 

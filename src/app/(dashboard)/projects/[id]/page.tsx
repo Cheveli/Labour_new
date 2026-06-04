@@ -48,12 +48,71 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
     const { data: proj } = await supabase.from('projects').select('*').eq('id', id).single()
     const { data: atten } = await supabase.from('attendance').select('*, labour(name)').eq('project_id', id).order('date', { ascending: false })
     const { data: mats } = await supabase.from('materials').select('*').eq('project_id', id).order('date', { ascending: false })
-    const { data: extra } = await supabase.from('extra_work').select('*').eq('project_id', id).order('date', { ascending: false })
+    const { data: subs } = await supabase.from('contractor_payments').select('*')
+
+    const subWorkEntries: any[] = []
+    subs?.forEach((sub: any) => {
+      let parsedNotes = { description: '', project_id: '', project_name: '', work_entries: [] as any[] }
+      try {
+        if (sub.notes && (sub.notes.startsWith('{') || sub.notes.startsWith('['))) {
+          parsedNotes = JSON.parse(sub.notes)
+        } else {
+          parsedNotes = {
+            description: sub.notes || '',
+            project_id: '',
+            project_name: '',
+            work_entries: [
+              {
+                id: 'initial',
+                work_name: 'Initial Agreement',
+                amount: sub.total_amount || 0,
+                date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+                notes: sub.notes || '',
+                project_id: '',
+                project_name: ''
+              }
+            ]
+          }
+        }
+      } catch (e) {
+        parsedNotes = {
+          description: sub.notes || '',
+          project_id: '',
+          project_name: '',
+          work_entries: [
+            {
+              id: 'initial',
+              work_name: 'Initial Agreement',
+              amount: sub.total_amount || 0,
+              date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+              notes: '',
+              project_id: '',
+              project_name: ''
+            }
+          ]
+        }
+      }
+
+      const workEntries = parsedNotes.work_entries || []
+      workEntries.forEach((entry: any) => {
+        if (entry.project_id === id) {
+          subWorkEntries.push({
+            id: entry.id,
+            work_name: `${sub.name} - ${entry.work_name}`,
+            amount: entry.amount,
+            date: entry.date,
+            notes: entry.notes || ''
+          })
+        }
+      })
+    })
+
+    subWorkEntries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
     setProject(proj)
     setAttendance(atten || [])
     setMaterials(mats || [])
-    setExtraWork(extra || [])
+    setExtraWork(subWorkEntries)
     setLoading(false)
   }
 
@@ -84,14 +143,14 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
         <SummaryIconCard title="Total Spent" value={`₹${(materials.reduce((acc, m) => acc + Number(m.total_cost), 0) + extraWork.reduce((acc, e) => acc + Number(e.amount), 0)).toLocaleString()}`} icon={<Wallet className="text-blue-600" />} />
         <SummaryIconCard title="Labour Active" value={new Set(attendance.map(a => a.labour_id)).size.toString()} icon={<Users className="text-emerald-600" />} />
         <SummaryIconCard title="Mat. Records" value={materials.length.toString()} icon={<Package className="text-orange-600" />} />
-        <SummaryIconCard title="Extra Works" value={extraWork.length.toString()} icon={<TrendingUp className="text-purple-600" />} />
+        <SummaryIconCard title="Subcontracts" value={extraWork.length.toString()} icon={<TrendingUp className="text-purple-600" />} />
       </div>
 
       <Tabs defaultValue="attendance" className="space-y-6">
         <TabsList className="bg-white dark:bg-zinc-900 p-1 rounded-2xl border border-gray-100 dark:border-zinc-800 w-full lg:w-auto h-14 shadow-sm overflow-x-auto overflow-y-hidden no-scrollbar">
           <TabsTrigger value="attendance" className="rounded-xl px-6 data-[state=active]:bg-blue-600 data-[state=active]:text-white font-bold h-full">Attendance</TabsTrigger>
           <TabsTrigger value="materials" className="rounded-xl px-6 data-[state=active]:bg-blue-600 data-[state=active]:text-white font-bold h-full">Materials</TabsTrigger>
-          <TabsTrigger value="extra" className="rounded-xl px-6 data-[state=active]:bg-blue-600 data-[state=active]:text-white font-bold h-full">Extra Work</TabsTrigger>
+          <TabsTrigger value="extra" className="rounded-xl px-6 data-[state=active]:bg-blue-600 data-[state=active]:text-white font-bold h-full">Subcontracts</TabsTrigger>
         </TabsList>
 
         <TabsContent value="attendance">
@@ -175,12 +234,12 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
         <TabsContent value="extra">
            <Card className="border-none shadow-xl bg-white dark:bg-black rounded-3xl overflow-hidden">
             <CardHeader className="p-6">
-               <div className="flex justify-between items-center">
-                 <CardTitle className="text-xl">Lumpsum Extra Work</CardTitle>
-                 <Button size="sm" variant="outline" className="rounded-xl border-purple-200 text-purple-600 gap-2">
-                   <Plus size={16} /> Add One-time Work
-                 </Button>
-               </div>
+                <div className="flex justify-between items-center">
+                  <CardTitle className="text-xl">Subcontract Milestones</CardTitle>
+                  <Button size="sm" render={<Link href="/contractor-payments" />} className="bg-blue-600 rounded-xl gap-2 text-white">
+                    Manage Subcontracts
+                  </Button>
+                </div>
             </CardHeader>
             <CardContent className="p-0 text-center">
                <Table>
@@ -193,7 +252,7 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {extraWork.length === 0 ? <TableRow><TableCell colSpan={4} className="text-center py-20 text-gray-400">No extra work logged</TableCell></TableRow> : 
+                  {extraWork.length === 0 ? <TableRow><TableCell colSpan={4} className="text-center py-20 text-gray-400">No subcontracts logged</TableCell></TableRow> : 
                     extraWork.map(e => (
                       <TableRow key={e.id}>
                         <TableCell className="px-6 font-bold">{e.work_name}</TableCell>
@@ -201,7 +260,7 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
                         <TableCell className="font-bold text-emerald-600">₹{e.amount}</TableCell>
                         <TableCell className="text-right px-6 text-gray-500 italic text-xs">{e.notes || '---'}</TableCell>
                       </TableRow>
-                  ))}
+                    ))}
                 </TableBody>
                </Table>
             </CardContent>

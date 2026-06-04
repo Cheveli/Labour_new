@@ -15,7 +15,7 @@ const GOLD = '#3b82f6'
 const DIM = '#6b7280'
 const INPUT_ST = { backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0', borderRadius: '0.5rem' }
 
-type ReportType = 'labour' | 'materials' | 'revenue' | 'extra_work' | 'attendance_cost'
+type ReportType = 'labour' | 'materials' | 'revenue' | 'subcontracts' | 'attendance_cost'
 
 export default function ReportsPage() {
   const supabase = createClient()
@@ -79,9 +79,77 @@ export default function ReportsPage() {
     } else if (reportType === 'revenue') {
       q = supabase.from('income').select('date, amount, notes, projects(name)').order('date', { ascending: false })
       if (projectId) q = q.eq('project_id', projectId)
-    } else if (reportType === 'extra_work') {
-      q = supabase.from('extra_work').select('date, work_name, amount, notes, projects(name)').order('date', { ascending: false })
-      if (projectId) q = q.eq('project_id', projectId)
+    } else if (reportType === 'subcontracts') {
+      const { data: subDataRaw, error: subError } = await supabase.from('contractor_payments').select('*')
+      if (subError) throw subError
+      
+      const subWorkEntries: any[] = []
+      subDataRaw?.forEach((sub: any) => {
+        let parsedNotes = { description: '', project_id: '', project_name: '', work_entries: [] as any[] }
+        try {
+          if (sub.notes && (sub.notes.startsWith('{') || sub.notes.startsWith('['))) {
+            parsedNotes = JSON.parse(sub.notes)
+          } else {
+            parsedNotes = {
+              description: sub.notes || '',
+              project_id: '',
+              project_name: '',
+              work_entries: [
+                {
+                  id: 'initial',
+                  work_name: 'Initial Agreement',
+                  amount: sub.total_amount || 0,
+                  date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+                  notes: sub.notes || '',
+                  project_id: '',
+                  project_name: ''
+                }
+              ]
+            }
+          }
+        } catch (e) {
+          parsedNotes = {
+            description: sub.notes || '',
+            project_id: '',
+            project_name: '',
+            work_entries: [
+              {
+                id: 'initial',
+                work_name: 'Initial Agreement',
+                amount: sub.total_amount || 0,
+                date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+                notes: '',
+                project_id: '',
+                project_name: ''
+              }
+            ]
+          }
+        }
+
+        const workEntries = parsedNotes.work_entries || []
+        workEntries.forEach((entry: any) => {
+          subWorkEntries.push({
+            id: entry.id,
+            date: entry.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+            work_name: `${sub.name} - ${entry.work_name}`,
+            amount: entry.amount,
+            notes: entry.notes || '',
+            project_id: entry.project_id || parsedNotes.project_id || '',
+            projects: {
+              name: entry.project_name || parsedNotes.project_name || '—'
+            }
+          })
+        })
+      })
+
+      let filtered = subWorkEntries
+      if (projectId) {
+        filtered = subWorkEntries.filter(e => e.project_id === projectId)
+      }
+      filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      setData(filtered)
+      setLoading(false)
+      return
     }
     const { data: rows } = await q
     
@@ -116,7 +184,7 @@ export default function ReportsPage() {
 
   const exportPDF = async () => {
     const doc = new jsPDF()
-    const titles: Record<ReportType, string> = { labour: 'LABOUR PAYMENTS', materials: 'MATERIALS REPORT', revenue: 'REVENUE REPORT', extra_work: 'EXTRA WORK REPORT', attendance_cost: 'ATTENDANCE COST REPORT' }
+    const titles: Record<ReportType, string> = { labour: 'LABOUR PAYMENTS', materials: 'MATERIALS REPORT', revenue: 'REVENUE REPORT', subcontracts: 'SUBCONTRACTS & MILESTONES REPORT', attendance_cost: 'ATTENDANCE COST REPORT' }
     const subtitle = 'ALL TIME REPORT'
     drawPremiumHeader(doc, titles[reportType], subtitle)
     
@@ -210,7 +278,7 @@ export default function ReportsPage() {
   const reportTypes: { value: ReportType, label: string }[] = [
     { value: 'materials', label: 'Materials' },
     { value: 'revenue', label: 'Revenue' },
-    { value: 'extra_work', label: 'Extra Work' },
+    { value: 'subcontracts', label: 'Subcontracts' },
   ]
 
   return (

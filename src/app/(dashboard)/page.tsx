@@ -130,21 +130,80 @@ export default function DashboardPage() {
       let incomeQ = supabase.from('income').select('amount, date, project_id')
       let attQ = supabase.from('attendance').select('date, days_worked, custom_rate, overtime_amount, project_id, labour(daily_rate)')
       let matQ = supabase.from('materials').select('total_amount, date, project_id')
-      let ewQ = supabase.from('extra_work').select('amount, date, project_id')
+      let subQ = supabase.from('contractor_payments').select('*')
 
       if (currentProjectId) {
         incomeQ = incomeQ.eq('project_id', currentProjectId)
         attQ = attQ.eq('project_id', currentProjectId)
         matQ = matQ.eq('project_id', currentProjectId)
-        ewQ = ewQ.eq('project_id', currentProjectId)
       }
 
-      const [incomeRes, attRes, matRes, ewRes] = await Promise.all([incomeQ, attQ, matQ, ewQ])
+      const [incomeRes, attRes, matRes, subRes] = await Promise.all([incomeQ, attQ, matQ, subQ])
 
       const incomeData = incomeRes.data
       const attAllData = attRes.data
       const materialData = matRes.data
-      const extraWorkData = ewRes.data
+      const contractorPaymentsData = subRes.data || []
+
+      // Extract subcontractor work entries
+      const subWorkEntries: any[] = []
+      contractorPaymentsData.forEach((sub: any) => {
+        let parsedNotes = { description: '', project_id: '', project_name: '', work_entries: [] as any[] }
+        try {
+          if (sub.notes && (sub.notes.startsWith('{') || sub.notes.startsWith('['))) {
+            parsedNotes = JSON.parse(sub.notes)
+          } else {
+            parsedNotes = {
+              description: sub.notes || '',
+              project_id: '',
+              project_name: '',
+              work_entries: [
+                {
+                  id: 'initial',
+                  work_name: 'Initial Agreement',
+                  amount: sub.total_amount || 0,
+                  date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+                  notes: sub.notes || '',
+                  project_id: '',
+                  project_name: ''
+                }
+              ]
+            }
+          }
+        } catch (e) {
+          parsedNotes = {
+            description: sub.notes || '',
+            project_id: '',
+            project_name: '',
+            work_entries: [
+              {
+                id: 'initial',
+                work_name: 'Initial Agreement',
+                amount: sub.total_amount || 0,
+                date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+                notes: '',
+                project_id: '',
+                project_name: ''
+              }
+            ]
+          }
+        }
+
+        const workEntries = parsedNotes.work_entries || []
+        workEntries.forEach((entry: any) => {
+          subWorkEntries.push({
+            ...entry,
+            subcontractor_name: sub.name,
+            subcontractor_id: sub.id,
+            work_nature: sub.work_nature
+          })
+        })
+      })
+
+      // Filter work entries by selected project ID if any
+      const filteredWorkEntries = currentProjectId
+        ? subWorkEntries.filter((entry: any) => entry.project_id === currentProjectId)
+        : subWorkEntries
 
       const totalRevenue = incomeData?.reduce((a, c) => a + Number(c.amount), 0) || 0
       const totalLabourCost = attAllData?.reduce((a, c) => {
@@ -153,7 +212,7 @@ export default function DashboardPage() {
         return a + (Number(c.days_worked) * Number(rate)) + Number(c.overtime_amount || 0)
       }, 0) || 0
       const totalMaterialCost = materialData?.reduce((a, c) => a + Number(c.total_amount || 0), 0) || 0
-      const totalExtraWork = extraWorkData?.reduce((a, c) => a + Number(c.amount), 0) || 0
+      const totalExtraWork = filteredWorkEntries.reduce((sum: number, entry: any) => sum + Number(entry.amount || 0), 0)
       const netCash = totalRevenue - (totalLabourCost + totalMaterialCost + totalExtraWork)
 
       setStats({
@@ -175,7 +234,7 @@ export default function DashboardPage() {
         ...(incomeData || []).map(r => r.date),
         ...(attAllData || []).map(r => r.date),
         ...(materialData || []).map(r => r.date),
-        ...(extraWorkData || []).map(r => r.date),
+        ...filteredWorkEntries.map((r: any) => r.date),
       ].filter(Boolean)
 
       let earliestTxDate: Date | null = null
@@ -246,7 +305,7 @@ export default function DashboardPage() {
           return a + (Number(c.days_worked) * Number(rate)) + Number(c.overtime_amount || 0)
         }, 0) || 0,
         Material: materialData?.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.total_amount || 0), 0) || 0,
-        ExtraWork: extraWorkData?.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.amount), 0) || 0,
+        ExtraWork: filteredWorkEntries.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.amount || 0), 0) || 0,
       }))
       setMonthlyData(monthly)
 
@@ -254,7 +313,7 @@ export default function DashboardPage() {
       setProjectCosts([
         { name: 'Labour', value: totalLabourCost },
         { name: 'Material', value: totalMaterialCost },
-        { name: 'Extra Work', value: totalExtraWork }
+        { name: 'Subcontracts', value: totalExtraWork }
       ].filter(c => c.value > 0))
 
       // Project-wise breakdown
@@ -263,21 +322,23 @@ export default function DashboardPage() {
         .map(p => {
           const rev = (incomeData || []).filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.amount), 0)
           const mat = (materialData || []).filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.total_amount || 0), 0)
-          const ew = (extraWorkData || []).filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.amount), 0)
+          const ew = subWorkEntries.filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.amount || 0), 0)
           return { name: p.name, status: p.status, revenue: rev, material: mat, extraWork: ew, net: rev - mat - ew }
         }).filter(p => p.revenue > 0 || p.material > 0 || p.extraWork > 0)
       setProjectBreakdown(breakdown)
 
-      // Recent Activities — last 5 across income, materials, extra_work
-      const [incRecent, matRecent, ewRecent] = await Promise.all([
+      // Recent Activities — last 5 across income, materials, subWorkEntries
+      const [incRecent, matRecent] = await Promise.all([
         supabase.from('income').select('id, date, amount, notes, projects(name)').order('date', { ascending: false }).limit(5),
         supabase.from('materials').select('id, date, total_amount, name, projects(name)').order('date', { ascending: false }).limit(5),
-        supabase.from('extra_work').select('id, date, amount, work_name, projects(name)').order('date', { ascending: false }).limit(5),
       ])
+      const sortedSubEntries = [...subWorkEntries]
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 5)
       const combined = [
         ...(incRecent.data || []).map((r: any) => ({ date: r.date, label: r.notes || 'Revenue', sub: r.projects?.name || '—', amount: Number(r.amount), type: 'revenue' as const })),
         ...(matRecent.data || []).map((r: any) => ({ date: r.date, label: r.name, sub: r.projects?.name || '—', amount: Number(r.total_amount || 0), type: 'material' as const })),
-        ...(ewRecent.data || []).map((r: any) => ({ date: r.date, label: r.work_name, sub: r.projects?.name || '—', amount: Number(r.amount), type: 'extra' as const })),
+        ...sortedSubEntries.map((r: any) => ({ date: r.date, label: `${r.subcontractor_name} - ${r.work_name}`, sub: r.project_name || '—', amount: Number(r.amount || 0), type: 'extra' as const })),
       ]
       combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       setRecentActivities(combined.slice(0, 5))
@@ -328,6 +389,7 @@ export default function DashboardPage() {
     'Labour': '#3b82f6',     // Blue
     'Material': '#06b6d4',   // Cyan
     'Extra Work': '#f97316', // Orange
+    'Subcontracts': '#f97316', // Orange
     'Contractor': '#8b5cf6'  // Purple
   }
   const tooltipStyle = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '8px', color: '#f0f0f0', fontSize: 12 }
@@ -336,7 +398,7 @@ export default function DashboardPage() {
     { type: 'REVENUE', label: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString()}`, icon: <TrendingUp size={18} color="#10b981" />, bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981', clickable: true },
     { type: 'LABOUR', label: 'Labour Cost', value: `₹${stats.totalLabourCost.toLocaleString()}`, icon: <Wallet size={18} color="#3b82f6" />, bg: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', clickable: true },
     { type: 'MATERIAL', label: 'Material Cost', value: `₹${stats.totalMaterialCost.toLocaleString()}`, icon: <Package size={18} color="#06b6d4" />, bg: 'rgba(6, 182, 212, 0.1)', color: '#06b6d4', clickable: true },
-    { type: 'EXTRA_WORK', label: 'Extra Work', value: `₹${stats.totalExtraWork.toLocaleString()}`, icon: <Zap size={18} color="#f97316" />, bg: 'rgba(249, 115, 22, 0.1)', color: '#f97316', clickable: true },
+    { type: 'EXTRA_WORK', label: 'Subcontracts', value: `₹${stats.totalExtraWork.toLocaleString()}`, icon: <Zap size={18} color="#f97316" />, bg: 'rgba(249, 115, 22, 0.1)', color: '#f97316', clickable: true },
     { type: 'NET_CASH', label: 'Net Cash', value: `₹${stats.netCash.toLocaleString()}`, icon: <TrendingUp size={18} color={stats.netCash >= 0 ? '#10b981' : '#ef4444'} />, bg: stats.netCash >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: stats.netCash >= 0 ? '#10b981' : '#ef4444', clickable: false },
   ]
 
@@ -351,13 +413,88 @@ export default function DashboardPage() {
       } else if (type === 'MATERIAL') {
         q = supabase.from('materials').select('date, total_amount, name, quantity, unit, notes, projects(name)').order('date', { ascending: true })
       } else if (type === 'EXTRA_WORK') {
-        q = supabase.from('extra_work').select('date, amount, work_name, notes, projects(name)').order('date', { ascending: true })
+        // Handled in memory
       }
-      if (selectedProjectId && selectedProjectId !== 'all') q = q.eq('project_id', selectedProjectId)
-      if (filterStart) q = q.gte('date', filterStart)
-      if (filterEnd) q = q.lte('date', filterEnd)
-      const { data } = await q
-      setDetailsModalData(data || [])
+      
+      let data: any[] = []
+      if (type === 'EXTRA_WORK') {
+        const { data: subDataRaw } = await supabase.from('contractor_payments').select('*')
+        const subWorkEntries: any[] = []
+        subDataRaw?.forEach((sub: any) => {
+          let parsedNotes = { description: '', project_id: '', project_name: '', work_entries: [] as any[] }
+          try {
+            if (sub.notes && (sub.notes.startsWith('{') || sub.notes.startsWith('['))) {
+              parsedNotes = JSON.parse(sub.notes)
+            } else {
+              parsedNotes = {
+                description: sub.notes || '',
+                project_id: '',
+                project_name: '',
+                work_entries: [
+                  {
+                    id: 'initial',
+                    work_name: 'Initial Agreement',
+                    amount: sub.total_amount || 0,
+                    date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+                    notes: sub.notes || '',
+                    project_id: '',
+                    project_name: ''
+                  }
+                ]
+              }
+            }
+          } catch (e) {
+            parsedNotes = {
+              description: sub.notes || '',
+              project_id: '',
+              project_name: '',
+              work_entries: [
+                {
+                  id: 'initial',
+                  work_name: 'Initial Agreement',
+                  amount: sub.total_amount || 0,
+                  date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+                  notes: '',
+                  project_id: '',
+                  project_name: ''
+                }
+              ]
+            }
+          }
+
+          const workEntries = parsedNotes.work_entries || []
+          workEntries.forEach((entry: any) => {
+            subWorkEntries.push({
+              ...entry,
+              subcontractor_name: sub.name,
+              subcontractor_id: sub.id,
+              work_nature: sub.work_nature
+            })
+          })
+        })
+
+        const currentProjectId = selectedProjectId === 'all' ? '' : selectedProjectId
+        const filtered = currentProjectId
+          ? subWorkEntries.filter((entry: any) => entry.project_id === currentProjectId)
+          : subWorkEntries
+
+        data = filtered.map((e: any) => ({
+          date: e.date,
+          amount: e.amount,
+          work_name: `${e.subcontractor_name} - ${e.work_name}`,
+          notes: e.notes || '',
+          projects: { name: e.project_name || '-' }
+        }))
+        if (filterStart) data = data.filter((e: any) => e.date >= filterStart)
+        if (filterEnd) data = data.filter((e: any) => e.date <= filterEnd)
+      } else {
+        if (selectedProjectId && selectedProjectId !== 'all') q = q.eq('project_id', selectedProjectId)
+        if (filterStart) q = q.gte('date', filterStart)
+        if (filterEnd) q = q.lte('date', filterEnd)
+        const res = await q
+        data = res.data || []
+      }
+      setDetailsModalData(data)
       setDetailsPage(0)
     } catch (err) { console.error(err) } finally { setDetailsLoading(false) }
   }
@@ -556,9 +693,9 @@ export default function DashboardPage() {
 
       {/* Charts Row: Bar Graph (left) + Recent Activities (right) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Labour vs Material vs Extra Work */}
+        {/* Labour vs Material vs Subcontracts */}
         <div style={PANEL} className="p-5 lg:col-span-2">
-          <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Labour vs Material vs Extra Work (Monthly)</p>
+          <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: DIM }}>Labour vs Material vs Subcontracts (Monthly)</p>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={monthlyData} margin={{ top: 4, right: 8, bottom: 0, left: -10 }} barSize={8}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e2435" />
@@ -568,7 +705,7 @@ export default function DashboardPage() {
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10, color: DIM }} />
               <Bar dataKey="Labour" fill={EXPENSE_COLORS['Labour']} radius={[3, 3, 0, 0]} isAnimationActive={false} />
               <Bar dataKey="Material" fill={EXPENSE_COLORS['Material']} radius={[3, 3, 0, 0]} isAnimationActive={false} />
-              <Bar dataKey="ExtraWork" fill={EXPENSE_COLORS['Extra Work']} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+              <Bar dataKey="ExtraWork" name="Subcontracts" fill={EXPENSE_COLORS['Subcontracts']} radius={[3, 3, 0, 0]} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -685,7 +822,7 @@ export default function DashboardPage() {
             <table className="w-full text-sm">
               <thead style={{ backgroundColor: '#0d1018' }}>
                 <tr style={{ borderBottom: '1px solid #1e2435' }}>
-                  {['Project', 'Revenue', 'Material', 'Extra Work', 'Net P&L'].map(h => (
+                  {['Project', 'Revenue', 'Material', 'Subcontracts', 'Net P&L'].map(h => (
                     <th key={h} className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>{h}</th>
                   ))}
                 </tr>
@@ -722,7 +859,7 @@ export default function DashboardPage() {
                     <p className="text-[10px] font-bold text-[#60a5fa]">₹{p.material.toLocaleString()}</p>
                   </div>
                   <div>
-                    <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Extra</p>
+                    <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Subcontracts</p>
                     <p className="text-[10px] font-bold text-[#f59e0b]">₹{p.extraWork.toLocaleString()}</p>
                   </div>
                 </div>
@@ -749,7 +886,7 @@ export default function DashboardPage() {
           <div className="px-6 py-5 border-b border-[#1e2435] bg-[#0d1018] flex items-center justify-between shrink-0">
             <div>
               <DialogTitle className="text-white text-base font-black uppercase tracking-wide">
-                {detailsModalType === 'REVENUE' ? '📈 Total Revenue' : detailsModalType === 'LABOUR' ? '💼 Labour Cost' : detailsModalType === 'MATERIAL' ? '📦 Material Cost' : '⚡ Extra Work'} — Full History
+                {detailsModalType === 'REVENUE' ? '📈 Total Revenue' : detailsModalType === 'LABOUR' ? '💼 Labour Cost' : detailsModalType === 'MATERIAL' ? '📦 Material Cost' : '⚡ Subcontracts'} — Full History
               </DialogTitle>
               <DialogDescription className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">
                 {detailsModalData.length} records found · All time
@@ -781,7 +918,7 @@ export default function DashboardPage() {
                   <TableRow style={{ borderColor: '#1e2435' }}>
                     <TableHead className="px-6 py-4 text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Date</TableHead>
                     <TableHead className="py-4 text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>
-                      {detailsModalType === 'REVENUE' ? 'Source / Project' : detailsModalType === 'LABOUR' ? 'Worker / Project' : detailsModalType === 'MATERIAL' ? 'Material / Project' : 'Work / Project'}
+                      {detailsModalType === 'REVENUE' ? 'Source / Project' : detailsModalType === 'LABOUR' ? 'Worker / Project' : detailsModalType === 'MATERIAL' ? 'Material / Project' : 'Subcontract / Project'}
                     </TableHead>
                     {detailsModalType === 'MATERIAL' && <TableHead className="py-4 text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Qty</TableHead>}
                     <TableHead className="pr-6 py-4 text-right text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Amount</TableHead>

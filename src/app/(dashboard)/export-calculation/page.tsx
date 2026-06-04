@@ -61,11 +61,73 @@ export default function ExportCalculationPage() {
       if (selectedProjectId) matQuery = matQuery.eq('project_id', selectedProjectId)
       const { data: matData } = await matQuery
 
-      // 3. Fetch extra work
-      let extraQuery = supabase.from('extra_work').select('*, projects(name)')
-        .order('date', { ascending: true })
-      if (selectedProjectId) extraQuery = extraQuery.eq('project_id', selectedProjectId)
-      const { data: extraData } = await extraQuery
+      // 3. Fetch subcontractor payments (subcontracts) instead of extra work
+      const { data: subData } = await supabase.from('contractor_payments').select('*')
+      
+      const subWorkEntries: any[] = []
+      subData?.forEach((sub: any) => {
+        let parsedNotes = { description: '', project_id: '', project_name: '', work_entries: [] as any[] }
+        try {
+          if (sub.notes && (sub.notes.startsWith('{') || sub.notes.startsWith('['))) {
+            parsedNotes = JSON.parse(sub.notes)
+          } else {
+            parsedNotes = {
+              description: sub.notes || '',
+              project_id: '',
+              project_name: '',
+              work_entries: [
+                {
+                  id: 'initial',
+                  work_name: 'Initial Agreement',
+                  amount: sub.total_amount || 0,
+                  date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+                  notes: sub.notes || '',
+                  project_id: '',
+                  project_name: ''
+                }
+              ]
+            }
+          }
+        } catch (e) {
+          parsedNotes = {
+            description: sub.notes || '',
+            project_id: '',
+            project_name: '',
+            work_entries: [
+              {
+                id: 'initial',
+                work_name: 'Initial Agreement',
+                amount: sub.total_amount || 0,
+                date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+                notes: '',
+                project_id: '',
+                project_name: ''
+              }
+            ]
+          }
+        }
+
+        const workEntries = parsedNotes.work_entries || []
+        workEntries.forEach((entry: any) => {
+          subWorkEntries.push({
+            id: entry.id,
+            work_name: `${sub.name} - ${entry.work_name}`,
+            amount: entry.amount,
+            date: entry.date,
+            notes: entry.notes || '',
+            project_id: entry.project_id || parsedNotes.project_id || '',
+            projects: {
+              name: entry.project_name || parsedNotes.project_name || '-'
+            }
+          })
+        })
+      })
+
+      let extraData = subWorkEntries
+      if (selectedProjectId) {
+        extraData = subWorkEntries.filter(entry => entry.project_id === selectedProjectId)
+      }
+      extraData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
       // Group by Week
       const weekMap = new Map()
@@ -184,12 +246,12 @@ export default function ExportCalculationPage() {
 
     y = (doc as any).lastAutoTable.finalY + 12
 
-    // SECTION 3: Extra Work
+    // SECTION 3: Subcontracts
     if (y > 250) { doc.addPage(); y = 20 }
     doc.setFillColor(...PDF_COLORS.BLUE)
     doc.roundedRect(14, y, 182, 8, 1, 1, 'F')
     doc.setTextColor(255, 255, 255); doc.setFontSize(9); doc.setFont('helvetica', 'bold')
-    doc.text('SECTION C: EXTRA WORK COST', 18, y + 5.5)
+    doc.text('SECTION C: SUBCONTRACTS & MILESTONES COST', 18, y + 5.5)
     y += 12
 
     autoTable(doc, {
@@ -219,9 +281,9 @@ export default function ExportCalculationPage() {
     doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14 + bW + 2, y, bW, bH, 1, 1, 'F')
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.text('Material Cost', 14 + bW + 2 + bW / 2, y + 7, { align: 'center' })
     doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${totalMaterialCost.toLocaleString()}`, 14 + bW + 2 + bW / 2, y + 16, { align: 'center' })
-    // Extra work total box
+    // Subcontract total box
     doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14 + (bW + 2) * 2, y, bW, bH, 1, 1, 'F')
-    doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.text('Extra Work', 14 + (bW + 2) * 2 + bW / 2, y + 7, { align: 'center' })
+    doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.text('Subcontracts', 14 + (bW + 2) * 2 + bW / 2, y + 7, { align: 'center' })
     doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${(reportData.totalExtraWorkCost || 0).toLocaleString()}`, 14 + (bW + 2) * 2 + bW / 2, y + 16, { align: 'center' })
     // Grand total box
     doc.setFillColor(...PDF_COLORS.BLUE); doc.roundedRect(14 + (bW + 2) * 3, y, bW, bH, 1, 1, 'F')
@@ -330,10 +392,10 @@ export default function ExportCalculationPage() {
                 <div className="w-10 h-10 rounded-xl bg-amber-600/10 flex items-center justify-center border border-amber-600/20">
                   <Zap size={20} className="text-amber-500" />
                 </div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Extra Work</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Subcontracts</p>
               </div>
               <p className="text-2xl font-black text-white">₹ {(reportData.totalExtraWorkCost || 0).toLocaleString()}</p>
-              <p className="text-xs text-zinc-500 mt-1">{(reportData.extraWork || []).length} tasks</p>
+              <p className="text-xs text-zinc-500 mt-1">{(reportData.extraWork || []).length} entries</p>
             </div>
             <div className="p-6 rounded-[0.875rem] border border-blue-500/30" style={{ background: 'linear-gradient(135deg, #1e3a5f, #0d1018)' }}>
               <div className="flex items-center gap-3 mb-3">
@@ -343,7 +405,7 @@ export default function ExportCalculationPage() {
                 <p className="text-[10px] font-black uppercase tracking-widest text-blue-300">Grand Total</p>
               </div>
               <p className="text-3xl font-black text-white">₹ {reportData.grandTotal.toLocaleString()}</p>
-              <p className="text-[10px] text-blue-300/60 mt-1 uppercase tracking-widest font-black">Lab + Mat + Ext</p>
+              <p className="text-[10px] text-blue-300/60 mt-1 uppercase tracking-widest font-black">Lab + Mat + Sub</p>
             </div>
           </div>
 
@@ -471,11 +533,11 @@ export default function ExportCalculationPage() {
             </div>
           </div>
 
-          {/* Section C: Extra Work */}
+          {/* Section C: Subcontracts */}
           <div style={PANEL} className="overflow-hidden">
             <div className="px-6 py-4 border-b border-zinc-800 flex items-center gap-3">
               <Zap size={18} className="text-amber-500" />
-              <p className="text-xs font-black uppercase tracking-widest text-white">Section C: Extra Work Cost</p>
+              <p className="text-xs font-black uppercase tracking-widest text-white">Section C: Subcontracts & Milestones Cost</p>
             </div>
             <div className="hidden md:block">
               <Table>
@@ -490,7 +552,7 @@ export default function ExportCalculationPage() {
                 </TableHeader>
                 <TableBody>
                   {(reportData.extraWork || []).length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="py-12 text-center text-zinc-500 text-sm italic">No extra work records found</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={5} className="py-12 text-center text-zinc-500 text-sm italic">No subcontracts found</TableCell></TableRow>
                   ) : reportData.extraWork.map((e: any, i: number) => (
                     <TableRow key={i} className="border-zinc-800/50 hover:bg-white/5 transition-colors">
                       <TableCell className="py-4 text-xs text-zinc-500 font-bold">{i + 1}</TableCell>
@@ -501,17 +563,17 @@ export default function ExportCalculationPage() {
                     </TableRow>
                   ))}
                   <TableRow className="border-zinc-800 bg-zinc-950/80">
-                    <TableCell colSpan={4} className="py-4 text-right pr-4 font-black text-xs uppercase tracking-widest text-zinc-400">Extra Work Total</TableCell>
+                    <TableCell colSpan={4} className="py-4 text-right pr-4 font-black text-xs uppercase tracking-widest text-zinc-400">Subcontracts Total</TableCell>
                     <TableCell className="py-4 text-right pr-6 font-black text-amber-400 text-lg">₹ {(reportData.totalExtraWorkCost || 0).toLocaleString()}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
             </div>
-
-            {/* Mobile Cards for Extra Work */}
+ 
+            {/* Mobile Cards for Subcontracts */}
             <div className="flex flex-col gap-3 p-4 md:hidden">
               {(reportData.extraWork || []).length === 0 ? (
-                <div className="py-12 text-center text-zinc-500 text-sm italic">No extra work records found</div>
+                <div className="py-12 text-center text-zinc-500 text-sm italic">No subcontracts found</div>
               ) : reportData.extraWork.map((e: any, i: number) => (
                 <div key={i} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex flex-col gap-2">
                   <div className="flex justify-between items-start">
@@ -527,7 +589,7 @@ export default function ExportCalculationPage() {
                 </div>
               ))}
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex justify-between items-center mt-2">
-                <p className="font-black text-xs uppercase tracking-widest text-amber-400">Extra Work Total</p>
+                <p className="font-black text-xs uppercase tracking-widest text-amber-400">Subcontracts Total</p>
                 <p className="font-black text-amber-400 text-xl">₹ {(reportData.totalExtraWorkCost || 0).toLocaleString()}</p>
               </div>
             </div>
