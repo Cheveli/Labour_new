@@ -171,9 +171,38 @@ export default function VoiceAssistant() {
   const chatEndRef = useRef<HTMLDivElement>(null)
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null)
   
-  // Microphone lifecycle flags and silence timeouts
+  // Microphone lifecycle flags, state references, and silence timeouts
   const isListeningRef = useRef(false)
+  const isRecognitionRunningRef = useRef(false)
+  const consecutiveSilenceCountRef = useRef(0)
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Safe SpeechRecognition start function
+  const safeStartRecognition = () => {
+    if (recognitionRef.current && !isRecognitionRunningRef.current) {
+      isRecognitionRunningRef.current = true
+      try {
+        console.log('[Mic] Starting SpeechRecognition...')
+        recognitionRef.current.start()
+      } catch (err) {
+        console.error('[Mic] Start exception:', err)
+        isRecognitionRunningRef.current = false
+      }
+    }
+  }
+
+  // Safe SpeechRecognition stop function
+  const safeStopRecognition = () => {
+    if (recognitionRef.current && isRecognitionRunningRef.current) {
+      isRecognitionRunningRef.current = false
+      try {
+        console.log('[Mic] Stopping SpeechRecognition...')
+        recognitionRef.current.stop()
+      } catch (err) {
+        console.error('[Mic] Stop exception:', err)
+      }
+    }
+  }
 
   // Initialize Speech Recognition once on mount
   useEffect(() => {
@@ -191,6 +220,7 @@ export default function VoiceAssistant() {
       rec.lang = 'te-IN' // Primary recognition language is Telugu
 
       rec.onstart = () => {
+        isRecognitionRunningRef.current = true
         setStatus('listening')
         setTranscript('')
       }
@@ -212,6 +242,9 @@ export default function VoiceAssistant() {
         if (accumulatedText) {
           setTranscript(accumulatedText)
         }
+
+        // Reset consecutive silences on actual speech captured
+        consecutiveSilenceCountRef.current = 0
 
         // Reset silence timeout of 1.5 seconds of silence
         if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current)
@@ -235,17 +268,24 @@ export default function VoiceAssistant() {
       }
 
       rec.onend = () => {
+        isRecognitionRunningRef.current = false
         console.log('[Mic] onend triggered')
+        
         // Auto-recover/restart if status was supposed to be listening and we got cut off unexpectedly
         if (isListeningRef.current) {
           if (transcriptRef.current.trim()) {
             stopListening()
           } else {
-            console.log('[Mic] Cut off without speech. Reconnecting...')
-            try {
-              rec.start()
-            } catch (e) {
-              console.error('[Mic] Failed to restart:', e)
+            // Cap consecutive silences to prevent infinite looping
+            if (consecutiveSilenceCountRef.current < 3) {
+              consecutiveSilenceCountRef.current += 1
+              console.log(`[Mic] Cut off without speech. Reconnecting... Attempt ${consecutiveSilenceCountRef.current}/3`)
+              safeStartRecognition()
+            } else {
+              console.log('[Mic] Max consecutive silence reached. Idle.')
+              isListeningRef.current = false
+              setStatus('idle')
+              consecutiveSilenceCountRef.current = 0
             }
           }
         } else {
@@ -295,6 +335,14 @@ export default function VoiceAssistant() {
       console.log('[TTS] Window is undefined (SSR)')
       return
     }
+
+    // Stop microphone if it was listening/speaking, to prevent clashes
+    isListeningRef.current = false
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current)
+      silenceTimeoutRef.current = null
+    }
+    safeStopRecognition()
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel()
@@ -390,12 +438,9 @@ export default function VoiceAssistant() {
     setTranscript('')
     setStatus('listening')
     isListeningRef.current = true
-
-    try {
-      recognitionRef.current?.start()
-    } catch (err) {
-      console.error('[Mic] Start failed:', err)
-    }
+    consecutiveSilenceCountRef.current = 0
+    
+    safeStartRecognition()
   }
 
   const stopListening = () => {
@@ -406,11 +451,7 @@ export default function VoiceAssistant() {
     }
 
     setStatus('thinking')
-    try {
-      recognitionRef.current?.stop()
-    } catch (e) {
-      console.error('[Mic] Stop failed:', e)
-    }
+    safeStopRecognition()
   }
 
   const toggleListening = () => {
@@ -440,13 +481,9 @@ export default function VoiceAssistant() {
     ])
     setTranscript('')
     setStatus('idle')
+    consecutiveSilenceCountRef.current = 0
     
-    try {
-      recognitionRef.current?.stop()
-    } catch (e) {
-      console.error('Error stopping recognition on reset:', e)
-    }
-    
+    safeStopRecognition()
     speakText(welcomeText)
   }
 
@@ -552,7 +589,7 @@ export default function VoiceAssistant() {
     }
 
     // Add user message to UI log
-    setMessages(prev => [...prev, { sender: 'user', text: textToSend }])
+    setMessages((prev: Message[]) => [...prev, { sender: 'user', text: textToSend }])
     setTranscript('')
 
     try {
@@ -582,7 +619,7 @@ export default function VoiceAssistant() {
       }
 
       // Add AI reply to UI log
-      setMessages(prev => [...prev, { sender: 'ai', text: data.replyText }])
+      setMessages((prev: Message[]) => [...prev, { sender: 'ai', text: data.replyText }])
 
       // Speak reply out loud
       speakText(data.replyText)
