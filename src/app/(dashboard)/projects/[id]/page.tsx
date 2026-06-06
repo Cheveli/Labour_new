@@ -52,7 +52,7 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
 
     const subWorkEntries: any[] = []
     subs?.forEach((sub: any) => {
-      let parsedNotes = { description: '', project_id: '', project_name: '', work_entries: [] as any[] }
+      let parsedNotes = { description: '', project_id: '', project_name: '' }
       try {
         if (sub.notes && (sub.notes.startsWith('{') || sub.notes.startsWith('['))) {
           parsedNotes = JSON.parse(sub.notes)
@@ -60,48 +60,44 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
           parsedNotes = {
             description: sub.notes || '',
             project_id: '',
-            project_name: '',
-            work_entries: [
-              {
-                id: 'initial',
-                work_name: 'Initial Agreement',
-                amount: sub.total_amount || 0,
-                date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
-                notes: sub.notes || '',
-                project_id: '',
-                project_name: ''
-              }
-            ]
+            project_name: ''
           }
         }
       } catch (e) {
         parsedNotes = {
           description: sub.notes || '',
           project_id: '',
-          project_name: '',
-          work_entries: [
-            {
-              id: 'initial',
-              work_name: 'Initial Agreement',
-              amount: sub.total_amount || 0,
-              date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
-              notes: '',
-              project_id: '',
-              project_name: ''
-            }
-          ]
+          project_name: ''
         }
       }
 
-      const workEntries = parsedNotes.work_entries || []
-      workEntries.forEach((entry: any) => {
-        if (entry.project_id === id) {
+      let installments = sub.installments || []
+      const sumInstallments = installments.reduce((sum: number, inst: any) => sum + Number(inst.amount || 0), 0)
+      
+      // Inject legacy balance payment if total_amount is greater than recorded installments
+      if (sub.total_amount > sumInstallments) {
+        const diff = sub.total_amount - sumInstallments
+        installments = [
+          {
+            amount: diff,
+            date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+            receipt_number: 1,
+            site_project: parsedNotes.project_name || 'Legacy Project',
+            notes: 'Legacy Balance / Migrated Payout'
+          },
+          ...installments.map((inst: any, idx: number) => ({ ...inst, receipt_number: idx + 2 }))
+        ]
+      }
+
+      installments.forEach((inst: any) => {
+        const isCurrentProject = (parsedNotes.project_id === id) || (inst.site_project === proj?.name)
+        if (isCurrentProject) {
           subWorkEntries.push({
-            id: entry.id,
-            work_name: `${sub.name} - ${entry.work_name}`,
-            amount: entry.amount,
-            date: entry.date,
-            notes: entry.notes || ''
+            id: `${sub.id}-${inst.receipt_number}`,
+            work_name: `${sub.name} - Payment #${inst.receipt_number}`,
+            amount: inst.amount,
+            date: inst.date,
+            notes: inst.notes || ''
           })
         }
       })

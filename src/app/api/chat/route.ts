@@ -31,7 +31,7 @@ export async function POST(req: Request) {
       supabase.from('materials').select('date, name, total_amount, quantity, unit, notes, project:project_id(name)'),
       supabase.from('attendance').select('date, days_worked, custom_rate, overtime_amount, advance_amount, labour:labour_id(name), project:project_id(name)'),
       supabase.from('income').select('date, amount, notes, project:project_id(name)'),
-      supabase.from('contractor_payments').select('date, name, work_nature, total_amount, total_paid, notes, installments'),
+      supabase.from('contractor_payments').select('id, date, name, work_nature, total_amount, total_paid, notes, installments'),
       supabase.from('personal_expenses').select('date, person_name, purpose, amount')
     ])
 
@@ -162,15 +162,38 @@ export async function POST(req: Request) {
 
     // Parse contractor payments to extract subcontracts work entries & installments
     const subcontracts = contractor_payments?.map(cp => {
-      let parsedNotes = { description: '', work_entries: [] };
+      let parsedNotes = { description: '' };
       try {
         if (cp.notes && (cp.notes.startsWith('{') || cp.notes.startsWith('['))) {
           parsedNotes = JSON.parse(cp.notes);
         } else {
-          parsedNotes = { description: cp.notes || '', work_entries: [] };
+          parsedNotes = { description: cp.notes || '' };
         }
       } catch (e) {}
       
+      let installments = cp.installments || [];
+      const sumInstallments = installments.reduce((sum: number, inst: any) => sum + Number(inst.amount || 0), 0);
+      if (cp.total_amount > sumInstallments) {
+        const diff = cp.total_amount - sumInstallments;
+        installments = [
+          {
+            amount: diff,
+            date: cp.date || '',
+            receipt_number: 1,
+            notes: 'Legacy Balance / Migrated Payout'
+          },
+          ...installments.map((inst: any, idx: number) => ({ ...inst, receipt_number: idx + 2 }))
+        ];
+      }
+
+      const workEntries = installments.map((inst: any) => ({
+        id: `${cp.id}-${inst.receipt_number}`,
+        work_name: `Payment #${inst.receipt_number}`,
+        amount: inst.amount,
+        date: inst.date,
+        notes: inst.notes || ''
+      }));
+
       return {
         contractor: cp.name,
         department: cp.work_nature,
@@ -178,7 +201,7 @@ export async function POST(req: Request) {
         total_paid: cp.total_paid,
         balance_due: Number(cp.total_amount || 0) - Number(cp.total_paid || 0),
         notes: parsedNotes.description,
-        work_entries: parsedNotes.work_entries || [],
+        work_entries: workEntries,
         installments: cp.installments || []
       };
     }) || [];

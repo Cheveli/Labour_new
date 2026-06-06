@@ -145,10 +145,10 @@ export default function DashboardPage() {
       const materialData = matRes.data
       const contractorPaymentsData = subRes.data || []
 
-      // Extract subcontractor work entries
+      // Extract subcontractor work entries (based on actual payment installments)
       const subWorkEntries: any[] = []
       contractorPaymentsData.forEach((sub: any) => {
-        let parsedNotes = { description: '', project_id: '', project_name: '', work_entries: [] as any[] }
+        let parsedNotes = { description: '', project_id: '', project_name: '' }
         try {
           if (sub.notes && (sub.notes.startsWith('{') || sub.notes.startsWith('['))) {
             parsedNotes = JSON.parse(sub.notes)
@@ -156,43 +156,47 @@ export default function DashboardPage() {
             parsedNotes = {
               description: sub.notes || '',
               project_id: '',
-              project_name: '',
-              work_entries: [
-                {
-                  id: 'initial',
-                  work_name: 'Initial Agreement',
-                  amount: sub.total_amount || 0,
-                  date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
-                  notes: sub.notes || '',
-                  project_id: '',
-                  project_name: ''
-                }
-              ]
+              project_name: ''
             }
           }
         } catch (e) {
           parsedNotes = {
             description: sub.notes || '',
             project_id: '',
-            project_name: '',
-            work_entries: [
-              {
-                id: 'initial',
-                work_name: 'Initial Agreement',
-                amount: sub.total_amount || 0,
-                date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
-                notes: '',
-                project_id: '',
-                project_name: ''
-              }
-            ]
+            project_name: ''
           }
         }
 
-        const workEntries = parsedNotes.work_entries || []
-        workEntries.forEach((entry: any) => {
+        let installments = sub.installments || []
+        const sumInstallments = installments.reduce((sum: number, inst: any) => sum + Number(inst.amount || 0), 0)
+        
+        // Inject legacy balance payment if total_amount is greater than recorded installments
+        if (sub.total_amount > sumInstallments) {
+          const diff = sub.total_amount - sumInstallments
+          installments = [
+            {
+              amount: diff,
+              date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+              receipt_number: 1,
+              site_project: parsedNotes.project_name || 'Legacy Project',
+              notes: 'Legacy Balance / Migrated Payout'
+            },
+            ...installments.map((inst: any, idx: number) => ({ ...inst, receipt_number: idx + 2 }))
+          ]
+        }
+
+        installments.forEach((inst: any) => {
+          const matchedProj = projList?.find(p => p.name === inst.site_project)
+          const projId = matchedProj ? matchedProj.id : parsedNotes.project_id
+
           subWorkEntries.push({
-            ...entry,
+            id: `${sub.id}-${inst.receipt_number}`,
+            work_name: `Payment #${inst.receipt_number}`,
+            amount: inst.amount,
+            date: inst.date,
+            notes: inst.notes || '',
+            project_id: projId,
+            project_name: inst.site_project || parsedNotes.project_name || '-',
             subcontractor_name: sub.name,
             subcontractor_id: sub.id,
             work_nature: sub.work_nature
@@ -432,7 +436,7 @@ export default function DashboardPage() {
         const { data: subDataRaw } = await supabase.from('contractor_payments').select('*')
         const subWorkEntries: any[] = []
         subDataRaw?.forEach((sub: any) => {
-          let parsedNotes = { description: '', project_id: '', project_name: '', work_entries: [] as any[] }
+          let parsedNotes = { description: '', project_id: '', project_name: '' }
           try {
             if (sub.notes && (sub.notes.startsWith('{') || sub.notes.startsWith('['))) {
               parsedNotes = JSON.parse(sub.notes)
@@ -440,43 +444,47 @@ export default function DashboardPage() {
               parsedNotes = {
                 description: sub.notes || '',
                 project_id: '',
-                project_name: '',
-                work_entries: [
-                  {
-                    id: 'initial',
-                    work_name: 'Initial Agreement',
-                    amount: sub.total_amount || 0,
-                    date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
-                    notes: sub.notes || '',
-                    project_id: '',
-                    project_name: ''
-                  }
-                ]
+                project_name: ''
               }
             }
           } catch (e) {
             parsedNotes = {
               description: sub.notes || '',
               project_id: '',
-              project_name: '',
-              work_entries: [
-                {
-                  id: 'initial',
-                  work_name: 'Initial Agreement',
-                  amount: sub.total_amount || 0,
-                  date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
-                  notes: '',
-                  project_id: '',
-                  project_name: ''
-                }
-              ]
+              project_name: ''
             }
           }
 
-          const workEntries = parsedNotes.work_entries || []
-          workEntries.forEach((entry: any) => {
+          let installments = sub.installments || []
+          const sumInstallments = installments.reduce((sum: number, inst: any) => sum + Number(inst.amount || 0), 0)
+          
+          if (sub.total_amount > sumInstallments) {
+            const diff = sub.total_amount - sumInstallments
+            installments = [
+              {
+                amount: diff,
+                date: sub.date || format(new Date(sub.created_at), 'yyyy-MM-dd'),
+                receipt_number: 1,
+                site_project: parsedNotes.project_name || 'Legacy Project',
+                notes: 'Legacy Balance / Migrated Payout'
+              },
+              ...installments.map((inst: any, idx: number) => ({ ...inst, receipt_number: idx + 2 }))
+            ]
+          }
+
+          installments.forEach((inst: any) => {
+            const matchedProj = projects.find(p => p.name === inst.site_project)
+            const projId = matchedProj ? matchedProj.id : parsedNotes.project_id
+            const projName = matchedProj ? matchedProj.name : (inst.site_project || parsedNotes.project_name || '-')
+
             subWorkEntries.push({
-              ...entry,
+              id: `${sub.id}-${inst.receipt_number}`,
+              work_name: `Payment #${inst.receipt_number}`,
+              amount: inst.amount,
+              date: inst.date,
+              notes: inst.notes || '',
+              project_id: projId,
+              project_name: projName,
               subcontractor_name: sub.name,
               subcontractor_id: sub.id,
               work_nature: sub.work_nature
