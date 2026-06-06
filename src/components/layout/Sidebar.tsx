@@ -60,6 +60,13 @@ export default function Sidebar() {
     localStorage.setItem('sidebar-collapsed', isCollapsed.toString())
   }, [isCollapsed])
 
+  // Listen for mobile hamburger trigger from MobileHeader
+  useEffect(() => {
+    const openSidebar = () => setIsOpen(true)
+    window.addEventListener('ssc_open_sidebar', openSidebar)
+    return () => window.removeEventListener('ssc_open_sidebar', openSidebar)
+  }, [])
+
   const showExpanded = !isCollapsed || isOpen
 
   const handleLogout = async () => {
