@@ -231,15 +231,15 @@ export default function PaymentsPage() {
       const r = [
         format(new Date(row.date), 'EEEE (dd MMM)'),
         row.status,
-        `Rs. ${(row.wage || 0).toLocaleString()}`
+        `Rs. ${(row.wage || 0).toLocaleString('en-IN')}`
       ]
       if (hasOT) {
-        r.push(row.ot > 0 ? `Rs. ${(row.ot || 0).toLocaleString()}` : '-')
+        r.push(row.ot > 0 ? `Rs. ${(row.ot || 0).toLocaleString('en-IN')}` : '-')
       }
       r.push(
-        row.adv > 0 ? `Rs. ${(row.adv || 0).toLocaleString()}` : '-',
-        `Rs. ${(row.total || 0).toLocaleString()}`,
-        `Rs. ${(row.wage + row.ot || 0).toLocaleString()}`
+        row.adv > 0 ? `Rs. ${(row.adv || 0).toLocaleString('en-IN')}` : '-',
+        `Rs. ${(row.total || 0).toLocaleString('en-IN')}`,
+        `Rs. ${(row.wage + row.ot || 0).toLocaleString('en-IN')}`
       )
       return r
     })
@@ -320,35 +320,35 @@ export default function PaymentsPage() {
 
     if (hasOT) {
       doc.text('Wages:', 19, finalY + 14)
-      doc.text(`${totalDays} days × Rs. ${rate.toLocaleString()} = Rs. ${wagesCalculated.toLocaleString()}`, 94, finalY + 14, { align: 'right' })
+      doc.text(`${totalDays} days × Rs. ${rate.toLocaleString('en-IN')} = Rs. ${wagesCalculated.toLocaleString('en-IN')}`, 94, finalY + 14, { align: 'right' })
       
       doc.text('Overtime Amount:', 19, finalY + 20)
-      doc.text(`Rs. ${data.totalOt.toLocaleString()}`, 94, finalY + 20, { align: 'right' })
+      doc.text(`Rs. ${data.totalOt.toLocaleString('en-IN')}`, 94, finalY + 20, { align: 'right' })
       
       doc.text('Less: Advance/Deduction:', 19, finalY + 26)
       doc.setTextColor(220, 53, 69)
-      doc.text(`-Rs. ${data.totalAdv.toLocaleString()}`, 94, finalY + 26, { align: 'right' })
+      doc.text(`-Rs. ${data.totalAdv.toLocaleString('en-IN')}`, 94, finalY + 26, { align: 'right' })
       doc.setTextColor(...PDF_COLORS.NAVY)
       
       doc.setDrawColor(200, 200, 200); doc.line(19, finalY + 30, 94, finalY + 30)
       
       doc.setTextColor(...PDF_COLORS.GREEN); doc.setFont('helvetica', 'bold'); doc.setFontSize(9)
       doc.text('NET PAYABLE:', 19, finalY + 36)
-      doc.text(`Rs. ${data.netPayable.toLocaleString()}`, 94, finalY + 36, { align: 'right' })
+      doc.text(`Rs. ${data.netPayable.toLocaleString('en-IN')}`, 94, finalY + 36, { align: 'right' })
     } else {
       doc.text('Wages:', 19, finalY + 14)
-      doc.text(`${totalDays} days × Rs. ${rate.toLocaleString()} = Rs. ${wagesCalculated.toLocaleString()}`, 94, finalY + 14, { align: 'right' })
+      doc.text(`${totalDays} days × Rs. ${rate.toLocaleString('en-IN')} = Rs. ${wagesCalculated.toLocaleString('en-IN')}`, 94, finalY + 14, { align: 'right' })
       
       doc.text('Less: Advance/Deduction:', 19, finalY + 20)
       doc.setTextColor(220, 53, 69)
-      doc.text(`-Rs. ${data.totalAdv.toLocaleString()}`, 94, finalY + 20, { align: 'right' })
+      doc.text(`-Rs. ${data.totalAdv.toLocaleString('en-IN')}`, 94, finalY + 20, { align: 'right' })
       doc.setTextColor(...PDF_COLORS.NAVY)
       
       doc.setDrawColor(200, 200, 200); doc.line(19, finalY + 24, 94, finalY + 24)
       
       doc.setTextColor(...PDF_COLORS.GREEN); doc.setFont('helvetica', 'bold'); doc.setFontSize(9)
       doc.text('NET PAYABLE:', 19, finalY + 30)
-      doc.text(`Rs. ${data.netPayable.toLocaleString()}`, 94, finalY + 30, { align: 'right' })
+      doc.text(`Rs. ${data.netPayable.toLocaleString('en-IN')}`, 94, finalY + 30, { align: 'right' })
     }
 
     // Summary Box
@@ -358,24 +358,24 @@ export default function PaymentsPage() {
     const summaryGross = data.totalWage + data.totalOt
     let boxY = finalY + 7
     doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(...PDF_COLORS.BLUE)
-    doc.text('GRAND TOTAL:', 115, boxY); doc.setFontSize(12); doc.text(`Rs. ${summaryGross.toLocaleString()}`, 185, boxY, { align: 'right' })
+    doc.text('GRAND TOTAL:', 115, boxY); doc.setFontSize(12); doc.text(`Rs. ${summaryGross.toLocaleString('en-IN')}`, 185, boxY, { align: 'right' })
     
     boxY += 8
     if (hasOT) {
       doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_COLORS.NAVY)
-      doc.text('Total Overtime:', 115, boxY); doc.text(`Rs. ${data.totalOt.toLocaleString()}`, 185, boxY, { align: 'right' })
+      doc.text('Total Overtime:', 115, boxY); doc.text(`Rs. ${data.totalOt.toLocaleString('en-IN')}`, 185, boxY, { align: 'right' })
       boxY += 7
     }
     
     doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_COLORS.NAVY)
-    doc.text('Total Deduction:', 115, boxY); doc.setTextColor(220, 53, 69); doc.text(`Rs. ${data.totalAdv.toLocaleString()}`, 185, boxY, { align: 'right' })
+    doc.text('Total Deduction:', 115, boxY); doc.setTextColor(220, 53, 69); doc.text(`Rs. ${data.totalAdv.toLocaleString('en-IN')}`, 185, boxY, { align: 'right' })
     
     boxY += 4
     doc.setDrawColor(200, 200, 200); doc.line(115, boxY, 185, boxY)
     
     boxY += 6
     doc.setTextColor(...PDF_COLORS.GREEN); doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
-    doc.text('NET PAYMENT:', 115, boxY); doc.text(`Rs. ${data.netPayable.toLocaleString()}`, 185, boxY, { align: 'right' })
+    doc.text('NET PAYMENT:', 115, boxY); doc.text(`Rs. ${data.netPayable.toLocaleString('en-IN')}`, 185, boxY, { align: 'right' })
 
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(8); doc.setFont('helvetica', 'italic')
     doc.text(`Amount in words: ${numberToWords(Math.abs(data.netPayable))}`, 14, finalY + 48)
@@ -407,7 +407,7 @@ export default function PaymentsPage() {
 
       const totalDays = data.breakdown.reduce((acc: number, curr: any) => acc + curr.daysWorked, 0)
       const rate = data.worker.daily_rate || 0
-      const wageText = `${totalDays} days × ₹${rate} = ₹${(totalDays * rate).toLocaleString()}`
+      const wageText = `${totalDays} days × ₹${rate} = ₹${(totalDays * rate).toLocaleString('en-IN')}`
       const grandTotal = (totalDays * rate) + data.totalOt
       
       let phone = data.worker.phone || ''
@@ -427,10 +427,10 @@ export default function PaymentsPage() {
                            `📅 *Period:* ${data.period}\n\n` +
                            `*Overview:*\n` +
                            `- Work: ${wageText}\n` +
-                           (data.totalOt > 0 ? `- Overtime: ₹${data.totalOt.toLocaleString()}\n` : '') +
-                           (data.totalAdv > 0 ? `- Advance/Deduction: -₹${data.totalAdv.toLocaleString()}\n` : '') +
-                           `- Grand Total: ₹${grandTotal.toLocaleString()}\n` +
-                           `*Net Payable:* *₹${data.netPayable.toLocaleString()}*\n\n` +
+                           (data.totalOt > 0 ? `- Overtime: ₹${data.totalOt.toLocaleString('en-IN')}\n` : '') +
+                           (data.totalAdv > 0 ? `- Advance/Deduction: -₹${data.totalAdv.toLocaleString('en-IN')}\n` : '') +
+                           `- Grand Total: ₹${grandTotal.toLocaleString('en-IN')}\n` +
+                           `*Net Payable:* *₹${data.netPayable.toLocaleString('en-IN')}*\n\n` +
                            `_Please find the detailed PDF receipt attached._`
 
           await navigator.share({
@@ -460,10 +460,10 @@ export default function PaymentsPage() {
                         `📅 *Period:* ${data.period}\n\n` +
                         `*Overview:*\n` +
                         `- Work: ${wageText}\n` +
-                        (data.totalOt > 0 ? `- Overtime: ₹${data.totalOt.toLocaleString()}\n` : '') +
-                        (data.totalAdv > 0 ? `- Advance/Deduction: -₹${data.totalAdv.toLocaleString()}\n` : '') +
-                        `- Grand Total: ₹${grandTotal.toLocaleString()}\n` +
-                        `*Net Payable:* *₹${data.netPayable.toLocaleString()}*\n\n` +
+                        (data.totalOt > 0 ? `- Overtime: ₹${data.totalOt.toLocaleString('en-IN')}\n` : '') +
+                        (data.totalAdv > 0 ? `- Advance/Deduction: -₹${data.totalAdv.toLocaleString('en-IN')}\n` : '') +
+                        `- Grand Total: ₹${grandTotal.toLocaleString('en-IN')}\n` +
+                        `*Net Payable:* *₹${data.netPayable.toLocaleString('en-IN')}*\n\n` +
                         `_Please attach the downloaded PDF receipt below._`
 
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank')
@@ -509,12 +509,12 @@ export default function PaymentsPage() {
         s.totalDays,
       ]
       if (hasOT) {
-        row.push(`Rs. ${s.totalOt.toLocaleString()}`)
+        row.push(`Rs. ${s.totalOt.toLocaleString('en-IN')}`)
       }
       row.push(
-        `Rs. ${s.totalDed.toLocaleString()}`,
-        `Rs. ${s.net.toLocaleString()}`,
-        `Rs. ${(s.totalDays * s.rate + s.totalOt).toLocaleString()}`
+        `Rs. ${s.totalDed.toLocaleString('en-IN')}`,
+        `Rs. ${s.net.toLocaleString('en-IN')}`,
+        `Rs. ${(s.totalDays * s.rate + s.totalOt).toLocaleString('en-IN')}`
       )
       return row
     })
@@ -527,12 +527,12 @@ export default function PaymentsPage() {
       '', // Total days removed as requested
     ]
     if (hasOT) {
-      grandTotalRow.push(`Rs. ${grandOt.toLocaleString()}`)
+      grandTotalRow.push(`Rs. ${grandOt.toLocaleString('en-IN')}`)
     }
     grandTotalRow.push(
-      `Rs. ${grandDed.toLocaleString()}`,
-      `Rs. ${grandNet.toLocaleString()}`,
-      `Rs. ${grandGross.toLocaleString()}`
+      `Rs. ${grandDed.toLocaleString('en-IN')}`,
+      `Rs. ${grandNet.toLocaleString('en-IN')}`,
+      `Rs. ${grandGross.toLocaleString('en-IN')}`
     )
     body.push(grandTotalRow)
 
@@ -799,7 +799,7 @@ export default function PaymentsPage() {
                       <td className="py-3 px-2 text-center font-bold text-zinc-400">{s.totalDays}</td>
                       <td className="py-3 px-2 text-center font-bold text-amber-500">{s.totalOt}</td>
                       <td className="py-3 px-2 text-center font-bold text-red-500">{s.totalDed}</td>
-                      <td className="py-3 px-4 text-right font-black text-blue-400">₹{s.net.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right font-black text-blue-400">₹{s.net.toLocaleString('en-IN')}</td>
                     </tr>
                   ))}
                   {summaryData.length > 0 && (
@@ -810,13 +810,13 @@ export default function PaymentsPage() {
                         {/* Total days removed as requested */}
                       </td>
                       <td className="py-4 px-2 text-center text-white">
-                        ₹{summaryData.reduce((acc, s) => acc + s.totalOt, 0).toLocaleString()}
+                        ₹{summaryData.reduce((acc, s) => acc + s.totalOt, 0).toLocaleString('en-IN')}
                       </td>
                       <td className="py-4 px-2 text-center text-red-200">
-                        ₹{summaryData.reduce((acc, s) => acc + s.totalDed, 0).toLocaleString()}
+                        ₹{summaryData.reduce((acc, s) => acc + s.totalDed, 0).toLocaleString('en-IN')}
                       </td>
                       <td className="py-4 px-4 text-right text-white">
-                        ₹{summaryData.reduce((acc, s) => acc + s.net, 0).toLocaleString()}
+                        ₹{summaryData.reduce((acc, s) => acc + s.net, 0).toLocaleString('en-IN')}
                       </td>
                     </tr>
                   )}
@@ -835,7 +835,7 @@ export default function PaymentsPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-[8px] font-black uppercase text-zinc-500">Net Payable</p>
-                      <p className="text-sm font-black text-blue-400">₹{s.net.toLocaleString()}</p>
+                      <p className="text-sm font-black text-blue-400">₹{s.net.toLocaleString('en-IN')}</p>
                     </div>
                   </div>
 
@@ -877,10 +877,10 @@ export default function PaymentsPage() {
                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-200 mb-2">Grand Total Summary</p>
                    <div className="flex justify-between items-end">
                       <div className="space-y-1">
-                        <p className="text-[8px] font-bold text-blue-100">OT: ₹{summaryData.reduce((acc, s) => acc + s.totalOt, 0).toLocaleString()}</p>
-                        <p className="text-[8px] font-bold text-blue-100">DED: ₹{summaryData.reduce((acc, s) => acc + s.totalDed, 0).toLocaleString()}</p>
+                        <p className="text-[8px] font-bold text-blue-100">OT: ₹{summaryData.reduce((acc, s) => acc + s.totalOt, 0).toLocaleString('en-IN')}</p>
+                        <p className="text-[8px] font-bold text-blue-100">DED: ₹{summaryData.reduce((acc, s) => acc + s.totalDed, 0).toLocaleString('en-IN')}</p>
                       </div>
-                      <p className="text-xl font-black text-white">₹{summaryData.reduce((acc, s) => acc + s.net, 0).toLocaleString()}</p>
+                      <p className="text-xl font-black text-white">₹{summaryData.reduce((acc, s) => acc + s.net, 0).toLocaleString('en-IN')}</p>
                    </div>
                 </div>
               )}

@@ -136,7 +136,7 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <SummaryIconCard title="Total Spent" value={`₹${(materials.reduce((acc, m) => acc + Number(m.total_cost), 0) + extraWork.reduce((acc, e) => acc + Number(e.amount), 0)).toLocaleString()}`} icon={<Wallet className="text-blue-600" />} />
+        <SummaryIconCard title="Total Spent" value={`₹${(materials.reduce((acc, m) => acc + Number(m.total_cost), 0) + extraWork.reduce((acc, e) => acc + Number(e.amount), 0)).toLocaleString('en-IN')}`} icon={<Wallet className="text-blue-600" />} />
         <SummaryIconCard title="Labour Active" value={new Set(attendance.map(a => a.labour_id)).size.toString()} icon={<Users className="text-emerald-600" />} />
         <SummaryIconCard title="Mat. Records" value={materials.length.toString()} icon={<Package className="text-orange-600" />} />
         <SummaryIconCard title="Subcontracts" value={extraWork.length.toString()} icon={<TrendingUp className="text-purple-600" />} />

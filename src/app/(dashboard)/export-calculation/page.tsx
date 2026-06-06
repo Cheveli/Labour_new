@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Loader2, FileText, Download, Calculator, Package, Users, Zap } from 'lucide-react'
+import { Loader2, FileText, Calculator, Package, Users, Zap, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 import { format, startOfWeek, endOfWeek } from 'date-fns'
 import jsPDF from 'jspdf'
@@ -155,6 +155,14 @@ export default function ExportCalculationPage() {
       const totalMaterialCost = (matData || []).reduce((a: number, m: any) => a + Number(m.total_amount || 0), 0)
       const totalExtraWorkCost = (extraData || []).reduce((a: number, e: any) => a + Number(e.amount || 0), 0)
 
+      // 4. Fetch personal expenses (only when "All Projects" is selected)
+      let peData: any[] = []
+      if (!selectedProjectId) {
+        const { data } = await supabase.from('personal_expenses').select('*').order('date', { ascending: true })
+        peData = data || []
+      }
+      const totalPersonalExpenses = peData.reduce((sum: number, entry: any) => sum + Number(entry.amount || 0), 0)
+
       // Man-Days breakdown
       let mDays = 0, lDays = 0, pDays = 0
       attData?.forEach((r: any) => {
@@ -169,10 +177,12 @@ export default function ExportCalculationPage() {
         weeklySummaries,
         materials: matData || [],
         extraWork: extraData || [],
+        personalExpenses: peData,
         totalLabourCost,
         totalMaterialCost,
         totalExtraWorkCost,
-        grandTotal: totalLabourCost + totalMaterialCost + totalExtraWorkCost,
+        totalPersonalExpenses,
+        grandTotal: totalLabourCost + totalMaterialCost + totalExtraWorkCost + totalPersonalExpenses,
         project: projects.find(p => p.id === selectedProjectId),
         mDays,
         lDays,
@@ -187,7 +197,7 @@ export default function ExportCalculationPage() {
 
   const exportPDF = () => {
     if (!reportData) return
-    const { weeklySummaries, materials, totalLabourCost, totalMaterialCost, grandTotal, project, mDays, lDays, pDays } = reportData
+    const { weeklySummaries, materials, totalLabourCost, totalMaterialCost, totalExtraWorkCost, totalPersonalExpenses, personalExpenses, grandTotal, project, mDays, lDays, pDays } = reportData
     const doc = new jsPDF()
 
     drawPremiumHeader(doc, 'EXPORT CALCULATION', '(COMBINED REPORT)')
@@ -210,9 +220,9 @@ export default function ExportCalculationPage() {
       startY: y,
       head: [['S.No', 'Week Period', 'Total Man-Days', 'Total Gross (Rs.)']],
       body: weeklySummaries.map((w: any, i: number) => [
-        i + 1, w.period, w.days.toFixed(1), `Rs. ${w.gross.toLocaleString()}`
+        i + 1, w.period, w.days.toFixed(1), `Rs. ${w.gross.toLocaleString('en-IN')}`
       ]),
-      foot: [['', `M-${mDays}, L-${lDays}, P-${pDays}`, '', 'TOTAL', `Rs. ${totalLabourCost.toLocaleString()}`]],
+      foot: [['', `M-${mDays}, L-${lDays}, P-${pDays}`, '', 'TOTAL', `Rs. ${totalLabourCost.toLocaleString('en-IN')}`]],
       theme: 'grid',
       headStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontSize: 8 },
       bodyStyles: { fontSize: 8, textColor: PDF_COLORS.NAVY },
@@ -233,9 +243,9 @@ export default function ExportCalculationPage() {
       startY: y,
       head: [['S.No', 'Material', 'Project', 'Date', 'Amount (Rs.)']],
       body: materials.map((m: any, i: number) => [
-        i + 1, m.name, m.projects?.name || '-', format(new Date(m.date), 'dd MMM yyyy'), `Rs. ${Number(m.total_amount).toLocaleString()}`
+        i + 1, m.name, m.projects?.name || '-', format(new Date(m.date), 'dd MMM yyyy'), `Rs. ${Number(m.total_amount).toLocaleString('en-IN')}`
       ]),
-      foot: [['', '', '', 'TOTAL', `Rs. ${totalMaterialCost.toLocaleString()}`]],
+      foot: [['', '', '', 'TOTAL', `Rs. ${totalMaterialCost.toLocaleString('en-IN')}`]],
       theme: 'grid',
       headStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontSize: 8 },
       bodyStyles: { fontSize: 8, textColor: PDF_COLORS.NAVY },
@@ -257,9 +267,9 @@ export default function ExportCalculationPage() {
       startY: y,
       head: [['S.No', 'Work Name', 'Project', 'Date', 'Amount (Rs.)']],
       body: (reportData.extraWork || []).map((e: any, i: number) => [
-        i + 1, e.work_name, e.projects?.name || '-', format(new Date(e.date), 'dd MMM yyyy'), `Rs. ${Number(e.amount).toLocaleString()}`
+        i + 1, e.work_name, e.projects?.name || '-', format(new Date(e.date), 'dd MMM yyyy'), `Rs. ${Number(e.amount).toLocaleString('en-IN')}`
       ]),
-      foot: [['', '', '', 'TOTAL', `Rs. ${(reportData.totalExtraWorkCost || 0).toLocaleString()}`]],
+      foot: [['', '', '', 'TOTAL', `Rs. ${(totalExtraWorkCost || 0).toLocaleString('en-IN')}`]],
       theme: 'grid',
       headStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontSize: 8 },
       bodyStyles: { fontSize: 8, textColor: PDF_COLORS.NAVY },
@@ -269,27 +279,80 @@ export default function ExportCalculationPage() {
 
     y = (doc as any).lastAutoTable.finalY + 12
 
+    // SECTION 4: Personal Expenses (Only when no project filter is active)
+    if (!selectedProjectId) {
+      if (y > 250) { doc.addPage(); y = 20 }
+      doc.setFillColor(...PDF_COLORS.BLUE)
+      doc.roundedRect(14, y, 182, 8, 1, 1, 'F')
+      doc.setTextColor(255, 255, 255); doc.setFontSize(9); doc.setFont('helvetica', 'bold')
+      doc.text('SECTION D: PERSONAL EXPENSES', 18, y + 5.5)
+      y += 12
+
+      autoTable(doc, {
+        startY: y,
+        head: [['S.No', 'Person Name', 'Purpose', 'Date', 'Amount (Rs.)']],
+        body: (personalExpenses || []).map((e: any, i: number) => [
+          i + 1, e.person_name, e.purpose, format(new Date(e.date), 'dd MMM yyyy'), `Rs. ${Number(e.amount).toLocaleString('en-IN')}`
+        ]),
+        foot: [['', '', '', 'TOTAL', `Rs. ${(totalPersonalExpenses || 0).toLocaleString('en-IN')}`]],
+        theme: 'grid',
+        headStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontSize: 8 },
+        bodyStyles: { fontSize: 8, textColor: PDF_COLORS.NAVY },
+        footStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontStyle: 'bold', fontSize: 8 },
+        alternateRowStyles: { fillColor: PDF_COLORS.LIGHT }
+      })
+
+      y = (doc as any).lastAutoTable.finalY + 12
+    }
+
     // GRAND TOTAL BOX
     if (y > 240) { doc.addPage(); y = 20 }
-    const bW = 45, bH = 22
-    // Labour total box
-    doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14, y, bW, bH, 1, 1, 'F')
-    doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.text('Labour Cost', 14 + bW / 2, y + 7, { align: 'center' })
-    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${totalLabourCost.toLocaleString()}`, 14 + bW / 2, y + 16, { align: 'center' })
-    // Material total box
-    doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14 + bW + 2, y, bW, bH, 1, 1, 'F')
-    doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.text('Material Cost', 14 + bW + 2 + bW / 2, y + 7, { align: 'center' })
-    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${totalMaterialCost.toLocaleString()}`, 14 + bW + 2 + bW / 2, y + 16, { align: 'center' })
-    // Subcontract total box
-    doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14 + (bW + 2) * 2, y, bW, bH, 1, 1, 'F')
-    doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.text('Subcontracts', 14 + (bW + 2) * 2 + bW / 2, y + 7, { align: 'center' })
-    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${(reportData.totalExtraWorkCost || 0).toLocaleString()}`, 14 + (bW + 2) * 2 + bW / 2, y + 16, { align: 'center' })
-    // Grand total box
-    doc.setFillColor(...PDF_COLORS.BLUE); doc.roundedRect(14 + (bW + 2) * 3, y, bW, bH, 1, 1, 'F')
-    doc.setTextColor(255, 255, 255); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.text('GRAND TOTAL', 14 + (bW + 2) * 3 + bW / 2, y + 7, { align: 'center' })
-    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${grandTotal.toLocaleString()}`, 14 + (bW + 2) * 3 + bW / 2, y + 16, { align: 'center' })
+    
+    // Draw summary boxes. If personal expenses are included, we draw 5 boxes. Otherwise 4 boxes.
+    if (!selectedProjectId) {
+      const bW = 34.5, bH = 22
+      // Labour total box
+      doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14, y, bW, bH, 1, 1, 'F')
+      doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(6.5); doc.text('Labour Cost', 14 + bW / 2, y + 7, { align: 'center' })
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${totalLabourCost.toLocaleString('en-IN')}`, 14 + bW / 2, y + 16, { align: 'center' })
+      // Material total box
+      doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14 + bW + 2, y, bW, bH, 1, 1, 'F')
+      doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.text('Material Cost', 14 + bW + 2 + bW / 2, y + 7, { align: 'center' })
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${totalMaterialCost.toLocaleString('en-IN')}`, 14 + bW + 2 + bW / 2, y + 16, { align: 'center' })
+      // Subcontract total box
+      doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14 + (bW + 2) * 2, y, bW, bH, 1, 1, 'F')
+      doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.text('Subcontracts', 14 + (bW + 2) * 2 + bW / 2, y + 7, { align: 'center' })
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${(totalExtraWorkCost || 0).toLocaleString('en-IN')}`, 14 + (bW + 2) * 2 + bW / 2, y + 16, { align: 'center' })
+      // Personal Expenses box
+      doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14 + (bW + 2) * 3, y, bW, bH, 1, 1, 'F')
+      doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.text('Personal Exp.', 14 + (bW + 2) * 3 + bW / 2, y + 7, { align: 'center' })
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${(totalPersonalExpenses || 0).toLocaleString('en-IN')}`, 14 + (bW + 2) * 3 + bW / 2, y + 16, { align: 'center' })
+      // Grand total box
+      doc.setFillColor(...PDF_COLORS.BLUE); doc.roundedRect(14 + (bW + 2) * 4, y, bW, bH, 1, 1, 'F')
+      doc.setTextColor(255, 255, 255); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.text('GRAND TOTAL', 14 + (bW + 2) * 4 + bW / 2, y + 7, { align: 'center' })
+      doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${grandTotal.toLocaleString('en-IN')}`, 14 + (bW + 2) * 4 + bW / 2, y + 16, { align: 'center' })
+      y += bH + 6
+    } else {
+      const bW = 44, bH = 22
+      // Labour total box
+      doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14, y, bW, bH, 1, 1, 'F')
+      doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.text('Labour Cost', 14 + bW / 2, y + 7, { align: 'center' })
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${totalLabourCost.toLocaleString('en-IN')}`, 14 + bW / 2, y + 16, { align: 'center' })
+      // Material total box
+      doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14 + bW + 2, y, bW, bH, 1, 1, 'F')
+      doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.text('Material Cost', 14 + bW + 2 + bW / 2, y + 7, { align: 'center' })
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${totalMaterialCost.toLocaleString('en-IN')}`, 14 + bW + 2 + bW / 2, y + 16, { align: 'center' })
+      // Subcontract total box
+      doc.setFillColor(...PDF_COLORS.LIGHT); doc.roundedRect(14 + (bW + 2) * 2, y, bW, bH, 1, 1, 'F')
+      doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.text('Subcontracts', 14 + (bW + 2) * 2 + bW / 2, y + 7, { align: 'center' })
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${(totalExtraWorkCost || 0).toLocaleString('en-IN')}`, 14 + (bW + 2) * 2 + bW / 2, y + 16, { align: 'center' })
+      // Grand total box
+      doc.setFillColor(...PDF_COLORS.BLUE); doc.roundedRect(14 + (bW + 2) * 3, y, bW, bH, 1, 1, 'F')
+      doc.setTextColor(255, 255, 255); doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.text('GRAND TOTAL', 14 + (bW + 2) * 3 + bW / 2, y + 7, { align: 'center' })
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${grandTotal.toLocaleString('en-IN')}`, 14 + (bW + 2) * 3 + bW / 2, y + 16, { align: 'center' })
+      y += bH + 6
+    }
 
-    y += bH + 6
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(8); doc.setFont('helvetica', 'italic')
     doc.text(`Amount in Words: ${numberToWords(grandTotal)}`, 14, y)
 
@@ -363,7 +426,7 @@ export default function ExportCalculationPage() {
           </div>
 
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className={`grid grid-cols-1 ${!selectedProjectId ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
             <div style={PANEL} className="p-6">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-600/10 flex items-center justify-center border border-blue-600/20">
@@ -371,7 +434,7 @@ export default function ExportCalculationPage() {
                 </div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Labour Cost</p>
               </div>
-              <p className="text-2xl font-black text-white">₹ {reportData.totalLabourCost.toLocaleString()}</p>
+              <p className="text-2xl font-black text-white">₹ {reportData.totalLabourCost.toLocaleString('en-IN')}</p>
               <p className="text-[10px] text-zinc-500 mt-1 uppercase font-bold tracking-wider">
                 M-{reportData.mDays} L-{reportData.lDays} P-{reportData.pDays}
               </p>
@@ -383,7 +446,7 @@ export default function ExportCalculationPage() {
                 </div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Material Cost</p>
               </div>
-              <p className="text-2xl font-black text-white">₹ {reportData.totalMaterialCost.toLocaleString()}</p>
+              <p className="text-2xl font-black text-white">₹ {reportData.totalMaterialCost.toLocaleString('en-IN')}</p>
               <p className="text-xs text-zinc-500 mt-1">{reportData.materials.length} items</p>
             </div>
             <div style={PANEL} className="p-6">
@@ -393,9 +456,23 @@ export default function ExportCalculationPage() {
                 </div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Subcontracts</p>
               </div>
-              <p className="text-2xl font-black text-white">₹ {(reportData.totalExtraWorkCost || 0).toLocaleString()}</p>
+              <p className="text-2xl font-black text-white">₹ {(reportData.totalExtraWorkCost || 0).toLocaleString('en-IN')}</p>
               <p className="text-xs text-zinc-500 mt-1">{(reportData.extraWork || []).length} entries</p>
             </div>
+            
+            {!selectedProjectId && (
+              <div style={PANEL} className="p-6">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-rose-600/10 flex items-center justify-center border border-rose-600/20">
+                    <Wallet size={20} className="text-rose-500" />
+                  </div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Personal Expenses</p>
+                </div>
+                <p className="text-2xl font-black text-white">₹ {(reportData.totalPersonalExpenses || 0).toLocaleString('en-IN')}</p>
+                <p className="text-xs text-zinc-500 mt-1">{(reportData.personalExpenses || []).length} entries</p>
+              </div>
+            )}
+
             <div className="p-6 rounded-[0.875rem] border border-blue-500/30" style={{ background: 'linear-gradient(135deg, #1e3a5f, #0d1018)' }}>
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-600/20 flex items-center justify-center border border-blue-500/30">
@@ -403,8 +480,10 @@ export default function ExportCalculationPage() {
                 </div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-blue-300">Grand Total</p>
               </div>
-              <p className="text-3xl font-black text-white">₹ {reportData.grandTotal.toLocaleString()}</p>
-              <p className="text-[10px] text-blue-300/60 mt-1 uppercase tracking-widest font-black">Lab + Mat + Sub</p>
+              <p className="text-3xl font-black text-white">₹ {reportData.grandTotal.toLocaleString('en-IN')}</p>
+              <p className="text-[10px] text-blue-300/60 mt-1 uppercase tracking-widest font-black">
+                {!selectedProjectId ? 'Lab + Mat + Sub + Pers' : 'Lab + Mat + Sub'}
+              </p>
             </div>
           </div>
 
@@ -430,15 +509,15 @@ export default function ExportCalculationPage() {
                       <TableCell className="py-4 text-xs text-zinc-500 font-bold">{i + 1}</TableCell>
                       <TableCell className="py-4 font-bold text-white text-sm">{w.period}</TableCell>
                       <TableCell className="py-4 text-center text-xs font-bold text-white">{w.days.toFixed(1)}</TableCell>
-                      <TableCell className="py-4 text-right pr-6 font-black text-blue-400 text-sm">₹ {w.gross.toLocaleString()}</TableCell>
+                      <TableCell className="py-4 text-right pr-6 font-black text-blue-400 text-sm">₹ {w.gross.toLocaleString('en-IN')}</TableCell>
                     </TableRow>
                   ))}
                   <TableRow className="border-zinc-800 bg-zinc-950/80">
-                    <TableCell colSpan={3} className="py-4 text-right pr-4 font-black text-[10px] uppercase tracking-widest text-zinc-500">
+                    <TableCell colSpan={2} className="py-4 text-right pr-4 font-black text-[10px] uppercase tracking-widest text-zinc-500">
                       Breakdown: M-{reportData.mDays}, L-{reportData.lDays}, P-{reportData.pDays}
                     </TableCell>
                     <TableCell className="py-4 text-right pr-4 font-black text-xs uppercase tracking-widest text-zinc-400">Labour Total</TableCell>
-                    <TableCell className="py-4 text-right pr-6 font-black text-blue-400 text-lg">₹ {reportData.totalLabourCost.toLocaleString()}</TableCell>
+                    <TableCell className="py-4 text-right pr-6 font-black text-blue-400 text-lg">₹ {reportData.totalLabourCost.toLocaleString('en-IN')}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
@@ -454,7 +533,7 @@ export default function ExportCalculationPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-[10px] font-black uppercase text-zinc-500">Weekly Gross</p>
-                      <p className="font-black text-blue-400 text-lg mt-0.5">₹ {w.gross.toLocaleString()}</p>
+                      <p className="font-black text-blue-400 text-lg mt-0.5">₹ {w.gross.toLocaleString('en-IN')}</p>
                     </div>
                   </div>
                   <div className="flex justify-between items-center pt-1">
@@ -465,7 +544,7 @@ export default function ExportCalculationPage() {
               ))}
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex justify-between items-center mt-2">
                 <p className="font-black text-xs uppercase tracking-widest text-blue-400">Labour Total</p>
-                <p className="font-black text-blue-400 text-xl">₹ {reportData.totalLabourCost.toLocaleString()}</p>
+                <p className="font-black text-blue-400 text-xl">₹ {reportData.totalLabourCost.toLocaleString('en-IN')}</p>
               </div>
             </div>
           </div>
@@ -496,12 +575,12 @@ export default function ExportCalculationPage() {
                       <TableCell className="py-4 font-bold text-white text-sm">{m.name}</TableCell>
                       <TableCell className="py-4 text-xs text-zinc-400">{m.projects?.name || '-'}</TableCell>
                       <TableCell className="py-4 text-xs text-zinc-400">{format(new Date(m.date), 'dd MMM yyyy')}</TableCell>
-                      <TableCell className="py-4 text-right pr-6 font-black text-emerald-400 text-sm">₹ {Number(m.total_amount).toLocaleString()}</TableCell>
+                      <TableCell className="py-4 text-right pr-6 font-black text-emerald-400 text-sm">₹ {Number(m.total_amount).toLocaleString('en-IN')}</TableCell>
                     </TableRow>
                   ))}
                   <TableRow className="border-zinc-800 bg-zinc-950/80">
                     <TableCell colSpan={4} className="py-4 text-right pr-4 font-black text-xs uppercase tracking-widest text-zinc-400">Material Total</TableCell>
-                    <TableCell className="py-4 text-right pr-6 font-black text-emerald-400 text-lg">₹ {reportData.totalMaterialCost.toLocaleString()}</TableCell>
+                    <TableCell className="py-4 text-right pr-6 font-black text-emerald-400 text-lg">₹ {reportData.totalMaterialCost.toLocaleString('en-IN')}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
@@ -519,7 +598,7 @@ export default function ExportCalculationPage() {
                       <p className="text-[10px] font-bold text-zinc-500 mt-1">{format(new Date(m.date), 'dd MMM yyyy')}</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-black text-emerald-400 text-lg mt-0.5">₹ {Number(m.total_amount).toLocaleString()}</p>
+                      <p className="font-black text-emerald-400 text-lg mt-0.5">₹ {Number(m.total_amount).toLocaleString('en-IN')}</p>
                       <p className="text-[10px] font-bold text-zinc-500 truncate max-w-[120px] mt-1">{m.projects?.name || '-'}</p>
                     </div>
                   </div>
@@ -527,7 +606,7 @@ export default function ExportCalculationPage() {
               ))}
               <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 flex justify-between items-center mt-2">
                 <p className="font-black text-xs uppercase tracking-widest text-emerald-400">Material Total</p>
-                <p className="font-black text-emerald-400 text-xl">₹ {reportData.totalMaterialCost.toLocaleString()}</p>
+                <p className="font-black text-emerald-400 text-xl">₹ {reportData.totalMaterialCost.toLocaleString('en-IN')}</p>
               </div>
             </div>
           </div>
@@ -558,17 +637,17 @@ export default function ExportCalculationPage() {
                       <TableCell className="py-4 font-bold text-white text-sm">{e.work_name}</TableCell>
                       <TableCell className="py-4 text-xs text-zinc-400">{e.projects?.name || '-'}</TableCell>
                       <TableCell className="py-4 text-xs text-zinc-400">{format(new Date(e.date), 'dd MMM yyyy')}</TableCell>
-                      <TableCell className="py-4 text-right pr-6 font-black text-amber-400 text-sm">₹ {Number(e.amount).toLocaleString()}</TableCell>
+                      <TableCell className="py-4 text-right pr-6 font-black text-amber-400 text-sm">₹ {Number(e.amount).toLocaleString('en-IN')}</TableCell>
                     </TableRow>
                   ))}
                   <TableRow className="border-zinc-800 bg-zinc-950/80">
                     <TableCell colSpan={4} className="py-4 text-right pr-4 font-black text-xs uppercase tracking-widest text-zinc-400">Subcontracts Total</TableCell>
-                    <TableCell className="py-4 text-right pr-6 font-black text-amber-400 text-lg">₹ {(reportData.totalExtraWorkCost || 0).toLocaleString()}</TableCell>
+                    <TableCell className="py-4 text-right pr-6 font-black text-amber-400 text-lg">₹ {(reportData.totalExtraWorkCost || 0).toLocaleString('en-IN')}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
             </div>
- 
+
             {/* Mobile Cards for Subcontracts */}
             <div className="flex flex-col gap-3 p-4 md:hidden">
               {(reportData.extraWork || []).length === 0 ? (
@@ -581,7 +660,7 @@ export default function ExportCalculationPage() {
                       <p className="text-[10px] font-bold text-zinc-500 mt-1">{format(new Date(e.date), 'dd MMM yyyy')}</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-black text-amber-400 text-lg mt-0.5">₹ {Number(e.amount).toLocaleString()}</p>
+                      <p className="font-black text-amber-400 text-lg mt-0.5">₹ {Number(e.amount).toLocaleString('en-IN')}</p>
                       <p className="text-[10px] font-bold text-zinc-500 truncate max-w-[120px] mt-1">{e.projects?.name || '-'}</p>
                     </div>
                   </div>
@@ -589,10 +668,74 @@ export default function ExportCalculationPage() {
               ))}
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex justify-between items-center mt-2">
                 <p className="font-black text-xs uppercase tracking-widest text-amber-400">Subcontracts Total</p>
-                <p className="font-black text-amber-400 text-xl">₹ {(reportData.totalExtraWorkCost || 0).toLocaleString()}</p>
+                <p className="font-black text-amber-400 text-xl">₹ {(reportData.totalExtraWorkCost || 0).toLocaleString('en-IN')}</p>
               </div>
             </div>
           </div>
+
+          {/* Section D: Personal Expenses (Only when "All Projects" is selected) */}
+          {!selectedProjectId && (
+            <div style={PANEL} className="overflow-hidden">
+              <div className="px-6 py-4 border-b border-zinc-800 flex items-center gap-3">
+                <Wallet size={18} className="text-rose-500" />
+                <p className="text-xs font-black uppercase tracking-widest text-white">Section D: Personal Expenses</p>
+              </div>
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader className="bg-zinc-950/50">
+                    <TableRow className="border-zinc-800">
+                      <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500 w-12">#</TableHead>
+                      <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500">Person Name</TableHead>
+                      <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500">Purpose</TableHead>
+                      <TableHead className="py-4 text-[10px] font-black uppercase text-zinc-500">Date</TableHead>
+                      <TableHead className="py-4 text-right text-[10px] font-black uppercase text-zinc-500 pr-6">Amount (₹)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(reportData.personalExpenses || []).length === 0 ? (
+                      <TableRow><TableCell colSpan={5} className="py-12 text-center text-zinc-500 text-sm italic">No personal expenses found</TableCell></TableRow>
+                    ) : reportData.personalExpenses.map((e: any, i: number) => (
+                      <TableRow key={i} className="border-zinc-800/50 hover:bg-white/5 transition-colors">
+                        <TableCell className="py-4 text-xs text-zinc-500 font-bold">{i + 1}</TableCell>
+                        <TableCell className="py-4 font-bold text-white text-sm">{e.person_name}</TableCell>
+                        <TableCell className="py-4 text-xs text-zinc-400">{e.purpose}</TableCell>
+                        <TableCell className="py-4 text-xs text-zinc-400">{format(new Date(e.date), 'dd MMM yyyy')}</TableCell>
+                        <TableCell className="py-4 text-right pr-6 font-black text-rose-400 text-sm">₹ {Number(e.amount).toLocaleString('en-IN')}</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="border-zinc-800 bg-zinc-950/80">
+                      <TableCell colSpan={4} className="py-4 text-right pr-4 font-black text-xs uppercase tracking-widest text-zinc-400">Personal Expenses Total</TableCell>
+                      <TableCell className="py-4 text-right pr-6 font-black text-rose-400 text-lg">₹ {(reportData.totalPersonalExpenses || 0).toLocaleString('en-IN')}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile Cards for Personal Expenses */}
+              <div className="flex flex-col gap-3 p-4 md:hidden">
+                {(reportData.personalExpenses || []).length === 0 ? (
+                  <div className="py-12 text-center text-zinc-500 text-sm italic">No personal expenses found</div>
+                ) : reportData.personalExpenses.map((e: any, i: number) => (
+                  <div key={i} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex flex-col gap-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-bold text-white text-base leading-tight">{e.person_name}</p>
+                        <p className="text-[10px] font-bold text-zinc-500 mt-1">{format(new Date(e.date), 'dd MMM yyyy')}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-black text-rose-400 text-lg mt-0.5">₹ {Number(e.amount).toLocaleString('en-IN')}</p>
+                        <p className="text-[10px] font-bold text-zinc-500 truncate max-w-[120px] mt-1">{e.purpose}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 flex justify-between items-center mt-2">
+                  <p className="font-black text-xs uppercase tracking-widest text-rose-400">Personal Expenses Total</p>
+                  <p className="font-black text-rose-400 text-xl">₹ {(reportData.totalPersonalExpenses || 0).toLocaleString('en-IN')}</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

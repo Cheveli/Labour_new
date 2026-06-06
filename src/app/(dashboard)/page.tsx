@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Users, CalendarCheck, Wallet, Package, TrendingUp, Briefcase, Zap, Loader2, Sparkles, Send, Search, Bot } from 'lucide-react'
+import { Users, CalendarCheck, Wallet, Package, TrendingUp, Briefcase, Zap, Loader2, Sparkles, Send, Search, Bot, DollarSign } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import {
@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState({ totalProjects: 0, totalRevenue: 0, totalLabourCost: 0, totalMaterialCost: 0, totalExtraWork: 0, netCash: 0 })
+  const [stats, setStats] = useState({ totalProjects: 0, totalRevenue: 0, totalLabourCost: 0, totalMaterialCost: 0, totalExtraWork: 0, totalPersonalExpenses: 0, netCash: 0 })
   const [recentActivities, setRecentActivities] = useState<any[]>([])
   const [detailsModalOpen, setDetailsModalOpen] = useState(false)
   const [detailsModalType, setDetailsModalType] = useState<string>('')
@@ -131,6 +131,7 @@ export default function DashboardPage() {
       let attQ = supabase.from('attendance').select('date, days_worked, custom_rate, overtime_amount, project_id, labour(daily_rate)')
       let matQ = supabase.from('materials').select('total_amount, date, project_id')
       let subQ = supabase.from('contractor_payments').select('*')
+      let peQ = supabase.from('personal_expenses').select('amount, date')
 
       if (currentProjectId) {
         incomeQ = incomeQ.eq('project_id', currentProjectId)
@@ -138,12 +139,19 @@ export default function DashboardPage() {
         matQ = matQ.eq('project_id', currentProjectId)
       }
 
-      const [incomeRes, attRes, matRes, subRes] = await Promise.all([incomeQ, attQ, matQ, subQ])
+      const [incomeRes, attRes, matRes, subRes, peRes] = await Promise.all([
+        incomeQ,
+        attQ,
+        matQ,
+        subQ,
+        !currentProjectId ? peQ : Promise.resolve({ data: [] })
+      ])
 
       const incomeData = incomeRes.data
       const attAllData = attRes.data
       const materialData = matRes.data
       const contractorPaymentsData = subRes.data || []
+      const personalExpensesData = peRes.data || []
 
       // Extract subcontractor work entries (based on actual payment installments)
       const subWorkEntries: any[] = []
@@ -217,7 +225,8 @@ export default function DashboardPage() {
       }, 0) || 0
       const totalMaterialCost = materialData?.reduce((a, c) => a + Number(c.total_amount || 0), 0) || 0
       const totalExtraWork = filteredWorkEntries.reduce((sum: number, entry: any) => sum + Number(entry.amount || 0), 0)
-      const netCash = totalRevenue - (totalLabourCost + totalMaterialCost + totalExtraWork)
+      const totalPersonalExpenses = personalExpensesData.reduce((sum: number, entry: any) => sum + Number(entry.amount || 0), 0)
+      const netCash = totalRevenue - (totalLabourCost + totalMaterialCost + totalExtraWork + totalPersonalExpenses)
 
       setStats({
         totalProjects: (selectedProjectId && selectedProjectId !== 'all') ? 1 : (projList?.length || 0),
@@ -225,6 +234,7 @@ export default function DashboardPage() {
         totalLabourCost,
         totalMaterialCost,
         totalExtraWork,
+        totalPersonalExpenses,
         netCash
       })
 
@@ -239,6 +249,7 @@ export default function DashboardPage() {
         ...(attAllData || []).map(r => r.date),
         ...(materialData || []).map(r => r.date),
         ...filteredWorkEntries.map((r: any) => r.date),
+        ...personalExpensesData.map((r: any) => r.date),
       ].filter(Boolean)
 
       let earliestTxDate: Date | null = null
@@ -310,6 +321,7 @@ export default function DashboardPage() {
         }, 0) || 0,
         Material: materialData?.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.total_amount || 0), 0) || 0,
         ExtraWork: filteredWorkEntries.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.amount || 0), 0) || 0,
+        PersonalExpenses: personalExpensesData.filter(r => r.date >= m.start && r.date <= m.end).reduce((a, c) => a + Number(c.amount || 0), 0) || 0,
       }))
       setMonthlyData(monthly)
 
@@ -317,7 +329,8 @@ export default function DashboardPage() {
       setProjectCosts([
         { name: 'Labour', value: totalLabourCost },
         { name: 'Material', value: totalMaterialCost },
-        { name: 'Subcontracts', value: totalExtraWork }
+        { name: 'Subcontracts', value: totalExtraWork },
+        { name: 'Personal Expenses', value: totalPersonalExpenses }
       ].filter(c => c.value > 0))
 
       // Project-wise breakdown
@@ -405,16 +418,18 @@ export default function DashboardPage() {
     'Material': '#06b6d4',   // Cyan
     'Extra Work': '#f97316', // Orange
     'Subcontracts': '#f97316', // Orange
-    'Contractor': '#8b5cf6'  // Purple
+    'Contractor': '#8b5cf6',  // Purple
+    'Personal Expenses': '#f43f5e' // Rose
   }
   const tooltipStyle = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '8px', color: '#f0f0f0', fontSize: 12 }
 
   const topCards = [
-    { type: 'REVENUE', label: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString()}`, icon: <TrendingUp size={18} color="#10b981" />, bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981', clickable: true },
-    { type: 'LABOUR', label: 'Labour Cost', value: `₹${stats.totalLabourCost.toLocaleString()}`, icon: <Wallet size={18} color="#3b82f6" />, bg: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', clickable: true },
-    { type: 'MATERIAL', label: 'Material Cost', value: `₹${stats.totalMaterialCost.toLocaleString()}`, icon: <Package size={18} color="#06b6d4" />, bg: 'rgba(6, 182, 212, 0.1)', color: '#06b6d4', clickable: true },
-    { type: 'EXTRA_WORK', label: 'Subcontracts', value: `₹${stats.totalExtraWork.toLocaleString()}`, icon: <Zap size={18} color="#f97316" />, bg: 'rgba(249, 115, 22, 0.1)', color: '#f97316', clickable: true },
-    { type: 'NET_CASH', label: 'Net Cash', value: `₹${stats.netCash.toLocaleString()}`, icon: <TrendingUp size={18} color={stats.netCash >= 0 ? '#10b981' : '#ef4444'} />, bg: stats.netCash >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: stats.netCash >= 0 ? '#10b981' : '#ef4444', clickable: false },
+    { type: 'REVENUE', label: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString('en-IN')}`, icon: <TrendingUp size={18} color="#10b981" />, bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981', clickable: true },
+    { type: 'LABOUR', label: 'Labour Cost', value: `₹${stats.totalLabourCost.toLocaleString('en-IN')}`, icon: <Wallet size={18} color="#3b82f6" />, bg: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', clickable: true },
+    { type: 'MATERIAL', label: 'Material Cost', value: `₹${stats.totalMaterialCost.toLocaleString('en-IN')}`, icon: <Package size={18} color="#06b6d4" />, bg: 'rgba(6, 182, 212, 0.1)', color: '#06b6d4', clickable: true },
+    { type: 'EXTRA_WORK', label: 'Subcontracts', value: `₹${stats.totalExtraWork.toLocaleString('en-IN')}`, icon: <Zap size={18} color="#f97316" />, bg: 'rgba(249, 115, 22, 0.1)', color: '#f97316', clickable: true },
+    { type: 'PERSONAL_EXPENSE', label: 'Personal Expenses', value: `₹${stats.totalPersonalExpenses.toLocaleString('en-IN')}`, icon: <DollarSign size={18} color="#f43f5e" />, bg: 'rgba(244, 63, 94, 0.1)', color: '#f43f5e', clickable: true },
+    { type: 'NET_CASH', label: 'Net Cash', value: `₹${stats.netCash.toLocaleString('en-IN')}`, icon: <TrendingUp size={18} color={stats.netCash >= 0 ? '#10b981' : '#ef4444'} />, bg: stats.netCash >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: stats.netCash >= 0 ? '#10b981' : '#ef4444', clickable: false },
   ]
 
   const fetchDetailsData = async (type: string, filterStart?: string, filterEnd?: string) => {
@@ -427,6 +442,8 @@ export default function DashboardPage() {
         q = supabase.from('attendance').select('date, days_worked, custom_rate, overtime_amount, labour(name, daily_rate), projects(name)').order('date', { ascending: true })
       } else if (type === 'MATERIAL') {
         q = supabase.from('materials').select('date, total_amount, name, quantity, unit, notes, projects(name)').order('date', { ascending: true })
+      } else if (type === 'PERSONAL_EXPENSE') {
+        q = supabase.from('personal_expenses').select('date, amount, person_name, purpose').order('date', { ascending: true })
       } else if (type === 'EXTRA_WORK') {
         // Handled in memory
       }
@@ -506,6 +523,17 @@ export default function DashboardPage() {
         }))
         if (filterStart) data = data.filter((e: any) => e.date >= filterStart)
         if (filterEnd) data = data.filter((e: any) => e.date <= filterEnd)
+      } else if (type === 'PERSONAL_EXPENSE') {
+        const res = await q
+        data = (res.data || []).map((e: any) => ({
+          date: e.date,
+          amount: e.amount,
+          work_name: `${e.person_name} - ${e.purpose}`,
+          notes: '',
+          projects: { name: 'Personal' }
+        }))
+        if (filterStart) data = data.filter((e: any) => e.date >= filterStart)
+        if (filterEnd) data = data.filter((e: any) => e.date <= filterEnd)
       } else {
         if (selectedProjectId && selectedProjectId !== 'all') q = q.eq('project_id', selectedProjectId)
         if (filterStart) q = q.gte('date', filterStart)
@@ -519,7 +547,7 @@ export default function DashboardPage() {
   }
 
   const handleCardClick = async (type: string) => {
-    if (!['REVENUE', 'LABOUR', 'MATERIAL', 'EXTRA_WORK'].includes(type)) return
+    if (!['REVENUE', 'LABOUR', 'MATERIAL', 'EXTRA_WORK', 'PERSONAL_EXPENSE'].includes(type)) return
     setDetailsModalType(type)
     setDetailsModalOpen(true)
     setDetailsModalData([])
@@ -621,15 +649,15 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Top Cards — mobile: 2x2 + full-width Net Cash; desktop: 3-col grid */}
+      {/* Top Cards — mobile layout vs desktop layout */}
       {/* Mobile layout */}
       <div className="block lg:hidden">
         <div className="grid grid-cols-2 gap-4 mb-4">
-          {topCards.slice(0, 4).map((c, i) => (
+          {topCards.slice(0, 5).map((c, i) => (
             <div
               key={i}
               style={PANEL}
-              className={`p-4 ${c.clickable ? 'cursor-pointer hover:bg-white/5 transition-colors' : ''}`}
+              className={`p-4 ${c.clickable ? 'cursor-pointer hover:bg-white/5 transition-colors' : ''} ${i === 4 ? 'col-span-2' : ''}`}
               onClick={() => c.clickable && handleCardClick(c.type)}
             >
               <div className="flex items-start justify-between mb-2">
@@ -642,25 +670,25 @@ export default function DashboardPage() {
           ))}
         </div>
         {/* Net Cash — full width */}
-        {topCards[4] && (
+        {topCards[5] && (
           <div
             style={PANEL}
             className="p-5 cursor-default"
           >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: DIM }}>{topCards[4].label}</p>
-                <p className="text-3xl font-black" style={{ color: topCards[4].color }}>{loading ? '—' : topCards[4].value}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: DIM }}>{topCards[5].label}</p>
+                <p className="text-3xl font-black" style={{ color: topCards[5].color }}>{loading ? '—' : topCards[5].value}</p>
               </div>
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: topCards[4].bg }}>{topCards[4].icon}</div>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: topCards[5].bg }}>{topCards[5].icon}</div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Desktop layout — 3-col grid, 6 equal cards (5 stats + Pie Chart) */}
-      <div className="hidden lg:grid grid-cols-3 gap-4">
-        {topCards.map((c, i) => (
+      {/* Desktop layout — 4-col grid layout (6 cards + Pie Chart) */}
+      <div className="hidden lg:grid grid-cols-4 gap-4">
+        {topCards.slice(0, 5).map((c, i) => (
           <div
             key={i}
             style={PANEL}
@@ -676,7 +704,24 @@ export default function DashboardPage() {
           </div>
         ))}
 
-        {/* Pie Chart — 6th equal slot, same compact size as stat cards */}
+        {/* Net Cash — spans 2 columns in the second row */}
+        {topCards[5] && (
+          <div
+            style={PANEL}
+            className="p-5 cursor-default col-span-2"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: DIM }}>{topCards[5].label}</p>
+                <p className="text-3xl font-black" style={{ color: topCards[5].color }}>{loading ? '—' : topCards[5].value}</p>
+              </div>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: topCards[5].bg }}>{topCards[5].icon}</div>
+            </div>
+            <p className="text-[8px] font-bold uppercase tracking-widest mt-2" style={{ color: DIM }}>Overall Balance</p>
+          </div>
+        )}
+
+        {/* Pie Chart — same compact size as stat cards */}
         <div style={PANEL} className="p-5">
           <div className="flex items-start justify-between mb-3">
             <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: DIM }}>Expense Split</p>
@@ -693,7 +738,7 @@ export default function DashboardPage() {
                   <Pie data={projectCosts} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={30} innerRadius={14} paddingAngle={2} isAnimationActive={false}>
                     {projectCosts.map((c) => <Cell key={c.name} fill={EXPENSE_COLORS[c.name] || GOLD} />)}
                   </Pie>
-                  <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Cost']} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString('en-IN')}`, 'Cost']} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="flex flex-col gap-1">
@@ -720,11 +765,12 @@ export default function DashboardPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="#1e2435" />
               <XAxis dataKey="month" tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: DIM, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: any, name: any) => [`₹${Number(v).toLocaleString()}`, name]} cursor={{ fill: 'transparent' }} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v: any, name: any) => [`₹${Number(v).toLocaleString('en-IN')}`, name]} cursor={{ fill: 'transparent' }} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10, color: DIM }} />
               <Bar dataKey="Labour" fill={EXPENSE_COLORS['Labour']} radius={[3, 3, 0, 0]} isAnimationActive={false} />
               <Bar dataKey="Material" fill={EXPENSE_COLORS['Material']} radius={[3, 3, 0, 0]} isAnimationActive={false} />
               <Bar dataKey="ExtraWork" name="Subcontracts" fill={EXPENSE_COLORS['Subcontracts']} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+              <Bar dataKey="PersonalExpenses" name="Personal Expenses" fill={EXPENSE_COLORS['Personal Expenses']} radius={[3, 3, 0, 0]} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -755,7 +801,7 @@ export default function DashboardPage() {
                   </div>
                   <p className={`text-xs font-black shrink-0 ${a.type === 'revenue' ? 'text-emerald-400' : 'text-zinc-300'
                     }`}>
-                    {a.type === 'revenue' ? '+' : '−'}₹{a.amount.toLocaleString()}
+                    {a.type === 'revenue' ? '+' : '−'}₹{a.amount.toLocaleString('en-IN')}
                   </p>
                 </div>
               ))}
@@ -774,7 +820,7 @@ export default function DashboardPage() {
                 <Pie data={projectCosts} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} innerRadius={0} paddingAngle={2} isAnimationActive={false}>
                   {projectCosts.map((c) => <Cell key={c.name} fill={EXPENSE_COLORS[c.name] || GOLD} />)}
                 </Pie>
-                <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString()}`, 'Cost']} />
+                <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`₹${Number(v).toLocaleString('en-IN')}`, 'Cost']} />
                 <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10, color: DIM }} />
               </PieChart>
             </ResponsiveContainer>
@@ -863,10 +909,10 @@ export default function DashboardPage() {
                 {projectBreakdown.map((p, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid #1e2435' }} className="hover:bg-white/[0.02] transition-colors">
                     <td className="px-5 py-3 font-bold text-white">{p.name}</td>
-                    <td className="px-5 py-3 font-bold" style={{ color: '#22c55e' }}>₹{p.revenue.toLocaleString()}</td>
-                    <td className="px-5 py-3 font-bold" style={{ color: '#60a5fa' }}>₹{p.material.toLocaleString()}</td>
-                    <td className="px-5 py-3 font-bold" style={{ color: '#f59e0b' }}>₹{p.extraWork.toLocaleString()}</td>
-                    <td className="px-5 py-3 font-black" style={{ color: p.net >= 0 ? '#22c55e' : '#ef4444' }}>₹{p.net.toLocaleString()}</td>
+                    <td className="px-5 py-3 font-bold" style={{ color: '#22c55e' }}>₹{p.revenue.toLocaleString('en-IN')}</td>
+                    <td className="px-5 py-3 font-bold" style={{ color: '#60a5fa' }}>₹{p.material.toLocaleString('en-IN')}</td>
+                    <td className="px-5 py-3 font-bold" style={{ color: '#f59e0b' }}>₹{p.extraWork.toLocaleString('en-IN')}</td>
+                    <td className="px-5 py-3 font-black" style={{ color: p.net >= 0 ? '#22c55e' : '#ef4444' }}>₹{p.net.toLocaleString('en-IN')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -879,20 +925,20 @@ export default function DashboardPage() {
               <div key={i} className="p-4 space-y-3">
                 <div className="flex justify-between items-center">
                   <p className="font-bold text-white">{p.name}</p>
-                  <p className="text-sm font-black" style={{ color: p.net >= 0 ? '#22c55e' : '#ef4444' }}>₹{p.net.toLocaleString()}</p>
+                  <p className="text-sm font-black" style={{ color: p.net >= 0 ? '#22c55e' : '#ef4444' }}>₹{p.net.toLocaleString('en-IN')}</p>
                 </div>
                 <div className="grid grid-cols-3 gap-1 text-center">
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Revenue</p>
-                    <p className="text-[10px] font-bold text-[#22c55e]">₹{p.revenue.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold text-[#22c55e]">₹{p.revenue.toLocaleString('en-IN')}</p>
                   </div>
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Material</p>
-                    <p className="text-[10px] font-bold text-[#60a5fa]">₹{p.material.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold text-[#60a5fa]">₹{p.material.toLocaleString('en-IN')}</p>
                   </div>
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Subcontracts</p>
-                    <p className="text-[10px] font-bold text-[#f59e0b]">₹{p.extraWork.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold text-[#f59e0b]">₹{p.extraWork.toLocaleString('en-IN')}</p>
                   </div>
                 </div>
               </div>
@@ -970,7 +1016,7 @@ export default function DashboardPage() {
                       </TableCell>
                       {detailsModalType === 'MATERIAL' && <TableCell className="py-3.5 text-xs" style={{ color: '#6b7280' }}>{row.quantity} {row.unit}</TableCell>}
                       <TableCell className="pr-6 py-3.5 text-right font-black text-base" style={{ color: '#3b82f6' }}>
-                        ₹{Number(row.amount || row.total_amount || (row.days_worked * (row.custom_rate || row.labour?.daily_rate || 0) + (row.overtime_amount || 0))).toLocaleString()}
+                        ₹{Number(row.amount || row.total_amount || (row.days_worked * (row.custom_rate || row.labour?.daily_rate || 0) + (row.overtime_amount || 0))).toLocaleString('en-IN')}
                       </TableCell>
                     </TableRow>
                   ))}

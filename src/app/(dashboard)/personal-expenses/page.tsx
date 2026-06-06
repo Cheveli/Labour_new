@@ -143,7 +143,7 @@ export default function PersonalExpensesPage() {
         format(new Date(item.date), 'dd MMM yyyy'),
         item.person_name.toUpperCase(),
         item.purpose,
-        `Rs. ${Number(item.amount).toLocaleString()}`
+        `Rs. ${Number(item.amount).toLocaleString('en-IN')}`
       ]),
       theme: 'grid',
       headStyles: { 
@@ -187,7 +187,7 @@ export default function PersonalExpensesPage() {
     
     doc.setFontSize(16)
     doc.setFont('helvetica', 'bold')
-    doc.text(`Rs. ${totalExpenses.toLocaleString()}`, startX + 5, finalY + 20)
+    doc.text(`Rs. ${totalExpenses.toLocaleString('en-IN')}`, startX + 5, finalY + 20)
 
     // Authorised Signatory
     doc.setTextColor(...PDF_COLORS.NAVY)
@@ -215,7 +215,7 @@ export default function PersonalExpensesPage() {
           )}
           <div className="flex flex-col items-end">
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Total Spent</span>
-            <span className="text-2xl font-black text-rose-500">₹{totalExpenses.toLocaleString()}</span>
+            <span className="text-2xl font-black text-rose-500">₹{totalExpenses.toLocaleString('en-IN')}</span>
           </div>
         </div>
       </div>
@@ -269,7 +269,7 @@ export default function PersonalExpensesPage() {
                           </TableCell>
                           <TableCell className="py-5 font-bold text-white text-sm">{item.person_name}</TableCell>
                           <TableCell className="py-5 text-xs text-zinc-400 max-w-[200px] truncate">{item.purpose}</TableCell>
-                          <TableCell className="py-5 text-right font-black text-rose-400 text-lg">₹{Number(item.amount).toLocaleString()}</TableCell>
+                          <TableCell className="py-5 text-right font-black text-rose-400 text-lg">₹{Number(item.amount).toLocaleString('en-IN')}</TableCell>
                           <TableCell className="py-5 px-8 text-right">
                             <div className="flex items-center gap-1 justify-end">
                               <button onClick={() => handleOpenEdit(item)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-zinc-500 hover:text-blue-400 transition-colors"><Edit2 size={13} /></button>

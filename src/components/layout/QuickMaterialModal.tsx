@@ -230,15 +230,15 @@ export default function QuickMaterialModal({
       return
     }
     const qVal = parseFloat(qty) || 0
-    const rVal = parseFloat(rate) || 0
+    const rVal = selectedMaterial.id === 'steel' ? 0 : (parseFloat(rate) || 0)
     const tVal = selectedMaterial.hasTransport ? (parseFloat(transportCost) || 0) : 0
     const finalTotal = parseFloat(total) || parseFloat(((qVal * rVal) + tVal).toFixed(2))
 
     if (qVal <= 0) {
-      toast.error('Please enter a valid Quantity (పరిమాణం నమోదు చేయండి)')
+      toast.error(selectedMaterial.id === 'steel' ? 'Please enter a valid weight (బరువు నమోదు చేయండి)' : 'Please enter a valid Quantity (పరిమాణం నమోదు చేయండి)')
       return
     }
-    if (rVal <= 0) {
+    if (selectedMaterial.id !== 'steel' && rVal <= 0) {
       toast.error('Please enter a valid Rate (ధర నమోదు చేయండి)')
       return
     }
@@ -247,9 +247,11 @@ export default function QuickMaterialModal({
     try {
       const notesParts = [
         'Quick Entry',
-        `Unit: ${selectedMaterial.unit}`,
-        `Rate: Rs.${rVal}`
+        `Unit: ${selectedMaterial.unit}`
       ]
+      if (selectedMaterial.id !== 'steel') {
+        notesParts.push(`Rate: Rs.${rVal}`)
+      }
       if (selectedMaterial.hasTransport && tVal > 0) {
         notesParts.push(`Transportation: Rs.${tVal}`)
       }
@@ -428,11 +430,13 @@ export default function QuickMaterialModal({
               {/* Field 1: Quantity */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-                  Quantity ({selectedMaterial.unit === 'bags' ? 'Bags / సంచులు' : selectedMaterial.unit === 'pieces' ? 'Pieces / ముక్కలు' : selectedMaterial.unit === 'kgs' ? 'KGs / కిలోలు' : 'Tonnes / టన్నులు'}) *
+                  {selectedMaterial.id === 'steel'
+                    ? 'Total KG (మొత్తం బరువు) *'
+                    : `Quantity (${selectedMaterial.unit === 'bags' ? 'Bags / సంచులు' : selectedMaterial.unit === 'pieces' ? 'Pieces / ముక్కలు' : selectedMaterial.unit === 'kgs' ? 'KGs / కిలోలు' : 'Tonnes / టన్నులు'}) *`}
                 </label>
                 <div className="relative">
                   <Input
-                    placeholder="e.g. 50"
+                    placeholder={selectedMaterial.id === 'steel' ? "e.g. 1500" : "e.g. 50"}
                     type="number"
                     step="any"
                     required
@@ -448,25 +452,27 @@ export default function QuickMaterialModal({
               </div>
 
               {/* Field 2: Rate Per Unit */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-                  Rate Per {selectedMaterial.unit === 'bags' ? 'Bag' : selectedMaterial.unit === 'pieces' ? 'Piece' : selectedMaterial.unit === 'kgs' ? 'KG' : 'Tonne'} (ధర) *
-                </label>
-                <div className="relative">
-                  <Input
-                    placeholder="e.g. 420"
-                    type="number"
-                    step="any"
-                    required
-                    value={rate}
-                    onChange={(e: any) => setRate(e.target.value)}
-                    className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-black text-white text-lg pl-8"
-                  />
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-zinc-500">
-                    ₹
-                  </span>
+              {selectedMaterial.id !== 'steel' && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                    Rate Per {selectedMaterial.unit === 'bags' ? 'Bag' : selectedMaterial.unit === 'pieces' ? 'Piece' : selectedMaterial.unit === 'kgs' ? 'KG' : 'Tonne'} (ధర) *
+                  </label>
+                  <div className="relative">
+                    <Input
+                      placeholder="e.g. 420"
+                      type="number"
+                      step="any"
+                      required
+                      value={rate}
+                      onChange={(e: any) => setRate(e.target.value)}
+                      className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-black text-white text-lg pl-8"
+                    />
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-zinc-500">
+                      ₹
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Field 3: Transport Cost (Only for Sand, Aggregate, Dust) */}
               {selectedMaterial.hasTransport && (
@@ -494,9 +500,9 @@ export default function QuickMaterialModal({
               <div className="space-y-1.5 p-4 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl">
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                    Total Amount (మొత్తం ధర) *
+                    {selectedMaterial.id === 'steel' ? 'Total Cost (మొత్తం ధర) *' : 'Total Amount (మొత్తం ధర) *'}
                   </label>
-                  {isTotalManuallyEdited && (
+                  {isTotalManuallyEdited && selectedMaterial.id !== 'steel' && (
                     <button
                       type="button"
                       onClick={() => {

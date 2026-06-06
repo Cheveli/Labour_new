@@ -352,7 +352,7 @@ export default function MaterialsPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     {Object.entries(groupedCategories).map(([key, category]) => {
                       const qtyDisplay = Object.entries(category.totalQty)
-                        .map(([unit, val]) => `${val.toLocaleString()} ${unit}`)
+                        .map(([unit, val]) => `${val.toLocaleString('en-IN')} ${unit}`)
                         .join(', ') || '—'
 
                       return (
@@ -393,7 +393,7 @@ export default function MaterialsPage() {
                             <div>
                               <p className="text-[8px] font-black uppercase text-zinc-500 tracking-wider">Total Spent</p>
                               <p className="text-lg font-black text-white group-hover:text-blue-400 transition-colors mt-0.5">
-                                ₹ {category.totalCost.toLocaleString()}
+                                ₹ {category.totalCost.toLocaleString('en-IN')}
                               </p>
                             </div>
                             {category.items.length > 0 && (
@@ -453,7 +453,7 @@ export default function MaterialsPage() {
                         const supplier = supplierMatch ? supplierMatch[1] : '—';
                         const supplierPhone = supplierPhoneMatch ? supplierPhoneMatch[1] : '';
                         const supplierDisplay = supplier !== '—' ? (supplierPhone ? `${supplier} (${supplierPhone})` : supplier) : '—';
-                        const matAmt = matAmtMatch ? `₹${matAmtMatch[1]}` : (item.quantity > 0 && item.cost_per_unit > 0 ? `₹${(item.quantity * item.cost_per_unit).toLocaleString()}` : '');
+                        const matAmt = matAmtMatch ? `₹${matAmtMatch[1]}` : (item.quantity > 0 && item.cost_per_unit > 0 ? `₹${(item.quantity * item.cost_per_unit).toLocaleString('en-IN')}` : '');
                         const transport = transportMatch ? `₹${transportMatch[1]}` : '—';
                         const hamali = hamaliMatch ? `₹${hamaliMatch[1]}` : '—';
                         const receiptUrl = item.receipt_url || (receiptMatch ? receiptMatch[1] : null);
@@ -502,7 +502,7 @@ export default function MaterialsPage() {
                                 <span className="text-zinc-600 font-bold text-xs">—</span>
                               )}
                             </TableCell>
-                            <TableCell className="py-5 text-right px-4 font-black text-white text-sm whitespace-nowrap">₹ {item.total_amount?.toLocaleString() || item.total_cost?.toLocaleString()}</TableCell>
+                            <TableCell className="py-5 text-right px-4 font-black text-white text-sm whitespace-nowrap">₹ {item.total_amount?.toLocaleString('en-IN') || item.total_cost?.toLocaleString('en-IN')}</TableCell>
                             <TableCell className="py-3 pr-4">
                               <div className="flex items-center gap-1.5 justify-end">
                                 <button onClick={() => handleOpenEditMat(item)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-zinc-500 hover:text-blue-400 transition-colors"><Edit2 size={13} /></button>
@@ -551,7 +551,7 @@ export default function MaterialsPage() {
                             <p className="text-[10px] font-bold text-gray-400 mt-1">{format(new Date(item.date), 'MMM dd, yyyy')}</p>
                           </div>
                           <div className="text-right">
-                            <p className="font-black text-white text-sm">₹ {item.total_amount?.toLocaleString() || item.total_cost?.toLocaleString()}</p>
+                            <p className="font-black text-white text-sm">₹ {item.total_amount?.toLocaleString('en-IN') || item.total_cost?.toLocaleString('en-IN')}</p>
                             <p className="font-bold text-zinc-500 text-[10px] uppercase mt-0.5">{item.quantity} {item.unit}</p>
                           </div>
                         </div>
@@ -879,14 +879,14 @@ export default function MaterialsPage() {
                   <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Total Quantities</p>
                   <p className="text-xs font-black text-white mt-1 text-ellipsis overflow-hidden">
                     {Object.entries(groupedCategories[activeFolder]?.totalQty)
-                      .map(([unit, val]) => `${val.toLocaleString()} ${unit}`)
+                      .map(([unit, val]) => `${val.toLocaleString('en-IN')} ${unit}`)
                       .join(', ') || '—'}
                   </p>
                 </div>
                 <div className="bg-blue-600 p-4 rounded-xl border border-blue-500 shadow-lg shadow-blue-600/10">
                   <p className="text-[8px] font-black uppercase tracking-widest text-blue-100">Total Money Spent</p>
                   <p className="text-xl font-black text-white mt-1">
-                    ₹ {groupedCategories[activeFolder]?.totalCost.toLocaleString()}
+                    ₹ {groupedCategories[activeFolder]?.totalCost.toLocaleString('en-IN')}
                   </p>
                 </div>
               </div>
@@ -955,7 +955,7 @@ export default function MaterialsPage() {
                             {cleanNotes || '—'}
                           </TableCell>
                           <TableCell className="py-4 text-right pr-6 font-black text-blue-400 text-sm whitespace-nowrap">
-                            ₹ {item.total_amount?.toLocaleString() || item.total_cost?.toLocaleString()}
+                            ₹ {item.total_amount?.toLocaleString('en-IN') || item.total_cost?.toLocaleString('en-IN')}
                           </TableCell>
                         </TableRow>
                       );
@@ -1002,7 +1002,7 @@ export default function MaterialsPage() {
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-black text-blue-400 text-sm">₹ {item.total_amount?.toLocaleString() || item.total_cost?.toLocaleString()}</p>
+                          <p className="font-black text-blue-400 text-sm">₹ {item.total_amount?.toLocaleString('en-IN') || item.total_cost?.toLocaleString('en-IN')}</p>
                           {receiptUrl && (
                             <a href={receiptUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-black text-emerald-400 hover:underline">
                               <FileText size={10} /> View Bill

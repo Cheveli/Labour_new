@@ -402,7 +402,7 @@ export default function SubcontractsPage() {
       ['Contact No.', sub.mobile || '—'],
       ['Site / Project', installment.site_project || '—'],
       [termLabel, `#${installment.receipt_number}`],
-      [payLabel, `Rs. ${Number(installment.amount).toLocaleString()}`],
+      [payLabel, `Rs. ${Number(installment.amount).toLocaleString('en-IN')}`],
       ['Remarks', installment.notes || '—']
     ]
 
@@ -455,7 +455,7 @@ export default function SubcontractsPage() {
     doc.setFont('helvetica', 'bold')
     doc.text('TOTAL PAID TILL DATE', 8, summaryY + 2)
     doc.setFontSize(5.5)
-    doc.text(`Rs. ${subData.totalPaid.toLocaleString()}`, 72, summaryY + 2, { align: 'right' })
+    doc.text(`Rs. ${subData.totalPaid.toLocaleString('en-IN')}`, 72, summaryY + 2, { align: 'right' })
 
     // Footer divider line
     const footerY = summaryY + 10
@@ -627,7 +627,7 @@ export default function SubcontractsPage() {
                           <div className="flex justify-between text-xs border-t border-dashed border-[#1e2435] pt-2">
                             <span className="text-zinc-500 font-bold uppercase tracking-wider">Last Payment:</span>
                             <span className="text-emerald-400 font-bold">
-                              ₹{Number(sub.installments[sub.installments.length - 1].amount).toLocaleString()} ({format(new Date(sub.installments[sub.installments.length - 1].date), 'dd MMM')})
+                              ₹{Number(sub.installments[sub.installments.length - 1].amount).toLocaleString('en-IN')} ({format(new Date(sub.installments[sub.installments.length - 1].date), 'dd MMM')})
                             </span>
                           </div>
                         )}
@@ -639,7 +639,7 @@ export default function SubcontractsPage() {
                       <div>
                         <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Payment Completed</p>
                         <p className="text-base font-black text-emerald-400">
-                          ₹{subData.totalPaid.toLocaleString()}
+                          ₹{subData.totalPaid.toLocaleString('en-IN')}
                         </p>
                       </div>
                       <button 
@@ -790,7 +790,7 @@ export default function SubcontractsPage() {
               <div className="py-4 text-center">
                 <div className="inline-block px-8 py-4 rounded-2xl bg-[#1a1f2e] border border-[#2d3748] min-w-[320px] shadow-md">
                   <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Total Payment Completed</p>
-                  <p className="text-3xl font-black text-emerald-400 mt-1">₹{subData.totalPaid.toLocaleString()}</p>
+                  <p className="text-3xl font-black text-emerald-400 mt-1">₹{subData.totalPaid.toLocaleString('en-IN')}</p>
                 </div>
               </div>
 
@@ -891,7 +891,7 @@ export default function SubcontractsPage() {
                           </div>
 
                           <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-xs font-black text-emerald-400 pr-1">₹{Number(inst.amount).toLocaleString()}</span>
+                            <span className="text-xs font-black text-emerald-400 pr-1">₹{Number(inst.amount).toLocaleString('en-IN')}</span>
                             <button 
                               type="button"
                               onClick={() => exportPDF(selectedSubcontractor, inst)} 

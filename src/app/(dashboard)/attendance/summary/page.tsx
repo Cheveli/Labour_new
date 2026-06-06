@@ -100,7 +100,7 @@ export default function AttendanceSummaryPage() {
       autoTable(doc, {
         startY: y,
         head: [['Worker', 'Type', 'Days', 'OT Hrs', 'Advance', 'Total Wage']],
-        body: row.workers.map((w: any) => [w.name, w.type, w.days, w.ot.toFixed(1), `Rs.${w.advance}`, `Rs.${Math.round(w.wage).toLocaleString()}`]),
+        body: row.workers.map((w: any) => [w.name, w.type, w.days, w.ot.toFixed(1), `Rs.${w.advance}`, `Rs.${Math.round(w.wage).toLocaleString('en-IN')}`]),
         styles: { fontSize: 8, cellPadding: 2 },
         headStyles: { fillColor: [59, 130, 246] },
         margin: { left: 14 },
@@ -206,8 +206,8 @@ export default function AttendanceSummaryPage() {
                         <TableCell className="text-xs font-semibold" style={{ color: DIM }}>{w.type}</TableCell>
                         <TableCell className="font-black" style={{ color: '#22c55e' }}>{w.days}</TableCell>
                         <TableCell className="text-xs" style={{ color: DIM }}>{w.ot.toFixed(1)}</TableCell>
-                        <TableCell className="text-xs font-bold" style={{ color: '#ef4444' }}>₹{w.advance.toLocaleString()}</TableCell>
-                        <TableCell className="font-black text-sm" style={{ color: GOLD }}>₹{Math.round(w.wage).toLocaleString()}</TableCell>
+                        <TableCell className="text-xs font-bold" style={{ color: '#ef4444' }}>₹{w.advance.toLocaleString('en-IN')}</TableCell>
+                        <TableCell className="font-black text-sm" style={{ color: GOLD }}>₹{Math.round(w.wage).toLocaleString('en-IN')}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -216,8 +216,8 @@ export default function AttendanceSummaryPage() {
               {/* Project totals */}
               <div className="px-5 py-3 flex flex-wrap gap-6 border-t" style={{ borderColor: '#1e2435', backgroundColor: '#0d1018' }}>
                 <span className="text-xs font-black uppercase" style={{ color: DIM }}>Total: <span className="text-white">{row.totalDays} man-days</span></span>
-                <span className="text-xs font-black uppercase" style={{ color: DIM }}>Advance: <span style={{ color: '#ef4444' }}>₹{row.totalAdvance.toLocaleString()}</span></span>
-                <span className="text-xs font-black uppercase" style={{ color: DIM }}>Gross Wage: <span style={{ color: GOLD }}>₹{Math.round(row.totalWage).toLocaleString()}</span></span>
+                <span className="text-xs font-black uppercase" style={{ color: DIM }}>Advance: <span style={{ color: '#ef4444' }}>₹{row.totalAdvance.toLocaleString('en-IN')}</span></span>
+                <span className="text-xs font-black uppercase" style={{ color: DIM }}>Gross Wage: <span style={{ color: GOLD }}>₹{Math.round(row.totalWage).toLocaleString('en-IN')}</span></span>
               </div>
             </div>
           ))}

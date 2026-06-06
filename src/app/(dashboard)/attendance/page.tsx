@@ -515,9 +515,9 @@ export default function AttendancePage() {
         {[
           { label: 'Active Workers', value: totals.wCount },
           { label: 'Man-Days (M,L,P)', value: `M-${totals.mDays}, L-${totals.lDays}, P-${totals.pDays}` },
-          { label: 'Total Overtime', value: `₹${totals.ot.toLocaleString()}` },
-          { label: 'Week Labour Cost (Gross)', value: `₹${totals.grossCost.toLocaleString()}` },
-          { label: 'Week Net Payable (Giveable)', value: `₹${totals.cost.toLocaleString()}` }
+          { label: 'Total Overtime', value: `₹${totals.ot.toLocaleString('en-IN')}` },
+          { label: 'Week Labour Cost (Gross)', value: `₹${totals.grossCost.toLocaleString('en-IN')}` },
+          { label: 'Week Net Payable (Giveable)', value: `₹${totals.cost.toLocaleString('en-IN')}` }
         ].map((stat, i) => (
           <div key={i} style={PANEL} className="p-4 flex flex-col justify-center shadow-lg">
             <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{stat.label}</p>
@@ -632,13 +632,13 @@ export default function AttendancePage() {
                     />
                   </td>
                   <td className="py-3 px-4 text-right text-sm font-black text-blue-400 whitespace-nowrap">
-                    ₹{Math.round(calcRowGross(row)).toLocaleString()}
+                    ₹{Math.round(calcRowGross(row)).toLocaleString('en-IN')}
                   </td>
                   <td className="py-3 px-4 text-right text-sm font-black text-red-500 whitespace-nowrap">
-                    {calcRowAdvance(row) > 0 ? `₹${Math.round(calcRowAdvance(row)).toLocaleString()}` : '—'}
+                    {calcRowAdvance(row) > 0 ? `₹${Math.round(calcRowAdvance(row)).toLocaleString('en-IN')}` : '—'}
                   </td>
                   <td className="py-3 px-4 text-right text-sm font-black text-emerald-400 whitespace-nowrap">
-                    ₹{Math.round(calcRowGiveable(row)).toLocaleString()}
+                    ₹{Math.round(calcRowGiveable(row)).toLocaleString('en-IN')}
                   </td>
                 </tr>
               ))}
@@ -802,19 +802,19 @@ export default function AttendancePage() {
                 <div className="flex flex-col items-center gap-1">
                   <span className="text-[8px] font-black text-zinc-500 uppercase">Grand Total</span>
                   <div className="w-full h-9 rounded-lg bg-blue-500/5 border border-blue-500/20 flex items-center justify-center">
-                    <span className="text-[10px] font-black text-blue-400">₹{Math.round(calcRowGross(row)).toLocaleString()}</span>
+                    <span className="text-[10px] font-black text-blue-400">₹{Math.round(calcRowGross(row)).toLocaleString('en-IN')}</span>
                   </div>
                 </div>
                 <div className="flex flex-col items-center gap-1">
                   <span className="text-[8px] font-black text-zinc-500 uppercase">Advance</span>
                   <div className="w-full h-9 rounded-lg bg-red-500/5 border border-red-500/20 flex items-center justify-center">
-                    <span className="text-[10px] font-black text-red-400">₹{Math.round(calcRowAdvance(row)).toLocaleString()}</span>
+                    <span className="text-[10px] font-black text-red-400">₹{Math.round(calcRowAdvance(row)).toLocaleString('en-IN')}</span>
                   </div>
                 </div>
                 <div className="flex flex-col items-center gap-1">
                   <span className="text-[8px] font-black text-zinc-500 uppercase">Giveable</span>
                   <div className="w-full h-9 rounded-lg bg-emerald-500/5 border border-emerald-500/20 flex items-center justify-center">
-                    <span className="text-[10px] font-black text-emerald-400">₹{Math.round(calcRowGiveable(row)).toLocaleString()}</span>
+                    <span className="text-[10px] font-black text-emerald-400">₹{Math.round(calcRowGiveable(row)).toLocaleString('en-IN')}</span>
                   </div>
                 </div>
               </div>

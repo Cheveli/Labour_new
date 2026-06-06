@@ -112,15 +112,15 @@ export default function WorkerProfilePage() {
         r.date,
         r.projects?.name || '—',
         status,
-        `Rs. ${(daysWorked * rate || 0).toLocaleString()}`
+        `Rs. ${(daysWorked * rate || 0).toLocaleString('en-IN')}`
       ]
       if (hasOT) {
-        row.push(otAmt > 0 ? `Rs. ${(otAmt || 0).toLocaleString()}` : '-')
+        row.push(otAmt > 0 ? `Rs. ${(otAmt || 0).toLocaleString('en-IN')}` : '-')
       }
       row.push(
-        advAmt > 0 ? `Rs. ${(advAmt || 0).toLocaleString()}` : '-',
-        `Rs. ${((daysWorked * rate) + otAmt - advAmt || 0).toLocaleString()}`,
-        `Rs. ${((daysWorked * rate) + otAmt || 0).toLocaleString()}`
+        advAmt > 0 ? `Rs. ${(advAmt || 0).toLocaleString('en-IN')}` : '-',
+        `Rs. ${((daysWorked * rate) + otAmt - advAmt || 0).toLocaleString('en-IN')}`,
+        `Rs. ${((daysWorked * rate) + otAmt || 0).toLocaleString('en-IN')}`
       )
       return row
     })
@@ -189,24 +189,24 @@ export default function WorkerProfilePage() {
     const summaryGross = mGross
     let boxY = finalY + 7
     doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(...PDF_COLORS.BLUE)
-    doc.text('GRAND TOTAL:', 115, boxY); doc.setFontSize(12); doc.text(`Rs. ${summaryGross.toLocaleString()}`, 185, boxY, { align: 'right' })
+    doc.text('GRAND TOTAL:', 115, boxY); doc.setFontSize(12); doc.text(`Rs. ${summaryGross.toLocaleString('en-IN')}`, 185, boxY, { align: 'right' })
     
     boxY += 8
     if (hasOT) {
       doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_COLORS.NAVY)
-      doc.text('Total Overtime:', 115, boxY); doc.text(`Rs. ${mOT.toLocaleString()}`, 185, boxY, { align: 'right' })
+      doc.text('Total Overtime:', 115, boxY); doc.text(`Rs. ${mOT.toLocaleString('en-IN')}`, 185, boxY, { align: 'right' })
       boxY += 7
     }
     
     doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_COLORS.NAVY)
-    doc.text('Total Deduction:', 115, boxY); doc.setTextColor(220, 53, 69); doc.text(`Rs. ${mAdv.toLocaleString()}`, 185, boxY, { align: 'right' })
+    doc.text('Total Deduction:', 115, boxY); doc.setTextColor(220, 53, 69); doc.text(`Rs. ${mAdv.toLocaleString('en-IN')}`, 185, boxY, { align: 'right' })
     
     boxY += 4
     doc.setDrawColor(200, 200, 200); doc.line(115, boxY, 185, boxY)
     
     boxY += 6
     doc.setTextColor(...PDF_COLORS.GREEN); doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
-    doc.text('NET PAYMENT:', 115, boxY); doc.text(`Rs. ${(mGross - mAdv).toLocaleString()}`, 185, boxY, { align: 'right' })
+    doc.text('NET PAYMENT:', 115, boxY); doc.text(`Rs. ${(mGross - mAdv).toLocaleString('en-IN')}`, 185, boxY, { align: 'right' })
 
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(8); doc.setFont('helvetica', 'italic')
     doc.text(`Amount in words: ${numberToWords(Math.abs(mGross - mAdv))}`, 14, finalY + 48)
@@ -241,11 +241,11 @@ export default function WorkerProfilePage() {
       `📅 Month: ${monthFilter}`,
       `━━━━━━━━━━━━━━━━`,
       `✅ Days Worked: ${mAttDays}`,
-      `💰 Gross Earned: ₹${Math.round(mGross).toLocaleString()}`,
-      `📉 Advance: ₹${mAdv.toLocaleString()}`,
-      `💳 Paid: ₹${mPaid.toLocaleString()}`,
+      `💰 Gross Earned: ₹${Math.round(mGross).toLocaleString('en-IN')}`,
+      `📉 Advance: ₹${mAdv.toLocaleString('en-IN')}`,
+      `💳 Paid: ₹${mPaid.toLocaleString('en-IN')}`,
       `━━━━━━━━━━━━━━━━`,
-      `💵 *Net Balance: ₹${Math.round(mGross - mAdv - mPaid).toLocaleString()}*`,
+      `💵 *Net Balance: ₹${Math.round(mGross - mAdv - mPaid).toLocaleString('en-IN')}*`,
     ].join('\n')
     const phone = worker.phone ? worker.phone.replace(/[^0-9]/g, '') : ''
     const url = phone ? `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`
@@ -297,9 +297,9 @@ export default function WorkerProfilePage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Total Days', value: totalDays.toFixed(1), icon: <Calendar size={16} color="#22c55e" />, color: '#22c55e', bg: '#0d1f14' },
-          { label: 'Gross Earned', value: `₹${grossEarned.toLocaleString()}`, icon: <TrendingUp size={16} color={GOLD} />, color: GOLD, bg: '#0d1530' },
-          { label: 'Total Paid', value: `₹${totalPaid.toLocaleString()}`, icon: <Wallet size={16} color="#a78bfa" />, color: '#a78bfa', bg: '#1a1430' },
-          { label: 'Net Balance', value: `₹${netBalance.toLocaleString()}`, icon: <IndianRupee size={16} color={netBalance >= 0 ? '#22c55e' : '#ef4444'} />, color: netBalance >= 0 ? '#22c55e' : '#ef4444', bg: netBalance >= 0 ? '#0d1f14' : '#1f0d0d' },
+          { label: 'Gross Earned', value: `₹${grossEarned.toLocaleString('en-IN')}`, icon: <TrendingUp size={16} color={GOLD} />, color: GOLD, bg: '#0d1530' },
+          { label: 'Total Paid', value: `₹${totalPaid.toLocaleString('en-IN')}`, icon: <Wallet size={16} color="#a78bfa" />, color: '#a78bfa', bg: '#1a1430' },
+          { label: 'Net Balance', value: `₹${netBalance.toLocaleString('en-IN')}`, icon: <IndianRupee size={16} color={netBalance >= 0 ? '#22c55e' : '#ef4444'} />, color: netBalance >= 0 ? '#22c55e' : '#ef4444', bg: netBalance >= 0 ? '#0d1f14' : '#1f0d0d' },
         ].map(card => (
           <div key={card.label} className="rounded-2xl p-4" style={{ ...PANEL, backgroundColor: card.bg }}>
             <div className="flex items-center gap-2 mb-2">{card.icon}<span className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>{card.label}</span></div>
@@ -378,7 +378,7 @@ export default function WorkerProfilePage() {
                   <TableRow key={pay.id} style={{ borderColor: '#1e2435' }}>
                     <TableCell className="px-4 py-2 text-xs font-bold" style={{ color: DIM }}>{format(new Date(pay.date), 'dd MMM yy')}</TableCell>
                     <TableCell className="py-2 text-xs font-bold text-white">{pay.payment_type || 'Cash'}</TableCell>
-                    <TableCell className="py-2 text-right pr-4 font-black text-sm" style={{ color: GOLD }}>₹{Number(pay.amount).toLocaleString()}</TableCell>
+                    <TableCell className="py-2 text-right pr-4 font-black text-sm" style={{ color: GOLD }}>₹{Number(pay.amount).toLocaleString('en-IN')}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

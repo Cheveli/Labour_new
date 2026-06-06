@@ -140,10 +140,10 @@ export default function IncomePage() {
         idx + 1,
         format(new Date(item.date), 'dd/MM/yyyy'),
         item.projects?.name || 'N/A',
-        `Rs. ${Number(item.amount).toLocaleString()}`,
+        `Rs. ${Number(item.amount).toLocaleString('en-IN')}`,
         item.notes || '—'
       ]),
-      foot: [['', '', 'TOTAL', `Rs. ${totalAmount.toLocaleString()}`, '']],
+      foot: [['', '', 'TOTAL', `Rs. ${totalAmount.toLocaleString('en-IN')}`, '']],
       theme: 'grid',
       headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold' },
       footStyles: { fillColor: [13, 27, 62], textColor: 255, fontStyle: 'bold' },
@@ -182,7 +182,7 @@ export default function IncomePage() {
         `${idx + 1}`,
         format(new Date(item.date), 'dd MMM yyyy'),
         item.notes || 'Progress Payment',
-        `Rs. ${Number(item.amount).toLocaleString()}`
+        `Rs. ${Number(item.amount).toLocaleString('en-IN')}`
       ]
     })
 
@@ -218,7 +218,7 @@ export default function IncomePage() {
     doc.roundedRect(140, y + 8, 48, 18, 1, 1, 'F')
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(7); doc.text('AMOUNT RECEIVED', 145, y + 14)
-    doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${sameDayTotal.toLocaleString()}`, 145, y + 22)
+    doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${sameDayTotal.toLocaleString('en-IN')}`, 145, y + 22)
 
     y += 45
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.text('PAYMENT HISTORY & STATEMENT', 14, y)
@@ -268,7 +268,7 @@ export default function IncomePage() {
     doc.roundedRect(startX, finalY, boxW, 25, 1, 1, 'F')
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.text('CUMULATIVE TOTAL RECEIVED', startX + 5, finalY + 8)
-    doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${cumulativeTotal.toLocaleString()}`, startX + 5, finalY + 18)
+    doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.text(`Rs. ${cumulativeTotal.toLocaleString('en-IN')}`, startX + 5, finalY + 18)
 
     finalY += 32
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
@@ -332,7 +332,7 @@ export default function IncomePage() {
             <h1 className="text-2xl font-black text-white tracking-tight">Revenue</h1>
             <p className="mt-1 text-sm text-zinc-500">Record site-wide collections and progress payments.</p>
           </div>
-          <span className="text-xl font-black" style={{ color: '#22c55e' }}>₹{income.reduce((s, i) => s + Number(i.amount), 0).toLocaleString()}</span>
+          <span className="text-xl font-black" style={{ color: '#22c55e' }}>₹{income.reduce((s, i) => s + Number(i.amount), 0).toLocaleString('en-IN')}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select
@@ -411,7 +411,7 @@ export default function IncomePage() {
                           <TableCell className="py-5 font-bold text-white text-sm lowercase">{item.projects?.name}</TableCell>
                           <TableCell className="py-5 text-xs text-zinc-400 max-w-[220px] truncate">{item.notes || '—'}</TableCell>
                           <TableCell className="py-5 text-right px-8 font-black text-blue-400 text-lg flex items-center justify-end gap-4">
-                            <span>₹ {item.amount.toLocaleString()}</span>
+                            <span>₹ {item.amount.toLocaleString('en-IN')}</span>
                             <Button
                               onClick={() => generateReceipt(item)}
                               variant="ghost"
@@ -465,7 +465,7 @@ export default function IncomePage() {
                           {item.notes && <p className="text-xs text-zinc-400 mt-1 truncate">{item.notes}</p>}
                         </div>
                         <div className="flex flex-col items-end gap-2 shrink-0">
-                          <p className="font-black text-blue-400 text-lg">₹ {item.amount.toLocaleString()}</p>
+                          <p className="font-black text-blue-400 text-lg">₹ {item.amount.toLocaleString('en-IN')}</p>
                           <div className="flex items-center gap-1">
                             <Button
                               onClick={() => generateReceipt(item)}

@@ -188,8 +188,8 @@ export default function ReportsPage() {
     drawPremiumHeader(doc, titles[reportType], subtitle)
     
     let head = [['#', 'Date', 'Description', 'Notes', 'Amount']]
-    let body = data.map((r, i) => [i + 1, format(new Date(r.date), 'dd/MM/yyyy'), getLabel(r), r.notes || '—', `Rs.${Number(r.amount || r.total_amount || 0).toLocaleString()}`])
-    let foot = [['', '', '', 'TOTAL', `Rs.${getTotal().toLocaleString()}`]]
+    let body = data.map((r, i) => [i + 1, format(new Date(r.date), 'dd/MM/yyyy'), getLabel(r), r.notes || '—', `Rs.${Number(r.amount || r.total_amount || 0).toLocaleString('en-IN')}`])
+    let foot = [['', '', '', 'TOTAL', `Rs.${getTotal().toLocaleString('en-IN')}`]]
 
     if (reportType === 'materials') {
       head = [['S.No', 'Date', 'Project', 'Material', 'Supplier', 'Cost', 'Remarks', 'Total']]
@@ -222,9 +222,9 @@ export default function ReportsPage() {
         const materialQty = `${r.name} ${r.quantity > 0 ? `(${r.quantity} ${r.unit})` : ''}`
         const project = r.projects?.name || '—'
 
-        return [i + 1, format(new Date(r.date), 'dd/MM/yyyy'), project, materialQty, supplierDisplay, cost, cleanNotes || '—', `Rs.${Number(r.total_amount || 0).toLocaleString()}`]
+        return [i + 1, format(new Date(r.date), 'dd/MM/yyyy'), project, materialQty, supplierDisplay, cost, cleanNotes || '—', `Rs.${Number(r.total_amount || 0).toLocaleString('en-IN')}`]
       })
-      foot = [['', '', '', '', '', '', 'TOTAL', `Rs.${getTotal().toLocaleString()}`]]
+      foot = [['', '', '', '', '', '', 'TOTAL', `Rs.${getTotal().toLocaleString('en-IN')}`]]
     }
 
     const options: any = {
@@ -322,7 +322,7 @@ export default function ReportsPage() {
               <button onClick={exportExcel} className="h-10 px-5 rounded-xl text-sm font-black uppercase flex items-center gap-2" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>
                 <Download size={14} /> Excel
               </button>
-              <span className="text-xs font-bold ml-auto" style={{ color: DIM }}>{data.length} records · Total: <span className="text-white font-black">₹{getTotal().toLocaleString()}</span></span>
+              <span className="text-xs font-bold ml-auto" style={{ color: DIM }}>{data.length} records · Total: <span className="text-white font-black">₹{getTotal().toLocaleString('en-IN')}</span></span>
             </>
           )}
         </div>
@@ -415,7 +415,7 @@ export default function ReportsPage() {
                             {!cleanNotes && !attachmentLabel && '—'}
                           </div>
                         </td>
-                        <td className="px-6 py-3 text-right font-black text-sm" style={{ color: GOLD }}>₹{Number(r.total_amount || 0).toLocaleString()}</td>
+                        <td className="px-6 py-3 text-right font-black text-sm" style={{ color: GOLD }}>₹{Number(r.total_amount || 0).toLocaleString('en-IN')}</td>
                       </tr>
                     )
                   }
@@ -427,7 +427,7 @@ export default function ReportsPage() {
                       <td className="px-4 py-3 text-xs font-bold" style={{ color: DIM }}>{format(new Date(r.date), 'dd MMM yyyy')}</td>
                       <td className="px-4 py-3 text-sm font-bold text-white max-w-[200px] truncate">{getLabel(r)}</td>
                       <td className="px-4 py-3 text-xs" style={{ color: DIM }}>{r.notes || '—'}</td>
-                      <td className="px-6 py-3 text-right font-black text-sm" style={{ color: GOLD }}>₹{Number(r.amount || r.total_amount || 0).toLocaleString()}</td>
+                      <td className="px-6 py-3 text-right font-black text-sm" style={{ color: GOLD }}>₹{Number(r.amount || r.total_amount || 0).toLocaleString('en-IN')}</td>
                     </tr>
                   )
                 })}
@@ -435,7 +435,7 @@ export default function ReportsPage() {
               <tfoot>
                 <tr style={{ backgroundColor: '#0d1018', borderTop: '1px solid #1e2435' }}>
                   <td colSpan={reportType === 'materials' ? 7 : 4} className="px-6 py-3 text-xs font-black uppercase tracking-widest text-right" style={{ color: DIM }}>Total</td>
-                  <td className="px-6 py-3 text-right font-black" style={{ color: '#22c55e' }}>₹{getTotal().toLocaleString()}</td>
+                  <td className="px-6 py-3 text-right font-black" style={{ color: '#22c55e' }}>₹{getTotal().toLocaleString('en-IN')}</td>
                 </tr>
               </tfoot>
             </table>

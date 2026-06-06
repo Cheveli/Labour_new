@@ -280,15 +280,15 @@ export default function ReportsPage() {
       const row = [
         format(new Date(r.date), 'EEEE (dd MMM)'),
         r.status,
-        `Rs. ${(r.baseWage || 0).toLocaleString()}`,
+        `Rs. ${(r.baseWage || 0).toLocaleString('en-IN')}`,
       ]
       if (hasOT) {
-        row.push(r.overtimeAmount > 0 ? `Rs. ${(r.overtimeAmount || 0).toLocaleString()}` : '-')
+        row.push(r.overtimeAmount > 0 ? `Rs. ${(r.overtimeAmount || 0).toLocaleString('en-IN')}` : '-')
       }
       row.push(
-        r.advance > 0 ? `Rs. ${(r.advance || 0).toLocaleString()}` : '-',
-        `Rs. ${(r.giveable || 0).toLocaleString()}`,
-        `Rs. ${(r.total || 0).toLocaleString()}`
+        r.advance > 0 ? `Rs. ${(r.advance || 0).toLocaleString('en-IN')}` : '-',
+        `Rs. ${(r.giveable || 0).toLocaleString('en-IN')}`,
+        `Rs. ${(r.total || 0).toLocaleString('en-IN')}`
       )
       return row
     })
@@ -355,9 +355,9 @@ export default function ReportsPage() {
     const boxH = 20
     const isNeg = (summary.netPayable || 0) < 0
     const boxes = [
-      { l: 'Total Payment', v: `Rs. ${(summary.totalWages + summary.totalOTAmount || 0).toLocaleString()}` },
-      { l: 'Deduction', v: `Rs. ${(summary.totalAdvances || 0).toLocaleString()}` },
-      { l: isNeg ? 'WORKER OWES' : 'GIVEABLE AMOUNT', v: `Rs. ${Math.abs(summary.netPayable || 0).toLocaleString()}`, hi: true }
+      { l: 'Total Payment', v: `Rs. ${(summary.totalWages + summary.totalOTAmount || 0).toLocaleString('en-IN')}` },
+      { l: 'Deduction', v: `Rs. ${(summary.totalAdvances || 0).toLocaleString('en-IN')}` },
+      { l: isNeg ? 'WORKER OWES' : 'GIVEABLE AMOUNT', v: `Rs. ${Math.abs(summary.netPayable || 0).toLocaleString('en-IN')}`, hi: true }
     ]
     
     boxes.forEach((b, i) => {
@@ -420,9 +420,9 @@ export default function ReportsPage() {
         return att.days_worked === 1 ? 'P' : att.days_worked === 0.5 ? 'H' : 'A'
       }),
       w.totals.days.toFixed(1),
-      `Rs. ${w.totals.gross.toLocaleString()}`,
-      `Rs. ${w.totals.advances.toLocaleString()}`,
-      `Rs. ${w.totals.net.toLocaleString()}`
+      `Rs. ${w.totals.gross.toLocaleString('en-IN')}`,
+      `Rs. ${w.totals.advances.toLocaleString('en-IN')}`,
+      `Rs. ${w.totals.net.toLocaleString('en-IN')}`
     ])
 
     // Append a dedicated "Work Done (All Workers)" row at the bottom of the table
@@ -444,7 +444,7 @@ export default function ReportsPage() {
       headStyles: { fillColor: PDF_COLORS.BLUE, fontSize: 7 },
       bodyStyles: { fontSize: 7 },
       alternateRowStyles: { fillColor: PDF_COLORS.LIGHT },
-      foot: [['', '', '', ...days.map(() => ''), 'TOTAL', `Rs. ${totalGross.toLocaleString()}`, `Rs. ${totalAdvances.toLocaleString()}`, `Rs. ${totalNet.toLocaleString()}`]],
+      foot: [['', '', '', ...days.map(() => ''), 'TOTAL', `Rs. ${totalGross.toLocaleString('en-IN')}`, `Rs. ${totalAdvances.toLocaleString('en-IN')}`, `Rs. ${totalNet.toLocaleString('en-IN')}`]],
       footStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontStyle: 'bold', fontSize: 7 },
       didParseCell: (data) => {
         if (data.section === 'body' && data.column.index > 2 && data.column.index < 3 + days.length) {
@@ -508,12 +508,12 @@ export default function ReportsPage() {
         r.quantity || '-',
         r.unit || '-',
         r.cost_per_unit ? `Rs. ${r.cost_per_unit}` : '-',
-        `Rs. ${Number(r.total_amount).toLocaleString()}`
+        `Rs. ${Number(r.total_amount).toLocaleString('en-IN')}`
       ]),
       theme: 'grid',
       headStyles: { fillColor: PDF_COLORS.BLUE },
       bodyStyles: { fontSize: 8 },
-      foot: [['', '', '', '', 'TOTAL COST', `Rs. ${total.toLocaleString()}`]],
+      foot: [['', '', '', '', 'TOTAL COST', `Rs. ${total.toLocaleString('en-IN')}`]],
       footStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontStyle: 'bold' }
     })
 
@@ -747,13 +747,13 @@ export default function ReportsPage() {
                                </Badge>
                             </TableCell>
                             <TableCell className="py-4 text-right font-black text-xs text-zinc-200">
-                               ₹ {row.total.toLocaleString()}
+                               ₹ {row.total.toLocaleString('en-IN')}
                             </TableCell>
                             <TableCell className="py-4 text-right font-black text-xs text-red-500">
-                               {row.advance > 0 ? `₹ ${row.advance.toLocaleString()}` : '—'}
+                               {row.advance > 0 ? `₹ ${row.advance.toLocaleString('en-IN')}` : '—'}
                             </TableCell>
                             <TableCell className="py-4 text-right font-black text-xs text-emerald-400">
-                               ₹ {row.giveable.toLocaleString()}
+                               ₹ {row.giveable.toLocaleString('en-IN')}
                             </TableCell>
                             <TableCell className="py-4 text-[10px] text-zinc-500 italic max-w-[150px] truncate">
                                {row.notes || '—'}
@@ -781,18 +781,18 @@ export default function ReportsPage() {
                           </div>
                           <div className="text-right">
                             <p className="text-[10px] font-black text-zinc-500 uppercase">Total Payment</p>
-                            <p className="font-black text-sm text-zinc-200">₹ {row.total.toLocaleString()}</p>
+                            <p className="font-black text-sm text-zinc-200">₹ {row.total.toLocaleString('en-IN')}</p>
                           </div>
                         </div>
                         {row.advance > 0 && (
                           <div className="flex justify-between items-center bg-red-500/10 p-2 rounded border border-red-500/20 mt-1">
                             <p className="text-[10px] font-black text-red-400 uppercase">Reductions</p>
-                            <p className="font-black text-xs text-red-500">₹ {row.advance.toLocaleString()}</p>
+                            <p className="font-black text-xs text-red-500">₹ {row.advance.toLocaleString('en-IN')}</p>
                           </div>
                         )}
                         <div className="flex justify-between items-center bg-emerald-500/10 p-2 rounded border border-emerald-500/20 mt-1">
                           <p className="text-[10px] font-black text-emerald-400 uppercase">Giveable Amount</p>
-                          <p className="font-black text-xs text-emerald-400">₹ {row.giveable.toLocaleString()}</p>
+                          <p className="font-black text-xs text-emerald-400">₹ {row.giveable.toLocaleString('en-IN')}</p>
                         </div>
                         {row.notes && <p className="text-[10px] text-zinc-500 italic mt-1 bg-zinc-950 p-2 rounded">{row.notes}</p>}
                       </div>
@@ -802,21 +802,21 @@ export default function ReportsPage() {
                   <div className={cn("grid grid-cols-1 gap-4 mt-8 pt-8 border-t border-zinc-800", reportData.summary.totalOTAmount > 0 ? "md:grid-cols-4" : "md:grid-cols-3")}>
                     <div className="bg-zinc-950/50 p-6 rounded-2xl border border-zinc-800">
                        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Basic Wages</p>
-                       <p className="text-xl font-black text-white mt-1">₹ {reportData.summary.totalWages.toLocaleString()}</p>
+                       <p className="text-xl font-black text-white mt-1">₹ {reportData.summary.totalWages.toLocaleString('en-IN')}</p>
                     </div>
                     {reportData.summary.totalOTAmount > 0 && (
                       <div className="bg-zinc-950/50 p-6 rounded-2xl border border-zinc-800">
                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Overtime</p>
-                         <p className="text-xl font-black text-white mt-1">₹ {reportData.summary.totalOTAmount.toLocaleString()}</p>
+                         <p className="text-xl font-black text-white mt-1">₹ {reportData.summary.totalOTAmount.toLocaleString('en-IN')}</p>
                       </div>
                     )}
                     <div className="bg-red-500/5 p-6 rounded-2xl border border-red-500/10">
                        <p className="text-[10px] font-black uppercase tracking-widest text-red-400">Reductions</p>
-                       <p className="text-xl font-black text-red-500 mt-1">₹ {reportData.summary.totalAdvances.toLocaleString()}</p>
+                       <p className="text-xl font-black text-red-500 mt-1">₹ {reportData.summary.totalAdvances.toLocaleString('en-IN')}</p>
                     </div>
                     <div className="bg-blue-600 p-6 rounded-2xl border border-blue-500 shadow-lg shadow-blue-600/20">
                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-100">Giveable Amount</p>
-                       <p className="text-2xl font-black text-white mt-1">₹ {reportData.summary.netPayable.toLocaleString()}</p>
+                       <p className="text-2xl font-black text-white mt-1">₹ {reportData.summary.netPayable.toLocaleString('en-IN')}</p>
                     </div>
                   </div>
                 </div>
@@ -886,13 +886,13 @@ export default function ReportsPage() {
                                  {weeklyTasks || <span className="text-zinc-600 italic">No notes</span>}
                               </TableCell>
                               <TableCell className="py-5 text-right font-black text-blue-400 text-xs leading-none">
-                                 ₹ {w.totals.gross.toLocaleString()}
+                                 ₹ {w.totals.gross.toLocaleString('en-IN')}
                               </TableCell>
                               <TableCell className="py-5 text-right font-black text-red-500 text-xs leading-none">
-                                 {w.totals.advances > 0 ? `₹ ${w.totals.advances.toLocaleString()}` : '—'}
+                                 {w.totals.advances > 0 ? `₹ ${w.totals.advances.toLocaleString('en-IN')}` : '—'}
                               </TableCell>
                               <TableCell className="py-5 text-right pr-8 font-black text-emerald-400 text-xs leading-none">
-                                 ₹ {w.totals.net.toLocaleString()}
+                                 ₹ {w.totals.net.toLocaleString('en-IN')}
                               </TableCell>
                             </TableRow>
                           )
@@ -914,17 +914,17 @@ export default function ReportsPage() {
                           <div className="text-right space-y-1">
                             <div>
                               <span className="text-[8px] font-black uppercase text-zinc-500">Gross: </span>
-                              <span className="font-bold text-xs text-blue-400">₹{w.totals.gross.toLocaleString()}</span>
+                              <span className="font-bold text-xs text-blue-400">₹{w.totals.gross.toLocaleString('en-IN')}</span>
                             </div>
                             {w.totals.advances > 0 && (
                               <div>
                                 <span className="text-[8px] font-black uppercase text-red-400">Adv: </span>
-                                <span className="font-bold text-xs text-red-500">₹{w.totals.advances.toLocaleString()}</span>
+                                <span className="font-bold text-xs text-red-500">₹{w.totals.advances.toLocaleString('en-IN')}</span>
                               </div>
                             )}
                             <div className="bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 inline-block mt-0.5">
                               <span className="text-[8px] font-black uppercase text-emerald-400">Net: </span>
-                              <span className="font-black text-xs text-emerald-400">₹{w.totals.net.toLocaleString()}</span>
+                              <span className="font-black text-xs text-emerald-400">₹{w.totals.net.toLocaleString('en-IN')}</span>
                             </div>
                           </div>
                         </div>
@@ -965,15 +965,15 @@ export default function ReportsPage() {
                   <div className="p-8 bg-zinc-950/30 flex justify-end items-center gap-8 flex-wrap">
                      <div className="text-right">
                         <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Total Project Liability (Gross)</p>
-                        <p className="text-2xl font-black text-white mt-1">₹ {reportData.workers.reduce((acc: number, w: any) => acc + w.totals.gross, 0).toLocaleString()}</p>
+                        <p className="text-2xl font-black text-white mt-1">₹ {reportData.workers.reduce((acc: number, w: any) => acc + w.totals.gross, 0).toLocaleString('en-IN')}</p>
                      </div>
                      <div className="text-right">
                         <p className="text-[10px] font-black uppercase tracking-widest text-red-400">Total Advances Deducted</p>
-                        <p className="text-2xl font-black text-red-500 mt-1">₹ {reportData.workers.reduce((acc: number, w: any) => acc + w.totals.advances, 0).toLocaleString()}</p>
+                        <p className="text-2xl font-black text-red-500 mt-1">₹ {reportData.workers.reduce((acc: number, w: any) => acc + w.totals.advances, 0).toLocaleString('en-IN')}</p>
                      </div>
                      <div className="text-right">
                         <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Total Giveable Amount (Net)</p>
-                        <p className="text-3xl font-black text-emerald-400 mt-1">₹ {reportData.workers.reduce((acc: number, w: any) => acc + w.totals.net, 0).toLocaleString()}</p>
+                        <p className="text-3xl font-black text-emerald-400 mt-1">₹ {reportData.workers.reduce((acc: number, w: any) => acc + w.totals.net, 0).toLocaleString('en-IN')}</p>
                      </div>
                   </div>
                 </div>
@@ -988,7 +988,7 @@ export default function ReportsPage() {
                      </div>
                      <div className="text-right">
                         <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Total Expenditure</p>
-                        <p className="text-3xl font-black text-emerald-400">₹ {reportData.items.reduce((acc: number, r: any) => acc + Number(r.total_amount || 0), 0).toLocaleString()}</p>
+                        <p className="text-3xl font-black text-emerald-400">₹ {reportData.items.reduce((acc: number, r: any) => acc + Number(r.total_amount || 0), 0).toLocaleString('en-IN')}</p>
                      </div>
                    </div>
 
@@ -1012,7 +1012,7 @@ export default function ReportsPage() {
                             <TableCell className="py-4 font-black text-white text-xs uppercase tracking-tight">{r.name}</TableCell>
                             <TableCell className="py-4 text-xs text-zinc-500">{r.quantity} {r.unit}</TableCell>
                             <TableCell className="py-4 text-right font-black text-white text-xs leading-none">
-                               ₹ {Number(r.total_amount).toLocaleString()}
+                               ₹ {Number(r.total_amount).toLocaleString('en-IN')}
                             </TableCell>
                             <TableCell className="py-4 text-[10px] text-zinc-500 italic max-w-[200px] truncate">
                                {r.notes || '—'}
@@ -1033,7 +1033,7 @@ export default function ReportsPage() {
                             <p className="text-[10px] font-bold text-gray-400 mt-1">{format(new Date(r.date), 'dd MMM yyyy')}</p>
                           </div>
                           <div className="text-right">
-                            <p className="font-black text-emerald-400 text-sm">₹ {Number(r.total_amount).toLocaleString()}</p>
+                            <p className="font-black text-emerald-400 text-sm">₹ {Number(r.total_amount).toLocaleString('en-IN')}</p>
                             <p className="font-bold text-zinc-500 text-[10px] uppercase mt-0.5">{r.quantity} {r.unit}</p>
                           </div>
                         </div>
