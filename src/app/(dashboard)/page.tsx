@@ -382,6 +382,17 @@ export default function DashboardPage() {
     setIsInitialized(true)
   }, [])
 
+  // Reload page stats when a material entry is successfully added globally
+  useEffect(() => {
+    const handleProjectChangedGlobal = () => {
+      fetchStats()
+    }
+    window.addEventListener('ssc_project_changed', handleProjectChangedGlobal)
+    return () => {
+      window.removeEventListener('ssc_project_changed', handleProjectChangedGlobal)
+    }
+  }, [selectedProjectId])
+
   const PANEL = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
   const GOLD = '#3b82f6'
   const DIM = '#6b7280'
@@ -765,7 +776,20 @@ export default function DashboardPage() {
 
       {/* Quick Actions */}
       <div style={PANEL} className="p-5">
-        <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: DIM }}>Quick Actions</p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Quick Actions</p>
+        </div>
+
+        {/* Prominent Full-Width Green Gradient Button for Quick Material Entry Modal */}
+        <button
+          onClick={() => window.dispatchEvent(new Event('ssc_open_quick_material'))}
+          suppressHydrationWarning
+          className="flex items-center justify-center gap-2 w-full px-4 py-3.5 mb-3 rounded-xl text-sm font-black text-white transition-all hover:opacity-95 active:scale-[0.99] cursor-pointer"
+          style={{ background: 'linear-gradient(90deg,#22c55e,#15803d)', boxShadow: '0 4px 14px rgba(34,197,94,0.3)' }}
+        >
+          <Zap size={16} className="text-white fill-white animate-pulse" />
+          <span>Quick Material Entry / వేగవంతమైన మెటీరియల్ నమోదు</span>
+        </button>
 
         {/* Mobile layout: Create Payment full-width hero, others 2x2 */}
         <div className="block md:hidden space-y-2">

@@ -187,7 +187,6 @@ export default function MaterialsPage() {
       q = q.eq('project_id', currentId)
       localStorage.setItem('ssc_active_project_id', currentId)
     }
-    window.dispatchEvent(new Event('ssc_project_changed'))
     const { data: matData } = await q
     setMaterials(matData || [])
     setLoading(false)
@@ -283,7 +282,12 @@ export default function MaterialsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <select
             value={selectedProjectId}
-            onChange={(e) => setSelectedProjectId(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value
+              setSelectedProjectId(val)
+              localStorage.setItem('ssc_active_project_id', val)
+              window.dispatchEvent(new Event('ssc_project_changed'))
+            }}
             className="h-10 px-4 rounded-xl text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500 transition-all flex-1 min-w-[140px]"
           >
             <option value="">All Projects</option>
