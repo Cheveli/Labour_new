@@ -1,16 +1,21 @@
-/**
- * Triggers haptic feedback vibration on devices that support it.
- * Respects user preference stored in localStorage.
- */
-export function haptic(pattern: number | number[] = 10) {
+export function haptic(pattern = 200) {
   try {
+    console.log('Haptic called')
+
     if (typeof window === 'undefined') return
+
     const enabled = localStorage.getItem('ssc_haptic_enabled')
+    console.log('Enabled:', enabled)
+
     if (enabled === 'false') return
+
     if ('vibrate' in navigator) {
+      console.log('Vibrate supported')
       navigator.vibrate(pattern)
+    } else {
+      console.log('Vibrate NOT supported')
     }
-  } catch {
-    // Silently fail on unsupported devices
+  } catch (e) {
+    console.error(e)
   }
 }
