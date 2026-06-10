@@ -208,7 +208,8 @@ export default function PaymentsPage() {
     const hasOT = (data.totalOt || 0) > 0
     const tableHeight = (data.breakdown.length + 1) * 8.5
     const summaryBoxH = hasOT ? 42 : 35
-    const requiredHeight = 44 + 16 + tableHeight + 10 + summaryBoxH + 18 + 24 + 10 + 14
+    const detailsHeight = 22
+    const requiredHeight = 44 + detailsHeight + tableHeight + 10 + summaryBoxH + 18 + 24 + 10 + 14
     const pageHeight = Math.max(160, requiredHeight)
 
     const doc = new jsPDF({
@@ -218,13 +219,32 @@ export default function PaymentsPage() {
     })
     drawPremiumHeader(doc, 'SALARY SLIP / RECEIPT', '(AUTO-GENERATED)')
 
-    const infoY = 54
-    doc.setTextColor(...PDF_COLORS.NAVY)
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(9)
-    doc.text('Worker Name', 14, infoY); doc.setFont('helvetica', 'normal'); doc.text(`: ${data.worker.name}`, 45, infoY)
-    doc.setFont('helvetica', 'bold'); doc.text('Project', 14, infoY + 7); doc.setFont('helvetica', 'normal'); doc.text(`: ${data.project.name}`, 45, infoY + 7)
-    doc.setFont('helvetica', 'bold'); doc.text('Period', 120, infoY); doc.setFont('helvetica', 'normal'); doc.text(`: ${data.period}`, 145, infoY)
-    doc.setFont('helvetica', 'bold'); doc.text('Role', 120, infoY + 7); doc.setFont('helvetica', 'normal'); doc.text(`: ${data.worker.type || '-'}`, 145, infoY + 7)
+    // ── Worker Details Table (Tabular Form) ──────────────────
+    autoTable(doc, {
+      startY: 52,
+      head: [],
+      body: [
+        ['Worker Name', data.worker.name, 'Period', data.period],
+        ['Project', data.project.name, 'Role', data.worker.type || '-']
+      ],
+      theme: 'grid',
+      styles: {
+        fontSize: 8,
+        cellPadding: 2.5,
+        textColor: PDF_COLORS.NAVY,
+        lineColor: [210, 215, 225],
+        lineWidth: 0.15
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', fillColor: [243, 246, 253], cellWidth: 30 },
+        1: { cellWidth: 61 },
+        2: { fontStyle: 'bold', fillColor: [243, 246, 253], cellWidth: 30 },
+        3: { cellWidth: 61 }
+      },
+      margin: { left: 14, right: 14 }
+    })
+
+    const detailsEndY = (doc as any).lastAutoTable.finalY
 
     // Daily breakdown table (Date, Status, Wages on the day, OT Amount, Reductions, Giveable Amount, Grand Total)
     const tableBody = data.breakdown.map((row: any) => {
@@ -249,7 +269,7 @@ export default function PaymentsPage() {
       : [['Date', 'Stat', 'Wages on the day', 'Deduction', 'Giveable Amount', 'Grand Total']]
 
     autoTable(doc, {
-      startY: infoY + 16,
+      startY: detailsEndY + 8,
       head: head,
       body: tableBody,
       theme: 'grid',
@@ -305,80 +325,82 @@ export default function PaymentsPage() {
       drawPremiumFooter(doc)
       finalY = 50
     }
-    
-    // Left Box: Calculation Overview
-    doc.setFillColor(245, 247, 250)
-    doc.roundedRect(14, finalY, 86, summaryBoxH, 2, 2, 'F')
-    
-    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(...PDF_COLORS.BLUE)
-    doc.text('CALCULATION OVERVIEW', 19, finalY + 7)
-    
-    doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_COLORS.NAVY)
+
+    // ── Payment Summary Table (Tabular Form) ──────────────────
     const totalDays = data.breakdown.reduce((acc: number, curr: any) => acc + curr.daysWorked, 0)
     const rate = data.worker.daily_rate || 0
-    const wagesCalculated = totalDays * rate
-
-    if (hasOT) {
-      doc.text('Wages:', 19, finalY + 14)
-      doc.text(`${totalDays} days × Rs. ${rate.toLocaleString('en-IN')} = Rs. ${wagesCalculated.toLocaleString('en-IN')}`, 94, finalY + 14, { align: 'right' })
-      
-      doc.text('Overtime Amount:', 19, finalY + 20)
-      doc.text(`Rs. ${data.totalOt.toLocaleString('en-IN')}`, 94, finalY + 20, { align: 'right' })
-      
-      doc.text('Less: Advance/Deduction:', 19, finalY + 26)
-      doc.setTextColor(220, 53, 69)
-      doc.text(`-Rs. ${data.totalAdv.toLocaleString('en-IN')}`, 94, finalY + 26, { align: 'right' })
-      doc.setTextColor(...PDF_COLORS.NAVY)
-      
-      doc.setDrawColor(200, 200, 200); doc.line(19, finalY + 30, 94, finalY + 30)
-      
-      doc.setTextColor(...PDF_COLORS.GREEN); doc.setFont('helvetica', 'bold'); doc.setFontSize(9)
-      doc.text('NET PAYABLE:', 19, finalY + 36)
-      doc.text(`Rs. ${data.netPayable.toLocaleString('en-IN')}`, 94, finalY + 36, { align: 'right' })
-    } else {
-      doc.text('Wages:', 19, finalY + 14)
-      doc.text(`${totalDays} days × Rs. ${rate.toLocaleString('en-IN')} = Rs. ${wagesCalculated.toLocaleString('en-IN')}`, 94, finalY + 14, { align: 'right' })
-      
-      doc.text('Less: Advance/Deduction:', 19, finalY + 20)
-      doc.setTextColor(220, 53, 69)
-      doc.text(`-Rs. ${data.totalAdv.toLocaleString('en-IN')}`, 94, finalY + 20, { align: 'right' })
-      doc.setTextColor(...PDF_COLORS.NAVY)
-      
-      doc.setDrawColor(200, 200, 200); doc.line(19, finalY + 24, 94, finalY + 24)
-      
-      doc.setTextColor(...PDF_COLORS.GREEN); doc.setFont('helvetica', 'bold'); doc.setFontSize(9)
-      doc.text('NET PAYABLE:', 19, finalY + 30)
-      doc.text(`Rs. ${data.netPayable.toLocaleString('en-IN')}`, 94, finalY + 30, { align: 'right' })
-    }
-
-    // Summary Box
-    doc.setFillColor(245, 247, 250)
-    doc.roundedRect(110, finalY, 86, summaryBoxH, 2, 2, 'F')
-    
     const summaryGross = data.totalWage + data.totalOt
-    let boxY = finalY + 7
-    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(...PDF_COLORS.BLUE)
-    doc.text('GRAND TOTAL:', 115, boxY); doc.setFontSize(12); doc.text(`Rs. ${summaryGross.toLocaleString('en-IN')}`, 185, boxY, { align: 'right' })
-    
-    boxY += 8
+
+    const summaryBody = [
+      [
+        'Wages Calculation',
+        `${totalDays} days × Rs. ${rate.toLocaleString('en-IN')}`,
+        `Rs. ${(totalDays * rate).toLocaleString('en-IN')}`
+      ]
+    ]
+
     if (hasOT) {
-      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_COLORS.NAVY)
-      doc.text('Total Overtime:', 115, boxY); doc.text(`Rs. ${data.totalOt.toLocaleString('en-IN')}`, 185, boxY, { align: 'right' })
-      boxY += 7
+      summaryBody.push([
+        'Overtime Payout',
+        '-',
+        `Rs. ${data.totalOt.toLocaleString('en-IN')}`
+      ])
     }
-    
-    doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...PDF_COLORS.NAVY)
-    doc.text('Total Deduction:', 115, boxY); doc.setTextColor(220, 53, 69); doc.text(`Rs. ${data.totalAdv.toLocaleString('en-IN')}`, 185, boxY, { align: 'right' })
-    
-    boxY += 4
-    doc.setDrawColor(200, 200, 200); doc.line(115, boxY, 185, boxY)
-    
-    boxY += 6
-    doc.setTextColor(...PDF_COLORS.GREEN); doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
-    doc.text('NET PAYMENT:', 115, boxY); doc.text(`Rs. ${data.netPayable.toLocaleString('en-IN')}`, 185, boxY, { align: 'right' })
+
+    summaryBody.push([
+      'Less: Advance / Deduction',
+      '-',
+      `- Rs. ${data.totalAdv.toLocaleString('en-IN')}`
+    ])
+
+    summaryBody.push([
+      'NET PAYABLE',
+      '-',
+      `Rs. ${data.netPayable.toLocaleString('en-IN')}`
+    ])
+
+    autoTable(doc, {
+      startY: finalY,
+      head: [[{ content: 'PAYMENT SUMMARY', colSpan: 3, styles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: 8.5 } }]],
+      body: summaryBody,
+      theme: 'grid',
+      styles: {
+        fontSize: 8,
+        cellPadding: 2.5,
+        textColor: PDF_COLORS.NAVY,
+        lineColor: [210, 215, 225],
+        lineWidth: 0.15
+      },
+      columnStyles: {
+        0: { cellWidth: 80 },
+        1: { cellWidth: 50, halign: 'center' as const },
+        2: { cellWidth: 52, halign: 'right' as const }
+      },
+      margin: { left: 14, right: 14 },
+      didParseCell: (cellData) => {
+        if (cellData.section === 'body') {
+          const rowText = cellData.row.cells[0]?.text[0] || ''
+          if (rowText.includes('Less:')) {
+            cellData.cell.styles.textColor = PDF_COLORS.RED
+            cellData.cell.styles.fontStyle = 'bold'
+          } else if (rowText.includes('NET PAYABLE')) {
+            cellData.cell.styles.textColor = PDF_COLORS.GREEN
+            cellData.cell.styles.fontStyle = 'bold'
+            cellData.cell.styles.fontSize = 9.5
+          } else {
+            if (cellData.column.index === 0) {
+              cellData.cell.styles.fontStyle = 'bold'
+            }
+          }
+        }
+      }
+    })
+
+    const summaryEndY = (doc as any).lastAutoTable.finalY
 
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(8); doc.setFont('helvetica', 'italic')
-    doc.text(`Amount in words: ${numberToWords(Math.abs(data.netPayable))}`, 14, finalY + 48)
+    doc.text(`Amount in words: ${numberToWords(Math.abs(data.netPayable))}`, 14, summaryEndY + 6)
+
 
     // Signatory Area
     const sigY = H - 48

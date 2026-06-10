@@ -26,7 +26,8 @@ import {
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import jsPDF from 'jspdf'
-import { drawPremiumHeader, drawPremiumFooter, PDF_COLORS, COMPANY_DETAILS } from '@/lib/report-utils'
+import autoTable from 'jspdf-autotable'
+import { drawPremiumHeader, drawPremiumFooter, PDF_COLORS, COMPANY_DETAILS, numberToWords } from '@/lib/report-utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 
 const DEFAULT_WORK_NATURES = [
@@ -143,7 +144,7 @@ export default function SubcontractsPage() {
 
     let installments = sub.installments || []
     const sumInstallments = installments.reduce((sum: number, inst: any) => sum + Number(inst.amount || 0), 0)
-    
+
     // Inject legacy balance payment if total_amount is greater than recorded installments
     if (sub.total_amount > sumInstallments) {
       const diff = sub.total_amount - sumInstallments
@@ -325,164 +326,171 @@ export default function SubcontractsPage() {
   // Receipt PDF Generation
   const exportPDF = (sub: any, installment: any) => {
     const subData = getSubcontractorData(sub)
+
+    // Sort all payments chronologically
+    const allInstallments = [...subData.installments].sort(
+      (a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    )
+
+    // ── Dynamic A4 page height based on table and details content ──
+    const tableHeight = (allInstallments.length + 1) * 8.5
+    const detailsHeight = 30
+    const summaryBoxH = 30
+    const requiredHeight = 44 + detailsHeight + tableHeight + 10 + summaryBoxH + 18 + 24 + 10 + 14
+    const pageHeight = Math.max(160, requiredHeight)
+
     const doc = new jsPDF({
-      orientation: 'portrait',
+      orientation: 'p',
       unit: 'mm',
-      format: [80, 160]
+      format: [210, pageHeight]
     })
 
-    const W = 80
-    const H = 160
+    // Header matching worker payments PDF
+    drawPremiumHeader(
+      doc,
+      'SUBCONTRACTOR PAYMENT VOUCHER',
+      `VOUCH-${sub.id.slice(0, 6).toUpperCase()}-${installment.receipt_number}`
+    )
 
-    // Header (Navy background)
-    doc.setFillColor(13, 27, 62)
-    doc.rect(0, 0, W, 27, 'F')
+    // ── Subcontractor Details Table (Tabular Form) ──────────────────
+    autoTable(doc, {
+      startY: 52,
+      head: [],
+      body: [
+        ['Subcontractor Name', sub.name, 'Department / Work', sub.work_nature],
+        ['Contact Number', sub.mobile || '—', 'Site / Project', installment.site_project || '—'],
+        ['Voucher Date', format(new Date(installment.date), 'dd MMM yyyy'), 'Remarks', installment.notes || '—']
+      ],
+      theme: 'grid',
+      styles: {
+        fontSize: 8,
+        cellPadding: 2.5,
+        textColor: PDF_COLORS.NAVY,
+        lineColor: [210, 215, 225],
+        lineWidth: 0.15
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', fillColor: [243, 246, 253], cellWidth: 35 },
+        1: { cellWidth: 56 },
+        2: { fontStyle: 'bold', fillColor: [243, 246, 253], cellWidth: 35 },
+        3: { cellWidth: 56 }
+      },
+      margin: { left: 14, right: 14 }
+    })
 
-    // Gold Strip beneath header
-    doc.setFillColor(245, 158, 11)
-    doc.rect(0, 27, W, 1.5, 'F')
+    const detailsEndY = (doc as any).lastAutoTable.finalY
 
-    // White background for contents
-    doc.setFillColor(255, 255, 255)
-    doc.rect(0, 28.5, W, H - 28.5, 'F')
+    // ── Payment History Table ───────────────────────────────────────
+    const historyBody = allInstallments.map((inst: any) => {
+      return [
+        inst.receipt_number,
+        format(new Date(inst.date), 'dd MMM yyyy'),
+        inst.site_project || '—',
+        inst.notes || '—',
+        `Rs. ${Number(inst.amount).toLocaleString('en-IN')}`
+      ]
+    })
 
-    // Company Details text
-    doc.setTextColor(255, 255, 255)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8.5)
-    doc.text(COMPANY_DETAILS.name, 40, 7, { align: 'center' })
+    autoTable(doc, {
+      startY: detailsEndY + 8,
+      head: [['Installment No', 'Payment Date', 'Project / Site', 'Remarks', 'Paid Amount']],
+      body: historyBody,
+      theme: 'grid',
+      headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: 8 },
+      bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 8 },
+      alternateRowStyles: { fillColor: PDF_COLORS.LIGHT },
+      styles: { cellPadding: 2.5 },
+      columnStyles: {
+        0: { cellWidth: 20, halign: 'center' as const },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 46 },
+        3: { cellWidth: 46 },
+        4: { cellWidth: 40, halign: 'right' as const, fontStyle: 'bold' }
+      },
+      didParseCell: (cellData) => {
+        if (cellData.section === 'body') {
+          const isCurrent = cellData.row.cells[0]?.text[0] === String(installment.receipt_number)
+          if (isCurrent) {
+            cellData.cell.styles.fillColor = [219, 234, 254]
+            cellData.cell.styles.textColor = [29, 78, 216]
+            cellData.cell.styles.fontStyle = 'bold'
+          }
+        }
+      },
+      margin: { left: 14, right: 14 }
+    })
 
-    doc.setFontSize(4.5)
-    doc.setFont('helvetica', 'normal')
-    doc.text(COMPANY_DETAILS.tagline, 40, 12, { align: 'center' })
-    doc.text(COMPANY_DETAILS.address, 40, 17, { align: 'center' })
-    doc.text(`Authorized Signatory: Cheveli Somaiah | Ph: ${COMPANY_DETAILS.phones.split(' / ')[0]}`, 40, 22, { align: 'center' })
+    const historyEndY = (doc as any).lastAutoTable.finalY
 
-    // Title (with gold border accent)
-    const titleY = 34
-    doc.setFillColor(13, 27, 62)
-    doc.roundedRect(15, titleY, 50, 8, 1.5, 1.5, 'F')
-    doc.setDrawColor(245, 158, 11)
-    doc.setLineWidth(0.3)
-    doc.roundedRect(15, titleY, 50, 8, 1.5, 1.5, 'S')
-
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(7)
-    doc.setFont('helvetica', 'bold')
-    doc.text('PAYMENT VOUCHER', 40, titleY + 5, { align: 'center' })
-
-    // Voucher info
-    const infoY = titleY + 14
-    doc.setTextColor(100, 116, 139) // Muted color
-    doc.setFontSize(5)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`Voucher No. : VOUCH-${sub.id.slice(0, 6).toUpperCase()}-${installment.receipt_number}`, 10, infoY)
-    doc.text(`Date : ${format(new Date(installment.date), 'dd MMM yyyy')}`, 70, infoY, { align: 'right' })
-
-    doc.setDrawColor(220, 225, 235)
-    doc.setLineWidth(0.2)
-    doc.line(5, infoY + 3, 75, infoY + 3)
-
-    // Details Block Header
-    const detailsY = infoY + 6
-    doc.setFillColor(13, 27, 62)
-    doc.rect(5, detailsY, 70, 5, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(5)
-    doc.setFont('helvetica', 'bold')
-    doc.text('SUBCONTRACTOR & TRANSACTION DETAILS', 40, detailsY + 3.5, { align: 'center' })
-
-    const tableY = detailsY + 5
-    const payLabel = 'Amount Paid'
-    const termLabel = 'Payment No.'
-
-    const details = [
-      ['Name', sub.name],
-      ['Department', sub.work_nature],
-      ['Contact No.', sub.mobile || '—'],
-      ['Site / Project', installment.site_project || '—'],
-      [termLabel, `#${installment.receipt_number}`],
-      [payLabel, `Rs. ${Number(installment.amount).toLocaleString('en-IN')}`],
-      ['Remarks', installment.notes || '—']
+    // ── Payment Summary Table (Tabular Form) ────────────────────────
+    const summaryBody = [
+      [
+        'Current Payout Amount',
+        `Rs. ${Number(installment.amount).toLocaleString('en-IN')}`
+      ],
+      [
+        'Total Cumulative Paid Payouts',
+        `Rs. ${subData.totalPaid.toLocaleString('en-IN')}`
+      ]
     ]
 
-    // Alternate backgrounds and draw outer box with thin horizontal separators
-    let currentY = tableY
-    details.forEach((row, idx) => {
-      if (idx % 2 === 0) {
-        doc.setFillColor(248, 250, 255)
-        doc.rect(5, currentY, 70, 5, 'F')
+    autoTable(doc, {
+      startY: historyEndY + 8,
+      head: [[{ content: 'PAYMENT SUMMARY', colSpan: 2, styles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: 8.5 } }]],
+      body: summaryBody,
+      theme: 'grid',
+      styles: {
+        fontSize: 8,
+        cellPadding: 2.5,
+        textColor: PDF_COLORS.NAVY,
+        lineColor: [210, 215, 225],
+        lineWidth: 0.15
+      },
+      columnStyles: {
+        0: { cellWidth: 110, fontStyle: 'bold' },
+        1: { cellWidth: 72, halign: 'right' as const, fontStyle: 'bold' }
+      },
+      margin: { left: 14, right: 14 },
+      didParseCell: (cellData) => {
+        if (cellData.section === 'body') {
+          const rowText = cellData.row.cells[0]?.text[0] || ''
+          if (rowText.includes('Current')) {
+            cellData.cell.styles.textColor = [29, 78, 216]
+          } else if (rowText.includes('Cumulative')) {
+            cellData.cell.styles.textColor = PDF_COLORS.GREEN
+            cellData.cell.styles.fontSize = 9
+          }
+        }
       }
-      
-      doc.setTextColor(13, 27, 62)
-      doc.setFontSize(4.5)
-      doc.setFont('helvetica', 'bold')
-      doc.text(`${row[0]}               :`, 8, currentY + 3.2)
-
-      if (row[0] === payLabel) {
-        doc.setTextColor(22, 163, 74) // Premium Green color
-        doc.setFont('helvetica', 'bold')
-      } else {
-        doc.setTextColor(70, 80, 95)
-        doc.setFont('helvetica', 'normal')
-      }
-      doc.text(row[1] || '—', 32, currentY + 3.2)
-
-      if (idx < details.length - 1) {
-        doc.setDrawColor(230, 235, 245)
-        doc.setLineWidth(0.1)
-        doc.line(5, currentY + 5, 75, currentY + 5)
-      }
-
-      currentY += 5
     })
 
-    // Draw single outer border around detail block
-    doc.setDrawColor(200, 205, 215)
-    doc.setLineWidth(0.2)
-    doc.rect(5, tableY, 70, details.length * 5, 'S')
+    const summaryEndY = (doc as any).lastAutoTable.finalY
 
-    // Summary Highlight Box (Golden accent premium box)
-    const summaryY = currentY + 6
-    doc.setFillColor(245, 158, 11, 0.08) // 8% gold tint opacity
-    doc.roundedRect(5, summaryY - 3, 70, 8, 1, 1, 'F')
-    doc.setDrawColor(245, 158, 11)
-    doc.setLineWidth(0.2)
-    doc.roundedRect(5, summaryY - 3, 70, 8, 1, 1, 'S')
+    doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(8); doc.setFont('helvetica', 'italic')
+    doc.text(`Amount in words: ${numberToWords(Math.abs(installment.amount))}`, 14, summaryEndY + 6)
 
-    doc.setTextColor(13, 27, 62)
-    doc.setFontSize(5)
+    // Signatory Area
+    const sigY = pageHeight - 48
     doc.setFont('helvetica', 'bold')
-    doc.text('TOTAL PAID TILL DATE', 8, summaryY + 2)
-    doc.setFontSize(5.5)
-    doc.text(`Rs. ${subData.totalPaid.toLocaleString('en-IN')}`, 72, summaryY + 2, { align: 'right' })
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.setFontSize(8)
+    doc.text('FOR ' + COMPANY_DETAILS.name, 160, sigY + 5, { align: 'center' })
 
-    // Footer divider line
-    const footerY = summaryY + 10
-    doc.setDrawColor(210, 215, 225)
-    doc.setLineWidth(0.25)
-    doc.line(5, footerY, 75, footerY)
+    doc.setFont('times', 'italic')
+    doc.setFontSize(12)
+    doc.text('Cheveli Somaiah', 160, sigY + 16, { align: 'center' })
+    doc.line(140, sigY + 18, 180, sigY + 18)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7); doc.text('Authorized Signatory', 160, sigY + 22, { align: 'center' })
 
-    doc.setTextColor(140, 150, 165)
-    doc.setFontSize(4)
-    doc.setFont('helvetica', 'normal')
-    doc.text('-- COMPUTER GENERATED RECEIPT --', 40, footerY + 4, { align: 'center' })
-
-    // Gold Strip above footer
-    doc.setFillColor(245, 158, 11)
-    doc.rect(0, H - 11.5, W, 1.5, 'F')
-
-    // Footer dark bar
-    doc.setFillColor(13, 27, 62)
-    doc.rect(0, H - 10, W, 10, 'F')
-
-    doc.setTextColor(180, 200, 240)
-    doc.setFontSize(3.5)
-    doc.text(`${COMPANY_DETAILS.name}  |  HYDERABAD`, 40, H - 5, { align: 'center' })
+    // Premium Footer
+    drawPremiumFooter(doc)
 
     doc.save(`Receipt_${sub.name.replace(/\s+/g, '_')}_Term_${installment.receipt_number}.pdf`)
     toast.success('Payment receipt generated successfully!')
+
   }
+
 
   // Group subcontractors by folder/work_nature
   const folders = Array.from(
@@ -611,7 +619,7 @@ export default function SubcontractsPage() {
                             <Phone size={10} /> {sub.mobile || 'No Contact'}
                           </p>
                         </div>
-                        
+
                         <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-blue-500/10 text-blue-400 border border-blue-500/20">
                           Payments Ledger
                         </span>
@@ -642,7 +650,7 @@ export default function SubcontractsPage() {
                           ₹{subData.totalPaid.toLocaleString('en-IN')}
                         </p>
                       </div>
-                      <button 
+                      <button
                         onClick={() => {
                           setSelectedSubcontractor(sub)
                           setNewPaymentForm({ ...newPaymentForm, site_project: projects[0]?.name || '' })
@@ -765,8 +773,8 @@ export default function SubcontractsPage() {
         {selectedSubcontractor && (() => {
           const subData = getSubcontractorData(selectedSubcontractor)
           return (
-            <DialogContent 
-              style={{ backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0', maxWidth: '1024px' }} 
+            <DialogContent
+              style={{ backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0', maxWidth: '1024px' }}
               className="sm:max-w-5xl w-full rounded-2xl max-h-[85vh] overflow-y-auto"
             >
               <DialogHeader className="border-b border-[#1e2435] pb-4 flex flex-row justify-between items-start pr-8">
@@ -776,9 +784,9 @@ export default function SubcontractsPage() {
                     {selectedSubcontractor.work_nature} &bull; Ph: {selectedSubcontractor.mobile || 'N/A'}
                   </DialogDescription>
                 </div>
-                
+
                 {/* Delete subcontractor button */}
-                <button 
+                <button
                   onClick={() => setDeleteSubId(selectedSubcontractor.id)}
                   className="px-3 py-1.5 rounded-lg border border-red-500/20 bg-red-500/10 hover:bg-red-500/20 text-red-500 text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5"
                 >
@@ -803,7 +811,7 @@ export default function SubcontractsPage() {
 
               {/* Grid Layout: Add Payout on Left, Payout History on Right */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4">
-                
+
                 {/* COLUMN 1: Add Payout Form */}
                 <div className="space-y-4">
                   <div className="border-b border-[#1e2435] pb-2">
@@ -812,12 +820,12 @@ export default function SubcontractsPage() {
 
                   <form onSubmit={handleAddPayment} className="p-6 rounded-xl border border-[#1e2435] bg-black/20 space-y-4">
                     <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Enter Payment Details</p>
-                    
+
                     <div className="space-y-1.5">
                       <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">Amount (₹)</label>
-                      <Input 
+                      <Input
                         type="number"
-                        placeholder="Amount paid" 
+                        placeholder="Amount paid"
                         value={newPaymentForm.amount}
                         onChange={e => setNewPaymentForm({ ...newPaymentForm, amount: e.target.value })}
                         className="h-11 bg-zinc-900 border-zinc-800 text-sm text-white px-4 rounded-xl"
@@ -827,7 +835,7 @@ export default function SubcontractsPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">Date</label>
-                        <Input 
+                        <Input
                           type="date"
                           value={newPaymentForm.date}
                           onChange={(e: any) => setNewPaymentForm({ ...newPaymentForm, date: e.target.value })}
@@ -836,7 +844,7 @@ export default function SubcontractsPage() {
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">Site / Project</label>
-                        <select 
+                        <select
                           value={newPaymentForm.site_project}
                           onChange={e => setNewPaymentForm({ ...newPaymentForm, site_project: e.target.value })}
                           className="w-full h-11 px-4 rounded-xl text-sm font-semibold bg-zinc-900 border-zinc-800 text-white outline-none"
@@ -848,8 +856,8 @@ export default function SubcontractsPage() {
 
                     <div className="space-y-1.5">
                       <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">Notes / Remarks (Optional)</label>
-                      <Input 
-                        placeholder="Notes" 
+                      <Input
+                        placeholder="Notes"
                         value={newPaymentForm.notes}
                         onChange={e => setNewPaymentForm({ ...newPaymentForm, notes: e.target.value })}
                         className="h-11 bg-zinc-900 border-zinc-800 text-sm text-white px-4 rounded-xl"
@@ -892,17 +900,17 @@ export default function SubcontractsPage() {
 
                           <div className="flex items-center gap-2 shrink-0">
                             <span className="text-xs font-black text-emerald-400 pr-1">₹{Number(inst.amount).toLocaleString('en-IN')}</span>
-                            <button 
+                            <button
                               type="button"
-                              onClick={() => exportPDF(selectedSubcontractor, inst)} 
+                              onClick={() => exportPDF(selectedSubcontractor, inst)}
                               className="p-1.5 rounded bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/10 transition-all cursor-pointer"
                               title="Download PDF Receipt"
                             >
                               <Download size={11} />
                             </button>
-                            <button 
+                            <button
                               type="button"
-                              onClick={() => handleDeletePayment(inst.receipt_number)} 
+                              onClick={() => handleDeletePayment(inst.receipt_number)}
                               className="p-1.5 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-[#1e2435] transition-all cursor-pointer"
                               title="Delete Payment"
                             >

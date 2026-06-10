@@ -66,7 +66,7 @@ export default function MaterialsPage() {
 
       categories[category].items.push(item)
       categories[category].totalCost += cost
-      
+
       if (qty > 0) {
         categories[category].totalQty[unit] = (categories[category].totalQty[unit] || 0) + qty
       }
@@ -74,6 +74,23 @@ export default function MaterialsPage() {
 
     return categories
   }, [materials])
+
+  // ── Date filter state ──────────────────────────────
+  const [filterFrom, setFilterFrom] = useState('')
+  const [filterTo, setFilterTo] = useState('')
+
+  // ── Filtered materials (client-side, instant) ─────
+  // Compares ISO date strings directly (yyyy-MM-dd) — no Date parsing needed
+  const filteredMaterials = React.useMemo(() => {
+    let result = materials
+    if (filterFrom) result = result.filter(m => m.date >= filterFrom)
+    if (filterTo) result = result.filter(m => m.date <= filterTo)
+    return result
+  }, [materials, filterFrom, filterTo])
+
+  // Reset to first page whenever filter changes
+  React.useEffect(() => { setMatPage(0) }, [filterFrom, filterTo])
+
 
   const [formData, setFormData] = useState({
     project_id: '',
@@ -86,6 +103,28 @@ export default function MaterialsPage() {
     date: format(new Date(), 'yyyy-MM-dd'),
     notes: ''
   })
+
+  // ── Autocomplete: deduplicated material names ───────
+  // new Set() removes duplicates — only unique names remain
+  const allMaterialNames = React.useMemo(() => {
+    const names = materials.map((m: any) => m.name).filter(Boolean)
+    return [...new Set<string>(names)] as string[]
+  }, [materials])
+
+  // Filter suggestions by what the user is currently typing
+  // .includes() = contains match (e.g. "ce" matches "Cement")
+  const nameSuggestions = React.useMemo(() => {
+    const q = formData.name.trim().toLowerCase()
+    if (!q || q.length < 1) return []
+    return allMaterialNames
+      .filter(n => n.toLowerCase().includes(q))
+      .slice(0, 8) // show max 8 suggestions
+  }, [formData.name, allMaterialNames])
+
+  // Track whether the suggestion dropdown is visible
+  const [showNameSuggestions, setShowNameSuggestions] = React.useState(false)
+
+
   const [supplierName, setSupplierName] = useState('')
   const [supplierPhone, setSupplierPhone] = useState('')
   const [transportEnabled, setTransportEnabled] = useState(false)
@@ -94,11 +133,13 @@ export default function MaterialsPage() {
   const [hamaliFee, setHamaliFee] = useState('')
   const [matPage, setMatPage] = useState(0)
   const [editingMat, setEditingMat] = useState<any>(null)
-  const [editMatData, setEditMatData] = useState({ name: '', quantity: '', unit: 'bags', cost_per_unit: '', total_amount: '', notes: '', date: '' })
+  const [editMatData, setEditMatData] = useState({ name: '', quantity: '', unit: '', cost_per_unit: '', total_amount: '', notes: '', date: '' })
   const [editSaving, setEditSaving] = useState(false)
   const [receiptFile, setReceiptFile] = useState<File | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const supabase = createClient()
+
+
 
   useEffect(() => {
     const qty = parseFloat(formData.quantity) || 0;
@@ -295,7 +336,9 @@ export default function MaterialsPage() {
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
-          <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">{materials.length} entries</span>
+          <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">
+            {(filterFrom || filterTo) ? `${filteredMaterials.length} of ${materials.length} entries` : `${materials.length} entries`}
+          </span>
           <button
             type="button"
             onClick={() => {
@@ -346,6 +389,50 @@ export default function MaterialsPage() {
                 </button>
               </div>
             </CardHeader>
+
+            {/* ── Date Filter Bar (only in 'All Deliveries' mode) ── */}
+            {viewMode === 'all' && (
+              <div className="px-6 py-3 border-b border-zinc-800 flex flex-wrap items-center gap-3" style={{ backgroundColor: '#08090f' }}>
+                <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Filter by Date</span>
+
+                <input
+                  type="date"
+                  value={filterFrom}
+                  onChange={e => setFilterFrom(e.target.value)}
+                  className="h-8 px-3 rounded-lg text-xs font-bold outline-none focus:border-blue-500 transition-all"
+                  style={{ backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0' }}
+                  title="From date"
+                />
+
+                <span className="text-zinc-600 text-xs font-bold">→</span>
+
+                <input
+                  type="date"
+                  value={filterTo}
+                  min={filterFrom}
+                  onChange={e => setFilterTo(e.target.value)}
+                  className="h-8 px-3 rounded-lg text-xs font-bold outline-none focus:border-blue-500 transition-all"
+                  style={{ backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0' }}
+                  title="To date"
+                />
+
+                {(filterFrom || filterTo) && (
+                  <>
+                    <button
+                      onClick={() => { setFilterFrom(''); setFilterTo('') }}
+                      className="h-8 px-3 rounded-lg text-[9px] font-black uppercase tracking-wide flex items-center gap-1 transition-all"
+                      style={{ backgroundColor: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}
+                    >
+                      <X size={11} /> Clear
+                    </button>
+                    <span className="text-[9px] font-bold text-blue-400">
+                      {filteredMaterials.length} result{filteredMaterials.length !== 1 ? 's' : ''}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+
             <CardContent className="p-0">
               {viewMode === 'folders' ? (
                 <div className="p-8">
@@ -410,177 +497,210 @@ export default function MaterialsPage() {
               ) : (
                 <>
                   <div className="hidden md:block">
-                <Table>
-                  <TableHeader className="bg-zinc-900/80">
-                    <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
-                      <TableHead className="px-4 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 w-12 text-center">S.No</TableHead>
-                      <TableHead className="px-4 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Project / Material</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Supplier</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Breakdown</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Remarks</TableHead>
-                      <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 text-center">Receipt</TableHead>
-                      <TableHead className="text-right px-4 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Total</TableHead>
-                      <TableHead className="py-6 w-14"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loading ? (
-                      Array(5).fill(0).map((_, i) => (
-                        <TableRow key={i} className="animate-pulse border-zinc-800">
-                          <TableCell colSpan={9} className="h-16 px-8 bg-zinc-800/10"></TableCell>
+                    <Table>
+                      <TableHeader className="bg-zinc-900/80">
+                        <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
+                          <TableHead className="px-4 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 w-12 text-center">S.No</TableHead>
+                          <TableHead className="px-4 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
+                          <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Project / Material</TableHead>
+                          <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Supplier</TableHead>
+                          <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Breakdown</TableHead>
+                          <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Remarks</TableHead>
+                          <TableHead className="py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400 text-center">Receipt</TableHead>
+                          <TableHead className="text-right px-4 py-6 uppercase text-[10px] font-black tracking-widest text-zinc-400">Total</TableHead>
+                          <TableHead className="py-6 w-14"></TableHead>
                         </TableRow>
-                      ))
-                    ) : materials.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={9} className="py-24 text-center">
-                          <div className="flex flex-col items-center gap-4 text-zinc-600">
-                            <Boxes size={48} className="opacity-10" />
-                            <p className="text-sm font-bold uppercase tracking-widest">No material history found</p>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      materials.slice(matPage * 10, matPage * 10 + 10).map((item, idx) => {
-                        const notes = item.notes || '';
-                        const supplierMatch = notes.match(/Supplier:\s(.*?)(?:\s\(|$)/);
-                        const supplierPhoneMatch = notes.match(/\((\d+)\)/);
-                        const matAmtMatch = notes.match(/Material Amount:\sRs\.([\d,.]+)/);
-                        const transportMatch = notes.match(/Transportation:\sRs\.([\d,.]+)/);
-                        const hamaliMatch = notes.match(/Hamali:\sRs\.([\d,.]+)/);
-                        const receiptMatch = notes.match(/Receipt:\s(.*?)(?:\s\||$)/);
- 
-                        const supplier = supplierMatch ? supplierMatch[1] : '—';
-                        const supplierPhone = supplierPhoneMatch ? supplierPhoneMatch[1] : '';
-                        const supplierDisplay = supplier !== '—' ? (supplierPhone ? `${supplier} (${supplierPhone})` : supplier) : '—';
-                        const matAmt = matAmtMatch ? `₹${matAmtMatch[1]}` : (item.quantity > 0 && item.cost_per_unit > 0 ? `₹${(item.quantity * item.cost_per_unit).toLocaleString('en-IN')}` : '');
-                        const transport = transportMatch ? `₹${transportMatch[1]}` : '—';
-                        const hamali = hamaliMatch ? `₹${hamaliMatch[1]}` : '—';
-                        const receiptUrl = item.receipt_url || (receiptMatch ? receiptMatch[1] : null);
- 
-                        let cleanNotes = notes
-                          .replace(/Supplier:\s(.*?)(?:\s\(|$)/, '')
-                          .replace(/\(\d+\)/, '')
-                          .replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '')
-                          .replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '')
-                          .replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '')
-                          .replace(/Receipt:\s(.*?)(?:\s\||$)/, '')
-                          .replace(/^[\s\|]+|[\s\|]+$/g, '')
-                          .trim();
- 
-                        return (
-                          <TableRow key={item.id} className="border-zinc-800 transition-colors hover:bg-white/5">
-                            <TableCell className="px-4 py-5 font-bold text-gray-400 text-xs text-center">{matPage * 10 + idx + 1}</TableCell>
-                            <TableCell className="px-4 py-5 font-bold text-gray-400 text-xs whitespace-nowrap">
-                              {format(new Date(item.date), 'dd-MM-yyyy')}
-                            </TableCell>
-                            <TableCell className="py-5">
-                              <p className="font-bold text-white text-sm lowercase">{item.projects?.name}</p>
-                              <p className="font-black text-gray-200 text-[10px] tracking-tight uppercase mt-1">{item.name}</p>
-                              <p className="font-bold text-zinc-500 text-[10px] uppercase mt-0.5">{item.quantity} {item.unit} {item.cost_per_unit > 0 ? ` @ ₹${item.cost_per_unit}` : ''}</p>
-                            </TableCell>
-                            <TableCell className="py-5">
-                              <p className="font-bold text-white text-sm">{supplierDisplay}</p>
-                            </TableCell>
-                            <TableCell className="py-5">
-                              {matAmt && <p className="text-[10px] font-bold text-zinc-400">Material: <span className="text-emerald-400">{matAmt}</span></p>}
-                              {transport !== '—' && <p className="text-[10px] font-bold text-zinc-400">Transport: <span className="text-white">{transport}</span></p>}
-                              {hamali !== '—' && <p className="text-[10px] font-bold text-zinc-400">Hamali: <span className="text-white">{hamali}</span></p>}
-                            </TableCell>
-                            <TableCell className="py-5 text-xs text-zinc-400 max-w-[150px] truncate" title={cleanNotes}>{cleanNotes || '—'}</TableCell>
-                            <TableCell className="py-5 text-center">
-                              {receiptUrl ? (
-                                <a 
-                                  href={receiptUrl} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-black uppercase tracking-wider text-emerald-400 hover:bg-emerald-500/20 transition-all whitespace-nowrap font-sans"
-                                >
-                                  <FileText size={12} /> View Receipt
-                                </a>
-                              ) : (
-                                <span className="text-zinc-600 font-bold text-xs">—</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="py-5 text-right px-4 font-black text-white text-sm whitespace-nowrap">₹ {item.total_amount?.toLocaleString('en-IN') || item.total_cost?.toLocaleString('en-IN')}</TableCell>
-                            <TableCell className="py-3 pr-4">
-                              <div className="flex items-center gap-1.5 justify-end">
-                                <button onClick={() => handleOpenEditMat(item)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-zinc-500 hover:text-blue-400 transition-colors"><Edit2 size={13} /></button>
-                                <button onClick={() => handleDeleteMat(item.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                      </TableHeader>
+                      <TableBody>
+                        {loading ? (
+                          Array(5).fill(0).map((_, i) => (
+                            <TableRow key={i} className="animate-pulse border-zinc-800">
+                              <TableCell colSpan={9} className="h-16 px-8 bg-zinc-800/10"></TableCell>
+                            </TableRow>
+                          ))
+                        ) : filteredMaterials.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={9} className="py-24 text-center">
+                              <div className="flex flex-col items-center gap-4 text-zinc-600">
+                                <Boxes size={48} className="opacity-10" />
+                                <p className="text-sm font-bold uppercase tracking-widest">
+                                  {(filterFrom || filterTo) ? 'No materials found for selected date' : 'No material history found'}
+                                </p>
+                                {(filterFrom || filterTo) && (
+                                  <button onClick={() => { setFilterFrom(''); setFilterTo('') }}
+                                    className="text-xs font-bold text-blue-400 underline">Clear filter</button>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
+                        ) : (
+                          filteredMaterials.slice(matPage * 10, matPage * 10 + 10).map((item, idx) => {
+                            const notes = item.notes || '';
+                            const supplierMatch = notes.match(/Supplier:\s(.*?)(?:\s\(|$)/);
+                            const supplierPhoneMatch = notes.match(/\((\d+)\)/);
+                            const matAmtMatch = notes.match(/Material Amount:\sRs\.([\d,.]+)/);
+                            const transportMatch = notes.match(/Transportation:\sRs\.([\d,.]+)/);
+                            const hamaliMatch = notes.match(/Hamali:\sRs\.([\d,.]+)/);
+                            const receiptMatch = notes.match(/Receipt:\s(.*?)(?:\s\||$)/);
+
+                            const supplier = supplierMatch ? supplierMatch[1] : '—';
+                            const supplierPhone = supplierPhoneMatch ? supplierPhoneMatch[1] : '';
+                            const supplierDisplay = supplier !== '—' ? (supplierPhone ? `${supplier} (${supplierPhone})` : supplier) : '—';
+                            const matAmt = matAmtMatch ? `₹${matAmtMatch[1]}` : (item.quantity > 0 && item.cost_per_unit > 0 ? `₹${(item.quantity * item.cost_per_unit).toLocaleString('en-IN')}` : '');
+                            const transport = transportMatch ? `₹${transportMatch[1]}` : '—';
+                            const hamali = hamaliMatch ? `₹${hamaliMatch[1]}` : '—';
+                            const receiptUrl = item.receipt_url || (receiptMatch ? receiptMatch[1] : null);
+
+                            let cleanNotes = notes
+                              .replace(/Supplier:\s(.*?)(?:\s\(|$)/, '')
+                              .replace(/\(\d+\)/, '')
+                              .replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+                              .replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+                              .replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+                              .replace(/Receipt:\s(.*?)(?:\s\||$)/, '')
+                              .replace(/^[\s\|]+|[\s\|]+$/g, '')
+                              .trim();
+
+                            return (
+                              <TableRow key={item.id} className="border-zinc-800 transition-colors hover:bg-white/5">
+                                <TableCell className="px-4 py-5 font-bold text-gray-400 text-xs text-center">{matPage * 10 + idx + 1}</TableCell>
+                                <TableCell className="px-4 py-5 font-bold text-gray-400 text-xs whitespace-nowrap">
+                                  {format(new Date(item.date), 'dd-MM-yyyy')}
+                                </TableCell>
+                                <TableCell className="py-5">
+                                  <p className="font-bold text-white text-sm lowercase">{item.projects?.name}</p>
+                                  <p className="font-black text-gray-200 text-[10px] tracking-tight uppercase mt-1">{item.name}</p>
+                                  <p className="font-bold text-zinc-500 text-[10px] uppercase mt-0.5">{item.quantity} {item.unit} {item.cost_per_unit > 0 ? ` @ ₹${item.cost_per_unit}` : ''}</p>
+                                </TableCell>
+                                <TableCell className="py-5">
+                                  <p className="font-bold text-white text-sm">{supplierDisplay}</p>
+                                </TableCell>
+                                <TableCell className="py-5">
+                                  {matAmt && <p className="text-[10px] font-bold text-zinc-400">Material: <span className="text-emerald-400">{matAmt}</span></p>}
+                                  {transport !== '—' && <p className="text-[10px] font-bold text-zinc-400">Transport: <span className="text-white">{transport}</span></p>}
+                                  {hamali !== '—' && <p className="text-[10px] font-bold text-zinc-400">Hamali: <span className="text-white">{hamali}</span></p>}
+                                </TableCell>
+                                <TableCell className="py-5 text-xs text-zinc-400 max-w-[150px] truncate" title={cleanNotes}>{cleanNotes || '—'}</TableCell>
+                                <TableCell className="py-5 text-center">
+                                  {receiptUrl ? (
+                                    <a
+                                      href={receiptUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-black uppercase tracking-wider text-emerald-400 hover:bg-emerald-500/20 transition-all whitespace-nowrap font-sans"
+                                    >
+                                      <FileText size={12} /> View Receipt
+                                    </a>
+                                  ) : (
+                                    <span className="text-zinc-600 font-bold text-xs">—</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="py-5 text-right px-4 font-black text-white text-sm whitespace-nowrap">₹ {item.total_amount?.toLocaleString('en-IN') || item.total_cost?.toLocaleString('en-IN')}</TableCell>
+                                <TableCell className="py-3 pr-4">
+                                  <div className="flex items-center gap-1.5 justify-end">
+                                    <button onClick={() => handleOpenEditMat(item)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-zinc-500 hover:text-blue-400 transition-colors"><Edit2 size={13} /></button>
+                                    <button onClick={() => handleDeleteMat(item.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  {/* Desktop Pagination */}
+                  {filteredMaterials.length > 10 && (
+                    <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-800">
+                      <button disabled={matPage === 0} onClick={() => setMatPage(p => p - 1)}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
+                        style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
+                      <span className="text-xs" style={{ color: '#6b7280' }}>Page {matPage + 1} / {Math.ceil(filteredMaterials.length / 10)}</span>
+                      <button disabled={(matPage + 1) * 10 >= filteredMaterials.length} onClick={() => setMatPage(p => p + 1)}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
+                        style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
+                    </div>
+                  )}
+
+                  {/* Mobile Cards */}
+                  <div className="flex flex-col gap-3 p-4 md:hidden bg-[#05070B]">
+                    {loading ? (
+                      Array(3).fill(0).map((_, i) => <div key={i} className="h-24 animate-pulse bg-zinc-900 rounded-xl" />)
+                    ) : filteredMaterials.length === 0 ? (
+                      <div className="flex flex-col items-center gap-4 text-zinc-600 py-10">
+                        <Boxes size={48} className="opacity-10" />
+                        <p className="text-sm font-bold uppercase tracking-widest">
+                          {(filterFrom || filterTo) ? 'No materials for selected date' : 'No material history found'}
+                        </p>
+                      </div>
+                    ) : (
+                      filteredMaterials.slice(matPage * 10, matPage * 10 + 10).map((item) => {
+                        const notes = item.notes || '';
+                        const cleanNotes = notes.replace(/Supplier:\s(.*?)(?:\s\||$)/, '').replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/^[\s\|]+|[\s\|]+$/g, '').trim();
+                        return (
+                          <div key={item.id} className="rounded-xl p-4 flex flex-col gap-3" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }}>
+                            {/* Top row: name + amount */}
+                            <div className="flex justify-between items-start gap-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-white text-sm truncate">{item.projects?.name}</p>
+                                <p className="font-black text-blue-400 text-[11px] tracking-tight uppercase mt-0.5 truncate">{item.name}</p>
+                                <p className="text-[10px] font-bold text-zinc-500 mt-1">
+                                  {format(new Date(item.date), 'dd MMM yyyy')} · {item.quantity} {item.unit}
+                                </p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="font-black text-white text-sm">₹ {item.total_amount?.toLocaleString('en-IN') || item.total_cost?.toLocaleString('en-IN')}</p>
+                                {item.cost_per_unit > 0 && (
+                                  <p className="text-[9px] font-bold text-zinc-500 mt-0.5">@ ₹{item.cost_per_unit}</p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Notes */}
+                            {cleanNotes ? (
+                              <p className="text-[10px] text-zinc-500 leading-relaxed">{cleanNotes}</p>
+                            ) : null}
+
+                            {/* ── Action row: Edit + Delete (same handlers as desktop) ── */}
+                            <div className="flex items-center justify-end gap-2 pt-1 border-t border-zinc-800/60">
+                              <button
+                                onClick={() => handleOpenEditMat(item)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all active:scale-95"
+                                style={{ backgroundColor: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', color: '#60a5fa' }}
+                              >
+                                <Edit2 size={11} /> Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteMat(item.id)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all active:scale-95"
+                                style={{ backgroundColor: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}
+                              >
+                                <Trash2 size={11} /> Delete
+                              </button>
+                            </div>
+                          </div>
                         )
                       })
                     )}
-                  </TableBody>
-                </Table>
-              </div>
-              {/* Desktop Pagination */}
-              {materials.length > 10 && (
-                <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-800">
-                  <button disabled={matPage === 0} onClick={() => setMatPage(p => p - 1)}
-                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
-                    style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
-                  <span className="text-xs" style={{ color: '#6b7280' }}>Page {matPage + 1} / {Math.ceil(materials.length / 10)}</span>
-                  <button disabled={(matPage + 1) * 10 >= materials.length} onClick={() => setMatPage(p => p + 1)}
-                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
-                    style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
-                </div>
-              )}
-
-              {/* Mobile Cards */}
-              <div className="flex flex-col gap-3 p-4 md:hidden bg-[#05070B]">
-                {loading ? (
-                  Array(3).fill(0).map((_, i) => <div key={i} className="h-24 animate-pulse bg-zinc-900 rounded-xl" />)
-                ) : materials.length === 0 ? (
-                  <div className="flex flex-col items-center gap-4 text-zinc-600 py-10">
-                    <Boxes size={48} className="opacity-10" />
-                    <p className="text-sm font-bold uppercase tracking-widest">No material history found</p>
                   </div>
-                ) : (
-                  materials.slice(matPage * 10, matPage * 10 + 10).map((item) => {
-                    const notes = item.notes || '';
-                    const cleanNotes = notes.replace(/Supplier:\s(.*?)(?:\s\||$)/, '').replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '').replace(/^[\s\|]+|[\s\|]+$/g, '').trim();
-                    return (
-                      <div key={item.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-bold text-white text-sm">{item.projects?.name}</p>
-                            <p className="font-black text-gray-200 text-[10px] tracking-tight uppercase mt-0.5">{item.name}</p>
-                            <p className="text-[10px] font-bold text-gray-400 mt-1">{format(new Date(item.date), 'MMM dd, yyyy')}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-black text-white text-sm">₹ {item.total_amount?.toLocaleString('en-IN') || item.total_cost?.toLocaleString('en-IN')}</p>
-                            <p className="font-bold text-zinc-500 text-[10px] uppercase mt-0.5">{item.quantity} {item.unit}</p>
-                          </div>
-                        </div>
-                        <div className="text-xs text-zinc-400 break-words">
-                          {notes.split(' | ').map((n: string, i: number) => <div key={i}>{n}</div>)}
-                        </div>
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-              {/* Mobile Pagination */}
-              {materials.length > 10 && (
-                <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-800 md:hidden">
-                  <button disabled={matPage === 0} onClick={() => setMatPage(p => p - 1)}
-                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
-                    style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
-                  <span className="text-xs" style={{ color: '#6b7280' }}>{matPage + 1} / {Math.ceil(materials.length / 10)}</span>
-                  <button disabled={(matPage + 1) * 10 >= materials.length} onClick={() => setMatPage(p => p + 1)}
-                    className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
-                    style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
-                </div>
+                  {/* Mobile Pagination */}
+                  {filteredMaterials.length > 10 && (
+                    <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-800 md:hidden">
+                      <button disabled={matPage === 0} onClick={() => setMatPage(p => p - 1)}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
+                        style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
+                      <span className="text-xs" style={{ color: '#6b7280' }}>{matPage + 1} / {Math.ceil(filteredMaterials.length / 10)}</span>
+                      <button disabled={(matPage + 1) * 10 >= filteredMaterials.length} onClick={() => setMatPage(p => p + 1)}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40"
+                        style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
+                    </div>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       {/* Add Material Modal */}
       {showAddModal && (
@@ -591,9 +711,9 @@ export default function MaterialsPage() {
                 <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Sri Sai Constructions</p>
                 <p className="text-sm font-bold text-white uppercase tracking-wide">New Stock Entry</p>
               </div>
-              <button onClick={() => setShowAddModal(false)} className="text-zinc-500 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-all"><X size={18}/></button>
+              <button onClick={() => setShowAddModal(false)} className="text-zinc-500 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-all"><X size={18} /></button>
             </div>
-            
+
             <form onSubmit={handleCreate} className="space-y-6">
               <div className="space-y-2">
                 <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Select Site</label>
@@ -603,14 +723,60 @@ export default function MaterialsPage() {
                 </select>
               </div>
 
-              <div className="space-y-2">
+              {/* ── Material Name with Autocomplete ── */}
+              <div className="space-y-2 relative">
                 <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Material Name</label>
                 <Input
                   placeholder="e.g. Cement, Sand, Steel"
                   value={formData.name}
+                  autoComplete="off"
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, name: e.target.value })}
+                  onFocus={() => setShowNameSuggestions(true)}
+                  // setTimeout: gives the suggestion button's onClick time to fire
+                  // before the blur closes the dropdown (150ms is enough)
+                  onBlur={() => setTimeout(() => setShowNameSuggestions(false), 150)}
                   className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white"
                 />
+
+                {/* Suggestions dropdown */}
+                {showNameSuggestions && nameSuggestions.length > 0 && (
+                  <div
+                    className="absolute left-0 right-0 z-[60] rounded-xl overflow-hidden shadow-2xl"
+                    style={{
+                      top: '100%',
+                      marginTop: 4,
+                      backgroundColor: '#0d1018',
+                      border: '1px solid #1e2435',
+                    }}
+                  >
+                    {nameSuggestions.map((name, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()} // prevents blur before click
+                        onClick={() => {
+                          setFormData({ ...formData, name })
+                          setShowNameSuggestions(false)
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-blue-500/10 border-b border-[#1e2435] last:border-0"
+                      >
+                        {/* Highlight the matching part in blue */}
+                        {(() => {
+                          const q = formData.name.trim().toLowerCase()
+                          const idx = name.toLowerCase().indexOf(q)
+                          if (idx === -1) return name
+                          return (
+                            <>
+                              {name.slice(0, idx)}
+                              <span className="text-blue-400">{name.slice(idx, idx + q.length)}</span>
+                              {name.slice(idx + q.length)}
+                            </>
+                          )
+                        })()}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-3 gap-4">
@@ -833,11 +999,11 @@ export default function MaterialsPage() {
       )}
       {/* Folder Drill-down Modal */}
       {activeFolder && (
-        <div 
+        <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-[2px] p-4 transition-all"
           onClick={() => setActiveFolder(null)}
         >
-          <div 
+          <div
             className="rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden bg-[#0d1018] border border-[#1e2435] shadow-2xl relative"
             onClick={e => e.stopPropagation()}
           >
@@ -857,7 +1023,7 @@ export default function MaterialsPage() {
                 </div>
               </div>
 
-              <button 
+              <button
                 onClick={() => setActiveFolder(null)}
                 className="p-2 rounded-lg bg-zinc-950/50 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 transition-all cursor-pointer animate-none"
               >
@@ -1010,7 +1176,7 @@ export default function MaterialsPage() {
                           )}
                         </div>
                       </div>
-                      
+
                       {(supplierDisplay !== '—' || transport || hamali || cleanNotes) && (
                         <div className="border-t border-zinc-800/60 pt-2.5 mt-1 space-y-1.5 text-[11px] text-zinc-400">
                           {supplierDisplay !== '—' && (
@@ -1034,11 +1200,11 @@ export default function MaterialsPage() {
                 })}
               </div>
             </div>
-            
+
             {/* Modal Footer */}
             <div className="bg-[#111520] p-4 border-t border-[#1e2435] flex justify-end">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setActiveFolder(null)}
                 className="h-10 px-6 rounded-xl text-xs font-black uppercase text-zinc-300 bg-[#1a1f2e] border border-[#1e2435] hover:bg-zinc-800 transition-all cursor-pointer"
               >

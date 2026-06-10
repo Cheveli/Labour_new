@@ -177,7 +177,7 @@ export default function DashboardPage() {
 
         let installments = sub.installments || []
         const sumInstallments = installments.reduce((sum: number, inst: any) => sum + Number(inst.amount || 0), 0)
-        
+
         // Inject legacy balance payment if total_amount is greater than recorded installments
         if (sub.total_amount > sumInstallments) {
           const diff = sub.total_amount - sumInstallments
@@ -447,7 +447,7 @@ export default function DashboardPage() {
       } else if (type === 'EXTRA_WORK') {
         // Handled in memory
       }
-      
+
       let data: any[] = []
       if (type === 'EXTRA_WORK') {
         const { data: subDataRaw } = await supabase.from('contractor_payments').select('*')
@@ -474,7 +474,7 @@ export default function DashboardPage() {
 
           let installments = sub.installments || []
           const sumInstallments = installments.reduce((sum: number, inst: any) => sum + Number(inst.amount || 0), 0)
-          
+
           if (sub.total_amount > sumInstallments) {
             const diff = sub.total_amount - sumInstallments
             installments = [

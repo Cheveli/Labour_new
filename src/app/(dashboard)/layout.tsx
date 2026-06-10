@@ -8,6 +8,7 @@ import ActiveProjectHeader from '@/components/active-project-header'
 import QuickMaterialModal from '@/components/layout/QuickMaterialModal'
 import { Zap } from 'lucide-react'
 import { usePathname } from 'next/navigation'
+import { haptic } from '@/lib/haptic'
 
 export default function DashboardLayout({
   children,
@@ -17,6 +18,104 @@ export default function DashboardLayout({
   const [isQuickMaterialOpen, setIsQuickMaterialOpen] = useState(false)
   const pathname = usePathname()
   const isDashboard = pathname === '/'
+
+  // ── Global Reminders & Haptic Listeners ────────────────────
+  useEffect(() => {
+    // 1. Global Haptic Feedback click listener
+    const handleGlobalClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target) return
+      
+      const isInteractive = 
+        target.closest('button') || 
+        target.closest('a') || 
+        target.closest('select') || 
+        target.closest('input') || 
+        target.closest('[role="button"]') ||
+        target.classList.contains('cursor-pointer')
+
+      if (isInteractive) {
+        haptic(15) // brief 15ms vibrate on touch/click
+      }
+    }
+
+    window.addEventListener('click', handleGlobalClick, { capture: true })
+
+    // 2. Global Notification Scheduler
+    let attendanceTimeout: NodeJS.Timeout
+    let weeklyTimeout: NodeJS.Timeout
+
+    const scheduleWeekly = () => {
+      const enabled = localStorage.getItem('ssc_notif_weekly_report') === 'true'
+      if (!enabled || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+
+      const now = new Date()
+      const target = new Date()
+      // Saturday at 7:00 PM (19:00)
+      const daysUntilSaturday = (6 - now.getDay() + 7) % 7 || 7
+      target.setDate(now.getDate() + daysUntilSaturday)
+      target.setHours(19, 0, 0, 0)
+      
+      let delay = target.getTime() - now.getTime()
+      if (delay <= 0) {
+        // Schedule for next Saturday if it already passed this week
+        target.setDate(target.getDate() + 7)
+        delay = target.getTime() - now.getTime()
+      }
+
+      clearTimeout(weeklyTimeout)
+      weeklyTimeout = setTimeout(() => {
+        new Notification('Weekly Report Reminder 📊', {
+          body: "It's Saturday evening! Don't forget to export this week's calculation report.",
+          icon: '/favicon.ico'
+        })
+        scheduleWeekly() // reschedule
+      }, delay)
+    }
+
+    const scheduleAttendance = () => {
+      const enabled = localStorage.getItem('ssc_notif_attendance') === 'true'
+      const timeStr = localStorage.getItem('ssc_notif_attendance_time') || '08:00'
+      if (!enabled || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+
+      const [h, m] = timeStr.split(':').map(Number)
+      const now = new Date()
+      const target = new Date()
+      target.setHours(h, m, 0, 0)
+      
+      let delay = target.getTime() - now.getTime()
+      if (delay <= 0) {
+        // Schedule for tomorrow if it already passed today
+        target.setDate(target.getDate() + 1)
+        delay = target.getTime() - now.getTime()
+      }
+
+      clearTimeout(attendanceTimeout)
+      attendanceTimeout = setTimeout(() => {
+        new Notification('Attendance Reminder 📋', {
+          body: "Don't forget to fill in today's attendance!",
+          icon: '/favicon.ico'
+        })
+        scheduleAttendance() // reschedule
+      }, delay)
+    }
+
+    scheduleWeekly()
+    scheduleAttendance()
+
+    const handleSettingsUpdate = () => {
+      scheduleWeekly()
+      scheduleAttendance()
+    }
+    window.addEventListener('ssc_settings_updated', handleSettingsUpdate)
+
+    return () => {
+      window.removeEventListener('click', handleGlobalClick, { capture: true })
+      window.removeEventListener('ssc_settings_updated', handleSettingsUpdate)
+      clearTimeout(attendanceTimeout)
+      clearTimeout(weeklyTimeout)
+    }
+  }, [])
 
   useEffect(() => {
     const handleOpenModal = () => setIsQuickMaterialOpen(true)

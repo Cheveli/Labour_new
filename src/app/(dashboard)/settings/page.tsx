@@ -131,57 +131,22 @@ export default function SettingsPage() {
     if (time) setAttendanceReminderTime(t)
 
     if (enabled && notifPermission === 'granted') {
-      scheduleAttendanceReminder(t)
       toast.success(`Attendance reminder set for ${t} daily.`)
     } else if (!enabled) {
       toast.success('Attendance reminder disabled.')
     }
+    window.dispatchEvent(new Event('ssc_settings_updated'))
   }
 
   const saveWeeklyReminder = (enabled: boolean) => {
     localStorage.setItem('ssc_notif_weekly_report', String(enabled))
     setWeeklyReportEnabled(enabled)
     if (enabled && notifPermission === 'granted') {
-      scheduleWeeklyReminder()
       toast.success('Weekly reminder set for every Saturday at 7:00 PM.')
     } else if (!enabled) {
       toast.success('Weekly report reminder disabled.')
     }
-  }
-
-  const scheduleWeeklyReminder = () => {
-    const now = new Date()
-    const target = new Date()
-    // Saturday = 6, time = 19:00
-    const daysUntilSaturday = (6 - now.getDay() + 7) % 7 || 7
-    target.setDate(now.getDate() + daysUntilSaturday)
-    target.setHours(19, 0, 0, 0)
-    const delay = target.getTime() - now.getTime()
-    setTimeout(() => {
-      if (Notification.permission === 'granted' && localStorage.getItem('ssc_notif_weekly_report') === 'true') {
-        new Notification('Weekly Report Reminder 📊', {
-          body: "It's Saturday evening! Don't forget to export this week's calculation report.",
-          icon: '/favicon.ico'
-        })
-      }
-    }, delay)
-  }
-
-  const scheduleAttendanceReminder = (timeStr: string) => {
-    const [h, m] = timeStr.split(':').map(Number)
-    const now = new Date()
-    const target = new Date()
-    target.setHours(h, m, 0, 0)
-    if (target <= now) target.setDate(target.getDate() + 1)
-    const delay = target.getTime() - now.getTime()
-    setTimeout(() => {
-      if (Notification.permission === 'granted') {
-        new Notification('Attendance Reminder 📋', {
-          body: 'Don\'t forget to fill in today\'s attendance!',
-          icon: '/favicon.ico'
-        })
-      }
-    }, delay)
+    window.dispatchEvent(new Event('ssc_settings_updated'))
   }
 
   // ── Section D: Haptic Feedback ───────────────────────
@@ -430,9 +395,7 @@ export default function SettingsPage() {
               onChange={(t) => {
                 setAttendanceReminderTime(t)
                 localStorage.setItem('ssc_notif_attendance_time', t)
-                if (attendanceReminderEnabled && notifPermission === 'granted') {
-                  scheduleAttendanceReminder(t)
-                }
+                window.dispatchEvent(new Event('ssc_settings_updated'))
               }}
               disabled={notifPermission !== 'granted'}
             />

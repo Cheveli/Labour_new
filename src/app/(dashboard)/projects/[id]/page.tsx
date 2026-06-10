@@ -7,12 +7,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { 
-  Plus, 
-  Package, 
-  TrendingUp, 
-  Users, 
-  Wallet, 
+import {
+  Plus,
+  Package,
+  TrendingUp,
+  Users,
+  Wallet,
   Calendar,
   FileText,
   Loader2,
@@ -22,13 +22,13 @@ import {
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { format } from 'date-fns'
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from '@/components/ui/table'
 import { motion } from 'framer-motion'
 
@@ -43,9 +43,10 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
 
   async function fetchProjectDetails() {
     setLoading(true)
-    
+
     // Fetch individual records
     const { data: proj } = await supabase.from('projects').select('*').eq('id', id).single()
+    console.log(proj, "the proj")
     const { data: atten } = await supabase.from('attendance').select('*, labour(name)').eq('project_id', id).order('date', { ascending: false })
     const { data: mats } = await supabase.from('materials').select('*').eq('project_id', id).order('date', { ascending: false })
     const { data: subs } = await supabase.from('contractor_payments').select('*')
@@ -73,7 +74,7 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
 
       let installments = sub.installments || []
       const sumInstallments = installments.reduce((sum: number, inst: any) => sum + Number(inst.amount || 0), 0)
-      
+
       // Inject legacy balance payment if total_amount is greater than recorded installments
       if (sub.total_amount > sumInstallments) {
         const diff = sub.total_amount - sumInstallments
@@ -117,7 +118,7 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
 
   if (loading) return (
     <div className="h-[80vh] flex items-center justify-center">
-       <Loader2 className="animate-spin h-10 w-10 text-blue-600" />
+      <Loader2 className="animate-spin h-10 w-10 text-blue-600" />
     </div>
   )
 
@@ -127,7 +128,7 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
     <div className="space-y-8">
       <div className="flex items-center gap-4">
         <Button variant="outline" size="icon" render={<Link href="/projects" />} className="rounded-xl border-gray-200">
-           <ArrowLeft size={18} />
+          <ArrowLeft size={18} />
         </Button>
         <div>
           <h1 className="text-3xl font-black text-gray-900 dark:text-white uppercase tracking-tight">{project.name}</h1>
@@ -152,93 +153,93 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
         <TabsContent value="attendance">
           <Card className="border-none shadow-xl bg-white dark:bg-black rounded-3xl overflow-hidden">
             <CardHeader className="p-6">
-               <div className="flex justify-between items-center">
-                 <CardTitle className="text-xl">Labour Attendance History</CardTitle>
-                 <Button size="sm" render={<Link href="/attendance" />} className="bg-blue-600 rounded-xl">Mark Attendance</Button>
-               </div>
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-xl">Labour Attendance History</CardTitle>
+                <Button size="sm" render={<Link href="/attendance" />} className="bg-blue-600 rounded-xl">Mark Attendance</Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
-               <Table>
-                 <TableHeader>
-                   <TableRow className="bg-gray-50/50 dark:bg-zinc-900/50">
-                     <TableHead className="px-6 py-4">Date</TableHead>
-                     <TableHead>Worker</TableHead>
-                     <TableHead>Days Worked</TableHead>
-                   </TableRow>
-                 </TableHeader>
-                 <TableBody>
-                   {attendance.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center py-10">No records found</TableCell></TableRow> : 
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50/50 dark:bg-zinc-900/50">
+                    <TableHead className="px-6 py-4">Date</TableHead>
+                    <TableHead>Worker</TableHead>
+                    <TableHead>Days Worked</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {attendance.length === 0 ? <TableRow><TableCell colSpan={3} className="text-center py-10">No records found</TableCell></TableRow> :
                     attendance.map(record => (
-                     <TableRow key={record.id}>
-                       <TableCell className="px-6 py-4 font-medium">{format(new Date(record.date), 'MMM dd, yyyy')}</TableCell>
-                       <TableCell>{record.labour?.name}</TableCell>
-                       <TableCell>
-                         <Badge variant={record.days_worked === 1 ? 'default' : 'secondary'} className="rounded-lg">
-                           {record.days_worked} Day
-                         </Badge>
-                       </TableCell>
-                     </TableRow>
-                   ))}
-                 </TableBody>
-               </Table>
+                      <TableRow key={record.id}>
+                        <TableCell className="px-6 py-4 font-medium">{format(new Date(record.date), 'MMM dd, yyyy')}</TableCell>
+                        <TableCell>{record.labour?.name}</TableCell>
+                        <TableCell>
+                          <Badge variant={record.days_worked === 1 ? 'default' : 'secondary'} className="rounded-lg">
+                            {record.days_worked} Day
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="materials">
-           <Card className="border-none shadow-xl bg-white dark:bg-black rounded-3xl overflow-hidden">
+          <Card className="border-none shadow-xl bg-white dark:bg-black rounded-3xl overflow-hidden">
             <CardHeader className="p-6 border-b border-gray-50 dark:border-zinc-900">
-               <div className="flex justify-between items-center">
-                 <CardTitle className="text-xl">Inbound Materials</CardTitle>
-                 <Button size="sm" variant="outline" className="rounded-xl border-blue-200 text-blue-600 gap-2">
-                   <Plus size={16} /> Add Material
-                 </Button>
-               </div>
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-xl">Inbound Materials</CardTitle>
+                <Button size="sm" variant="outline" className="rounded-xl border-blue-200 text-blue-600 gap-2">
+                  <Plus size={16} /> Add Material
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
-               <Table>
-                 <TableHeader>
-                   <TableRow className="bg-gray-50/50 dark:bg-zinc-900/50">
-                     <TableHead className="px-6 py-4">Item</TableHead>
-                     <TableHead>Date</TableHead>
-                     <TableHead>Qty</TableHead>
-                     <TableHead>Total Cost</TableHead>
-                     <TableHead className="text-right px-6">Bill</TableHead>
-                   </TableRow>
-                 </TableHeader>
-                 <TableBody>
-                   {materials.length === 0 ? <TableRow><TableCell colSpan={5} className="text-center py-10 text-gray-400">No materials recorded</TableCell></TableRow> : 
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50/50 dark:bg-zinc-900/50">
+                    <TableHead className="px-6 py-4">Item</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Total Cost</TableHead>
+                    <TableHead className="text-right px-6">Bill</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {materials.length === 0 ? <TableRow><TableCell colSpan={5} className="text-center py-10 text-gray-400">No materials recorded</TableCell></TableRow> :
                     materials.map(mat => (
-                     <TableRow key={mat.id}>
-                       <TableCell className="px-6 py-4 font-bold">{mat.name}</TableCell>
-                       <TableCell className="text-xs text-gray-500">{format(new Date(mat.date), 'dd/MM/yy')}</TableCell>
-                       <TableCell>{mat.quantity} {mat.unit}</TableCell>
-                       <TableCell className="font-bold">₹{mat.total_cost}</TableCell>
-                       <TableCell className="text-right px-6">
-                         <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600">
-                           <FileText size={18} />
-                         </Button>
-                       </TableCell>
-                     </TableRow>
-                   ))}
-                 </TableBody>
-               </Table>
+                      <TableRow key={mat.id}>
+                        <TableCell className="px-6 py-4 font-bold">{mat.name}</TableCell>
+                        <TableCell className="text-xs text-gray-500">{format(new Date(mat.date), 'dd/MM/yy')}</TableCell>
+                        <TableCell>{mat.quantity} {mat.unit}</TableCell>
+                        <TableCell className="font-bold">₹{mat.total_cost}</TableCell>
+                        <TableCell className="text-right px-6">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600">
+                            <FileText size={18} />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="extra">
-           <Card className="border-none shadow-xl bg-white dark:bg-black rounded-3xl overflow-hidden">
+          <Card className="border-none shadow-xl bg-white dark:bg-black rounded-3xl overflow-hidden">
             <CardHeader className="p-6">
-                <div className="flex justify-between items-center">
-                  <CardTitle className="text-xl">Subcontract Milestones</CardTitle>
-                  <Button size="sm" render={<Link href="/contractor-payments" />} className="bg-blue-600 rounded-xl gap-2 text-white">
-                    Manage Subcontracts
-                  </Button>
-                </div>
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-xl">Subcontract Milestones</CardTitle>
+                <Button size="sm" render={<Link href="/contractor-payments" />} className="bg-blue-600 rounded-xl gap-2 text-white">
+                  Manage Subcontracts
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0 text-center">
-               <Table>
+              <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50/50 dark:bg-zinc-900/50">
                     <TableHead className="px-6 py-4">Task Name</TableHead>
@@ -248,7 +249,7 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {extraWork.length === 0 ? <TableRow><TableCell colSpan={4} className="text-center py-20 text-gray-400">No subcontracts logged</TableCell></TableRow> : 
+                  {extraWork.length === 0 ? <TableRow><TableCell colSpan={4} className="text-center py-20 text-gray-400">No subcontracts logged</TableCell></TableRow> :
                     extraWork.map(e => (
                       <TableRow key={e.id}>
                         <TableCell className="px-6 font-bold">{e.work_name}</TableCell>
@@ -258,10 +259,10 @@ export default function ProjectDetailsPage({ params }: { params: Promise<{ id: s
                       </TableRow>
                     ))}
                 </TableBody>
-               </Table>
+              </Table>
             </CardContent>
           </Card>
-        </TabsContent> 
+        </TabsContent>
       </Tabs>
     </div>
   )
