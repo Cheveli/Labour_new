@@ -65,10 +65,13 @@ export default function DashboardLayout({
 
       clearTimeout(weeklyTimeout)
       weeklyTimeout = setTimeout(() => {
-        new Notification('Weekly Report Reminder 📊', {
+        const notif = new Notification('Weekly Report Reminder 📊', {
           body: "It's Saturday evening! Don't forget to export this week's calculation report.",
           icon: '/favicon.ico'
         })
+        notif.onclick = () => {
+          window.focus()
+        }
         scheduleWeekly() // reschedule
       }, delay)
     }
@@ -92,10 +95,13 @@ export default function DashboardLayout({
 
       clearTimeout(attendanceTimeout)
       attendanceTimeout = setTimeout(() => {
-        new Notification('Attendance Reminder 📋', {
+        const notif = new Notification('Attendance Reminder 📋', {
           body: "Don't forget to fill in today's attendance!",
           icon: '/favicon.ico'
         })
+        notif.onclick = () => {
+          window.focus()
+        }
         scheduleAttendance() // reschedule
       }, delay)
     }

@@ -144,7 +144,7 @@ export default function DashboardPage() {
         attQ,
         matQ,
         subQ,
-        !currentProjectId ? peQ : Promise.resolve({ data: [] })
+        peQ
       ])
 
       const incomeData = incomeRes.data
