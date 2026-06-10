@@ -14,11 +14,16 @@ export async function POST(request: Request) {
 async function handleWeeklyReportTrigger(request: Request) {
   try {
     // 1. Authorization check using CRON_SECRET (if defined in env)
+    const { searchParams } = new URL(request.url)
+    const urlSecret = searchParams.get('secret')
     const authHeader = request.headers.get('authorization')
     const cronSecret = process.env.CRON_SECRET
 
     if (cronSecret) {
-      if (authHeader !== `Bearer ${cronSecret}`) {
+      const isAuthorizedHeader = authHeader === `Bearer ${cronSecret}`
+      const isAuthorizedQuery = urlSecret === cronSecret
+
+      if (!isAuthorizedHeader && !isAuthorizedQuery) {
         return NextResponse.json(
           { error: 'Unauthorized request. Invalid Cron Secret token.' },
           { status: 401 }
