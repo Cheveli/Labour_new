@@ -340,8 +340,30 @@ export default function DashboardPage() {
           const rev = (incomeData || []).filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.amount), 0)
           const mat = (materialData || []).filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.total_amount || 0), 0)
           const ew = subWorkEntries.filter(r => r.project_id === p.id).reduce((s, r) => s + Number(r.amount || 0), 0)
-          return { name: p.name, status: p.status, revenue: rev, material: mat, extraWork: ew, net: rev - mat - ew }
-        }).filter(p => p.revenue > 0 || p.material > 0 || p.extraWork > 0)
+          const lab = (attAllData || [])
+            .filter(r => r.project_id === p.id)
+            .reduce((s, c) => {
+              const l: any = c.labour
+              const rate = c.custom_rate || (Array.isArray(l) ? l[0]?.daily_rate : l?.daily_rate) || 0
+              return s + (Number(c.days_worked) * Number(rate)) + Number(c.overtime_amount || 0)
+            }, 0) || 0
+
+          const isCheveli = p.name.toLowerCase().includes('cheveli') || p.name.toLowerCase().includes('chevelly')
+          const isOnlyProject = projList?.length === 1
+          const personalCost = (isCheveli || isOnlyProject) ? totalPersonalExpenses : 0
+
+          return { 
+            name: p.name, 
+            status: p.status, 
+            revenue: rev, 
+            labour: lab, 
+            material: mat, 
+            extraWork: ew, 
+            personal: personalCost, 
+            net: rev - lab - mat - ew - personalCost 
+          }
+        }).filter(p => p.revenue > 0 || p.labour > 0 || p.material > 0 || p.extraWork > 0 || p.personal > 0)
+
       setProjectBreakdown(breakdown)
 
       // Recent Activities — last 5 across income, materials, subWorkEntries
@@ -900,7 +922,7 @@ export default function DashboardPage() {
             <table className="w-full text-sm">
               <thead style={{ backgroundColor: '#0d1018' }}>
                 <tr style={{ borderBottom: '1px solid #1e2435' }}>
-                  {['Project', 'Revenue', 'Material', 'Subcontracts', 'Net P&L'].map(h => (
+                  {['Project', 'Revenue', 'Labour', 'Material', 'Subcontracts', 'Personal', 'Net P&L'].map(h => (
                     <th key={h} className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>{h}</th>
                   ))}
                 </tr>
@@ -910,9 +932,13 @@ export default function DashboardPage() {
                   <tr key={i} style={{ borderBottom: '1px solid #1e2435' }} className="hover:bg-white/[0.02] transition-colors">
                     <td className="px-5 py-3 font-bold text-white">{p.name}</td>
                     <td className="px-5 py-3 font-bold" style={{ color: '#22c55e' }}>₹{p.revenue.toLocaleString('en-IN')}</td>
+                    <td className="px-5 py-3 font-bold" style={{ color: '#3b82f6' }}>₹{p.labour.toLocaleString('en-IN')}</td>
                     <td className="px-5 py-3 font-bold" style={{ color: '#60a5fa' }}>₹{p.material.toLocaleString('en-IN')}</td>
                     <td className="px-5 py-3 font-bold" style={{ color: '#f59e0b' }}>₹{p.extraWork.toLocaleString('en-IN')}</td>
-                    <td className="px-5 py-3 font-black" style={{ color: p.net >= 0 ? '#22c55e' : '#ef4444' }}>₹{p.net.toLocaleString('en-IN')}</td>
+                    <td className="px-5 py-3 font-bold" style={{ color: '#f43f5e' }}>₹{p.personal.toLocaleString('en-IN')}</td>
+                    <td className="px-5 py-3 font-black" style={{ color: p.net >= 0 ? '#22c55e' : '#ef4444' }}>
+                      {p.net < 0 ? `-₹${Math.abs(p.net).toLocaleString('en-IN')}` : `₹${p.net.toLocaleString('en-IN')}`}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -925,12 +951,18 @@ export default function DashboardPage() {
               <div key={i} className="p-4 space-y-3">
                 <div className="flex justify-between items-center">
                   <p className="font-bold text-white">{p.name}</p>
-                  <p className="text-sm font-black" style={{ color: p.net >= 0 ? '#22c55e' : '#ef4444' }}>₹{p.net.toLocaleString('en-IN')}</p>
+                  <p className="text-sm font-black" style={{ color: p.net >= 0 ? '#22c55e' : '#ef4444' }}>
+                    {p.net < 0 ? `-₹${Math.abs(p.net).toLocaleString('en-IN')}` : `₹${p.net.toLocaleString('en-IN')}`}
+                  </p>
                 </div>
-                <div className="grid grid-cols-3 gap-1 text-center">
+                <div className="grid grid-cols-5 gap-1 text-center">
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Revenue</p>
                     <p className="text-[10px] font-bold text-[#22c55e]">₹{p.revenue.toLocaleString('en-IN')}</p>
+                  </div>
+                  <div>
+                    <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Labour</p>
+                    <p className="text-[10px] font-bold text-[#3b82f6]">₹{p.labour.toLocaleString('en-IN')}</p>
                   </div>
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Material</p>
@@ -939,6 +971,10 @@ export default function DashboardPage() {
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Subcontracts</p>
                     <p className="text-[10px] font-bold text-[#f59e0b]">₹{p.extraWork.toLocaleString('en-IN')}</p>
+                  </div>
+                  <div>
+                    <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Personal</p>
+                    <p className="text-[10px] font-bold text-[#f43f5e]">₹{p.personal.toLocaleString('en-IN')}</p>
                   </div>
                 </div>
               </div>
