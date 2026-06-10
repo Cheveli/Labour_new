@@ -19,6 +19,17 @@ export default function DashboardLayout({
   const pathname = usePathname()
   const isDashboard = pathname === '/'
 
+  // Register Service Worker for PWA notifications
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then((reg) => {
+        console.log('Service Worker registered successfully with scope:', reg.scope)
+      }).catch((err) => {
+        console.error('Service Worker registration failed:', err)
+      })
+    }
+  }, [])
+
   // ── Global Reminders & Haptic Listeners ────────────────────
   useEffect(() => {
     // 1. Global Haptic Feedback click listener
@@ -40,6 +51,26 @@ export default function DashboardLayout({
     }
 
     window.addEventListener('click', handleGlobalClick, { capture: true })
+
+    // Helper to display notifications using SW if available (essential for PWA mobile mode)
+    const showNotification = (title: string, options: NotificationOptions) => {
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.ready.then((registration) => {
+          registration.showNotification(title, options)
+        }).catch((err) => {
+          console.warn('SW ready failed, falling back to standard notification:', err)
+          const notif = new Notification(title, options)
+          notif.onclick = () => {
+            window.focus()
+          }
+        })
+      } else {
+        const notif = new Notification(title, options)
+        notif.onclick = () => {
+          window.focus()
+        }
+      }
+    }
 
     // 2. Global Notification Scheduler
     let attendanceTimeout: NodeJS.Timeout
@@ -65,13 +96,10 @@ export default function DashboardLayout({
 
       clearTimeout(weeklyTimeout)
       weeklyTimeout = setTimeout(() => {
-        const notif = new Notification('Weekly Report Reminder 📊', {
+        showNotification('Weekly Report Reminder 📊', {
           body: "It's Saturday evening! Don't forget to export this week's calculation report.",
           icon: '/favicon.ico'
         })
-        notif.onclick = () => {
-          window.focus()
-        }
         scheduleWeekly() // reschedule
       }, delay)
     }
@@ -95,13 +123,10 @@ export default function DashboardLayout({
 
       clearTimeout(attendanceTimeout)
       attendanceTimeout = setTimeout(() => {
-        const notif = new Notification('Attendance Reminder 📋', {
+        showNotification('Attendance Reminder 📋', {
           body: "Don't forget to fill in today's attendance!",
           icon: '/favicon.ico'
         })
-        notif.onclick = () => {
-          window.focus()
-        }
         scheduleAttendance() // reschedule
       }, delay)
     }
