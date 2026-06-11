@@ -4,12 +4,12 @@ import nodemailer from 'nodemailer'
 import { createClient } from '@supabase/supabase-js'
 import { startOfWeek, endOfWeek, subDays, format, parseISO, addDays } from 'date-fns'
 import { encryptPDF } from '@pdfsmaller/pdf-encrypt'
-import { 
-  drawPremiumHeader, 
-  drawPremiumFooter, 
-  PDF_COLORS, 
-  numberToWords, 
-  COMPANY_DETAILS 
+import {
+  drawPremiumHeader,
+  drawPremiumFooter,
+  PDF_COLORS,
+  numberToWords,
+  COMPANY_DETAILS
 } from './report-utils'
 
 // Instantiate Supabase client with admin/anon credentials
@@ -93,7 +93,7 @@ function drawCheckmarkBox(doc: jsPDF, x: number, y: number, w: number, h: number
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)
   doc.setTextColor(21, 128, 61) // green 700
-  
+
   // Split text to fit inside the box (width w - 12)
   const lines = doc.splitTextToSize(text, w - 12)
   const textH = lines.length * 3
@@ -108,7 +108,7 @@ export interface ReportConfig {
 
 export async function generateAndEmailWeeklyReport(config: ReportConfig) {
   const today = new Date()
-  
+
   // Calculate previous week Sunday to Saturday
   const prevSunday = startOfWeek(subDays(today, 7), { weekStartsOn: 0 })
   const prevSaturday = endOfWeek(subDays(today, 7), { weekStartsOn: 0 })
@@ -202,7 +202,6 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
     w.grandTotal = (w.totalDays * w.rate) + w.totalOt
     return w
   })
-  const N_w = workersList.length || 1
 
   // Total weekly labour expense = sum of giveable amounts of all workers
   const totalLabourExpense = workersList.reduce((acc, w) => acc + w.giveable, 0)
@@ -215,12 +214,11 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
   })
   const materialExpensesList = Object.entries(materialExpensesGrouped).map(([name, amount]) => ({ name, amount }))
   const totalMaterialExpense = materialExpensesList.reduce((acc, curr) => acc + curr.amount, 0)
-  const N_m = materialExpensesList.length || 1
 
   // C. Weekly Contractor Expenses
   const contractorInstallments = getContractorInstallments(contractorPayments)
   const weeklyContractorInstallments = contractorInstallments.filter(inst => inst.date >= startDateStr && inst.date <= endDateStr)
-  
+
   const contractorExpensesGrouped: Record<string, { name: string; workType: string; amount: number }> = {}
   weeklyContractorInstallments.forEach(inst => {
     const key = `${inst.contractor_name}-${inst.work_nature}`
@@ -235,7 +233,6 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
   })
   const contractorExpensesList = Object.values(contractorExpensesGrouped)
   const totalContractorExpense = contractorExpensesList.reduce((acc, curr) => acc + curr.amount, 0)
-  const N_c = contractorExpensesList.length || 1
 
   // D. Weekly Other Expenses (Personal Expenses)
   const totalOtherExpense = personalExpenses.reduce((acc, curr) => acc + Number(curr.amount || 0), 0)
@@ -285,39 +282,12 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
   doc.text('(Page 1 of 2)', W - 14, 36, { align: 'right' })
   drawPremiumFooter(doc)
 
-  // DYNAMIC SIZING CALCULATIONS FOR PAGE 1
-  const isCompact_1 = N_w > 7
-  const fontSize_1 = isCompact_1 ? 7 : 8
-  const cellPadding_1 = isCompact_1 ? 1.5 : 2.5
-  const rowHeight_1 = isCompact_1 ? 4.5 : 6.0
-  const table1Height = 8 + (N_w + 1) * rowHeight_1
-
-  const N_max23 = Math.max(N_m, N_c)
-  const isCompact_23 = N_max23 > 5
-  const fontSize_23 = isCompact_23 ? 7.5 : 8.5
-  const cellPadding_23 = isCompact_23 ? 1.5 : 3.0
-  const rowHeight_23 = isCompact_23 ? 4.5 : 6.5
-  const table23Height = 8 + (N_max23 + 1) * rowHeight_23
-
-  const baseHeight = 5 + table1Height + 12 + table23Height + 20
-  const remainingSpacePage1 = 236 - baseHeight
-
-  let yTitle1 = 50
-  let yTable1 = 55
-  let yTitle2 = yTable1 + table1Height + (remainingSpacePage1 > 30 ? 12 : 8)
-  let yTable23 = yTitle2 + 5
-
-  let yBoxes = yTable23 + table23Height + 8
-  if (remainingSpacePage1 > 20) {
-    yBoxes = H - 14 - 18 // align boxes just above the footer
-  }
-
-  // Draw Section 1 Title
+  let y = 50
   doc.setTextColor(...PDF_COLORS.NAVY)
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5)
-  doc.text('1. WEEKLY ATTENDANCE REGISTER', 14, yTitle1)
+  doc.text('1. WEEKLY ATTENDANCE REGISTER', 14, y)
   doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.15)
-  doc.line(14, yTitle1 + 2, 196, yTitle1 + 2)
+  doc.line(14, y + 2, 196, y + 2)
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(prevSunday, i))
   const attendanceHead = [[
@@ -330,12 +300,6 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
     'Giveable Amount\n(Rs.)',
     'Grand Total\n(Rs.)'
   ]]
-
-  const grandOt = workersList.reduce((acc, w) => acc + w.totalOt, 0)
-  const grandDed = workersList.reduce((acc, w) => acc + w.totalDed, 0)
-  const grandGiveable = workersList.reduce((acc, w) => acc + w.giveable, 0)
-  const grandGross = workersList.reduce((acc, w) => acc + w.grandTotal, 0)
-  const grandDays = workersList.reduce((acc, w) => acc + w.totalDays, 0)
 
   const attendanceBody = workersList.map((w, index) => [
     index + 1,
@@ -352,6 +316,12 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
     w.grandTotal.toLocaleString('en-IN')
   ])
 
+  const grandOt = workersList.reduce((acc, w) => acc + w.totalOt, 0)
+  const grandDed = workersList.reduce((acc, w) => acc + w.totalDed, 0)
+  const grandGiveable = workersList.reduce((acc, w) => acc + w.giveable, 0)
+  const grandGross = workersList.reduce((acc, w) => acc + w.grandTotal, 0)
+  const grandDays = workersList.reduce((acc, w) => acc + w.totalDays, 0)
+
   if (attendanceBody.length === 0) {
     attendanceBody.push([
       '-',
@@ -360,6 +330,7 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
       '0', '0', '0', '0', '0'
     ])
   } else {
+    // Add Grand Total row
     attendanceBody.push([
       '',
       'GRAND TOTAL',
@@ -373,12 +344,12 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
   }
 
   autoTable(doc, {
-    startY: yTable1,
+    startY: y + 5,
     head: attendanceHead,
     body: attendanceBody,
     theme: 'grid',
-    headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: fontSize_1, halign: 'center', valign: 'middle' },
-    bodyStyles: { fontSize: fontSize_1, cellPadding: cellPadding_1, textColor: PDF_COLORS.NAVY, halign: 'center', valign: 'middle' },
+    headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: 7, halign: 'center', valign: 'middle' },
+    bodyStyles: { fontSize: 7, cellPadding: 1.5, textColor: PDF_COLORS.NAVY, halign: 'center', valign: 'middle' },
     columnStyles: {
       0: { cellWidth: 7, halign: 'center' },
       1: { cellWidth: 28, halign: 'left', fontStyle: 'bold' },
@@ -432,30 +403,45 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
     margin: { left: 14, right: 14 }
   })
 
-  // Draw Section 2 & 3 Titles
+  let finalYAttendance = (doc as any).lastAutoTable.finalY
+
+  // Section 2 & 3 side-by-side below attendance register
+  let ySec2 = finalYAttendance + 10
+
+  if (ySec2 > H - 65) {
+    doc.addPage()
+    drawPremiumHeader(doc, 'WEEKLY MANAGEMENT REPORT', `Week: ${weekRangeLabel}`)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...PDF_COLORS.GOLD)
+    doc.text('(Page 1 of 2 continued)', W - 14, 36, { align: 'right' })
+    drawPremiumFooter(doc)
+    ySec2 = 50
+  }
+
   doc.setTextColor(...PDF_COLORS.NAVY)
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5)
-  doc.text('2. WEEKLY MATERIAL EXPENSES', 14, yTitle2)
-  doc.text('3. WEEKLY CONTRACTOR EXPENSES', 104, yTitle2)
-  doc.line(14, yTitle2 + 2, 99, yTitle2 + 2)
-  doc.line(104, yTitle2 + 2, 196, yTitle2 + 2)
+  doc.text('2. WEEKLY MATERIAL EXPENSES', 14, ySec2)
+  doc.text('3. WEEKLY CONTRACTOR EXPENSES', 104, ySec2)
+
+  doc.setLineWidth(0.15); doc.setDrawColor(200, 200, 200)
+  doc.line(14, ySec2 + 2, 99, ySec2 + 2)
+  doc.line(104, ySec2 + 2, 196, ySec2 + 2)
 
   // 2. Weekly Material Expenses table
   autoTable(doc, {
-    startY: yTable23,
+    startY: ySec2 + 5,
     head: [['Material Name', 'Amount (Rs.)']],
     body: materialExpensesList.length > 0
       ? materialExpensesList.map(m => [m.name, m.amount.toLocaleString('en-IN')])
       : [['No materials recorded', '0']],
     theme: 'grid',
-    headStyles: { fillColor: [13, 120, 110], textColor: 255, fontStyle: 'bold', fontSize: fontSize_23 },
-    bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: fontSize_23, cellPadding: cellPadding_23 },
+    headStyles: { fillColor: [13, 120, 110], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 7.5, cellPadding: 1.5 },
     columnStyles: {
       0: { cellWidth: 50 },
       1: { cellWidth: 35, halign: 'right' }
     },
     foot: [['TOTAL MATERIAL EXPENSE', `${totalMaterialExpense.toLocaleString('en-IN')}`]],
-    footStyles: { fillColor: [240, 253, 244], textColor: [13, 120, 110], fontStyle: 'bold', fontSize: fontSize_23 },
+    footStyles: { fillColor: [240, 253, 244], textColor: [13, 120, 110], fontStyle: 'bold', fontSize: 7.5 },
     margin: { left: 14 },
     tableWidth: 85
   })
@@ -463,73 +449,72 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
 
   // 3. Weekly Contractor Expenses table
   autoTable(doc, {
-    startY: yTable23,
+    startY: ySec2 + 5,
     head: [['Contractor Name', 'Work Type', 'Amount (Rs.)']],
     body: contractorExpensesList.length > 0
       ? contractorExpensesList.map(c => [c.name, c.workType, c.amount.toLocaleString('en-IN')])
       : [['No contractor payments', '', '0']],
     theme: 'grid',
-    headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold', fontSize: fontSize_23 },
-    bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: fontSize_23, cellPadding: cellPadding_23 },
+    headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 7.5, cellPadding: 1.5 },
     columnStyles: {
       0: { cellWidth: 35 },
       1: { cellWidth: 35 },
       2: { cellWidth: 22, halign: 'right' }
     },
     foot: [['TOTAL CONTRACTOR EXPENSE', '', `${totalContractorExpense.toLocaleString('en-IN')}`]],
-    footStyles: { fillColor: [245, 243, 255], textColor: [79, 70, 229], fontStyle: 'bold', fontSize: fontSize_23 },
+    footStyles: { fillColor: [245, 243, 255], textColor: [79, 70, 229], fontStyle: 'bold', fontSize: 7.5 },
     margin: { left: 104 },
     tableWidth: 92
   })
   const finalYContractors = (doc as any).lastAutoTable.finalY
 
-  // Update bottom boxes position based on actual table heights
-  const maxTableEndY = Math.max(finalYMaterials, finalYContractors)
-  if (remainingSpacePage1 > 20) {
-    yBoxes = H - 14 - 18
-  } else {
-    yBoxes = maxTableEndY + 6
+  // Base for bottom boxes on Page 1
+  let finalYPage1 = Math.max(finalYMaterials, finalYContractors) + 8
+
+  if (finalYPage1 > H - 32) {
+    finalYPage1 = H - 32
   }
 
   // Legend Box (bottom-left)
   doc.setLineWidth(0.1)
   doc.setDrawColor(210, 215, 225)
   doc.setFillColor(248, 250, 255)
-  doc.roundedRect(14, yBoxes, 45, 16, 1, 1, 'FD')
-  
-  doc.setFontSize(7); doc.setFont('helvetica', 'bold')
-  doc.setTextColor(34, 197, 94); doc.text('P = Present (Full Day)', 18, yBoxes + 4.5)
-  doc.setTextColor(239, 68, 68); doc.text('A = Absent', 18, yBoxes + 9)
-  doc.setTextColor(245, 158, 11); doc.text('H = Half Day', 18, yBoxes + 13.5)
+  doc.roundedRect(14, finalYPage1, 45, 16, 1, 1, 'FD')
 
-  // Total in Words Box (bottom-center)
+  doc.setFontSize(7); doc.setFont('helvetica', 'bold')
+  doc.setTextColor(34, 197, 94); doc.text('P = Present (Full Day)', 18, finalYPage1 + 4.5)
+  doc.setTextColor(239, 68, 68); doc.text('A = Absent', 18, finalYPage1 + 9)
+  doc.setTextColor(245, 158, 11); doc.text('H = Half Day', 18, finalYPage1 + 13.5)
+
+  // Total in Words Box (bottom-center) - filled with Navy, white text
   doc.setFillColor(13, 27, 62)
   doc.setDrawColor(245, 158, 11)
-  doc.roundedRect(64, yBoxes, 80, 16, 1, 1, 'FD')
-  
+  doc.roundedRect(64, finalYPage1, 80, 16, 1, 1, 'FD')
+
   doc.setTextColor(255, 255, 255)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7.5)
-  doc.text('Total Amount in Words:', 104, yBoxes + 5, { align: 'center' })
+  doc.text('Total Amount in Words:', 104, finalYPage1 + 5, { align: 'center' })
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)
   const wordsText = numberToWords(grandGiveable)
   const wordsLines = doc.splitTextToSize(wordsText, 76)
-  doc.text(wordsLines, 104, yBoxes + 9.5, { align: 'center' })
+  doc.text(wordsLines, 104, finalYPage1 + 9.5, { align: 'center' })
 
   // Signatory Box (bottom-right)
   doc.setFillColor(248, 250, 255)
   doc.setDrawColor(210, 215, 225)
-  doc.roundedRect(149, yBoxes, 47, 16, 1, 1, 'FD')
-  
+  doc.roundedRect(149, finalYPage1, 47, 16, 1, 1, 'FD')
+
   doc.setTextColor(13, 27, 62)
   doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5)
-  doc.text('FOR SRI SAI CONSTRUCTIONS', 172.5, yBoxes + 3.5, { align: 'center' })
+  doc.text('FOR SRI SAI CONSTRUCTIONS', 172.5, finalYPage1 + 3.5, { align: 'center' })
   doc.setFont('times', 'italic'); doc.setFontSize(9)
-  doc.text('Cheveli Somaiah', 172.5, yBoxes + 9.5, { align: 'center' })
-  doc.setLineWidth(0.1); doc.line(155, yBoxes + 11.5, 190, yBoxes + 11.5)
+  doc.text('Cheveli Somaiah', 172.5, finalYPage1 + 9.5, { align: 'center' })
+  doc.setLineWidth(0.1); doc.line(155, finalYPage1 + 11.5, 190, finalYPage1 + 11.5)
   doc.setFont('helvetica', 'bold'); doc.setFontSize(6)
-  doc.text('Authorized Signatory', 172.5, yBoxes + 14.5, { align: 'center' })
+  doc.text('Authorized Signatory', 172.5, finalYPage1 + 14.5, { align: 'center' })
 
   // ── PAGE 2: WEEKLY SUMMARY & CASH POSITION & SNAPSHOT ───────
 
@@ -541,30 +526,21 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
   doc.text('(Page 2 of 2)', W - 14, 36, { align: 'right' })
   drawPremiumFooter(doc)
 
-  // DYNAMIC SIZING FOR PAGE 2
-  // We have a very small set of rows. We increase font size and cell padding to fill the page nicely
-  const isLargeMaterialsPage2 = N_m > 7
-  const fontSizePage2 = isLargeMaterialsPage2 ? 8 : 9
-  const cellPaddingPage2 = isLargeMaterialsPage2 ? 3.0 : 4.5
-  const rowHeightPage2 = isLargeMaterialsPage2 ? 6.0 : 8.0
-
-  let yTitlePage2 = 55
-  let yTablePage2 = 61
-
+  y = 52
   doc.setTextColor(...PDF_COLORS.NAVY)
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
-  doc.text('4. WEEKLY SPENDING SUMMARY', 14, yTitlePage2)
-  doc.text('5. CASH SUMMARY (AS OF TODAY)', 76, yTitlePage2)
-  doc.text('6. MANAGEMENT SNAPSHOT', 138, yTitlePage2)
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5)
+  doc.text('4. WEEKLY SPENDING SUMMARY', 14, y)
+  doc.text('5. CASH SUMMARY (AS OF TODAY)', 76, y)
+  doc.text('6. MANAGEMENT SNAPSHOT', 138, y)
 
   doc.setLineWidth(0.15); doc.setDrawColor(200, 200, 200)
-  doc.line(14, yTitlePage2 + 2, 71, yTitlePage2 + 2)
-  doc.line(76, yTitlePage2 + 2, 133, yTitlePage2 + 2)
-  doc.line(138, yTitlePage2 + 2, 196, yTitlePage2 + 2)
+  doc.line(14, y + 2, 71, y + 2)
+  doc.line(76, y + 2, 133, y + 2)
+  doc.line(138, y + 2, 196, y + 2)
 
   // Table 4: Spending Summary
   autoTable(doc, {
-    startY: yTablePage2,
+    startY: y + 5,
     head: [['Category', 'Amount (Rs.)']],
     body: [
       ['Labour Expense', totalLabourExpense.toLocaleString('en-IN')],
@@ -573,21 +549,21 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
       ['Other Expense', totalOtherExpense.toLocaleString('en-IN')]
     ],
     theme: 'grid',
-    headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: fontSizePage2 },
-    bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: fontSizePage2, cellPadding: cellPaddingPage2 },
+    headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 7.5, cellPadding: 2 },
     columnStyles: {
       0: { cellWidth: 37 },
       1: { cellWidth: 20, halign: 'right' }
     },
     foot: [['TOTAL SPENT THIS WEEK', `${weeklyTotalExpense.toLocaleString('en-IN')}`]],
-    footStyles: { fillColor: [254, 243, 199], textColor: PDF_COLORS.GOLD, fontStyle: 'bold', fontSize: fontSizePage2 },
+    footStyles: { fillColor: [254, 243, 199], textColor: PDF_COLORS.GOLD, fontStyle: 'bold', fontSize: 7.5 },
     margin: { left: 14 },
     tableWidth: 57
   })
 
   // Table 5: Cash Summary (As of Today)
   autoTable(doc, {
-    startY: yTablePage2,
+    startY: y + 5,
     head: [['Description', 'Amount (Rs.)']],
     body: [
       ['Total Income Till Today', totalAllTimeIncome.toLocaleString('en-IN')],
@@ -595,8 +571,8 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
       ['CURRENT NET BALANCE', currentNetCashBalance.toLocaleString('en-IN')]
     ],
     theme: 'grid',
-    headStyles: { fillColor: [13, 120, 110], textColor: 255, fontStyle: 'bold', fontSize: fontSizePage2 },
-    bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: fontSizePage2, cellPadding: cellPaddingPage2 },
+    headStyles: { fillColor: [13, 120, 110], textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 7.5, cellPadding: 2 },
     columnStyles: {
       0: { cellWidth: 37 },
       1: { cellWidth: 20, halign: 'right' }
@@ -614,7 +590,7 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
 
   // Table 6: Management Snapshot
   autoTable(doc, {
-    startY: yTablePage2,
+    startY: y + 5,
     head: [['Metric', 'Amount (Rs.)']],
     body: [
       ['Weekly Labour Expense', totalLabourExpense.toLocaleString('en-IN')],
@@ -624,8 +600,8 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
       ['Current Net Balance', currentNetCashBalance.toLocaleString('en-IN')]
     ],
     theme: 'grid',
-    headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: fontSizePage2 },
-    bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: fontSizePage2, cellPadding: cellPaddingPage2 },
+    headStyles: { fillColor: PDF_COLORS.BLUE, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 7.5, cellPadding: 2 },
     columnStyles: {
       0: { cellWidth: 38 },
       1: { cellWidth: 20, halign: 'right' }
@@ -646,20 +622,13 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
     }
   })
 
-  const finalYPage2 = (doc as any).lastAutoTable.finalY
-  
-  // Position bottom elements on Page 2 dynamically. If we have plenty of space, align to bottom.
-  let yBoxesPage2 = finalYPage2 + 10
-  const remainingSpacePage2 = H - 14 - 24 - finalYPage2
-  if (remainingSpacePage2 > 35) {
-    yBoxesPage2 = H - 14 - 24 // align boxes just above the footer
-  }
+  const finalYPage2 = (doc as any).lastAutoTable.finalY + 8
 
   // Note under Column 4
   drawCheckmarkBox(
     doc,
     14,
-    yBoxesPage2,
+    finalYPage2,
     57,
     18,
     `Note:\nAll figures shown in this report are for the selected week only (${weekRangeLabel}).`
@@ -669,14 +638,14 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
   drawCheckmarkBox(
     doc,
     76,
-    yBoxesPage2,
+    finalYPage2,
     57,
     18,
     'This Net Balance matches the Dashboard Net Balance and is the source of truth.'
   )
 
   // Signatory under Column 6
-  const sigY2 = yBoxesPage2 + 2
+  const sigY2 = finalYPage2 + 2
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(...PDF_COLORS.NAVY)
   doc.setFontSize(8)
