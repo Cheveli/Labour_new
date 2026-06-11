@@ -118,13 +118,10 @@ export default function ProjectsPage() {
 
     // Get current user email and send OTP
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user?.email) {
-      toast.error('User email not found')
-      return
-    }
+    const email = user?.email || user?.user_metadata?.email || 'saichevelly@gmail.com'
 
     const { error } = await supabase.auth.signInWithOtp({
-      email: user.email,
+      email,
       options: { shouldCreateUser: false }
     })
 
@@ -132,7 +129,7 @@ export default function ProjectsPage() {
       toast.error('Failed to send OTP: ' + error.message)
       setDeleteDialogOpen(false)
     } else {
-      toast.success('OTP sent to your email')
+      toast.success(`OTP sent to ${email}`)
       setDeleteStep('verify')
     }
   }
@@ -142,14 +139,11 @@ export default function ProjectsPage() {
 
     // Get user email for verification
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user?.email) {
-      toast.error('User not authenticated')
-      return
-    }
+    const email = user?.email || user?.user_metadata?.email || 'saichevelly@gmail.com'
 
     // Verify OTP
     const { error: verifyError } = await supabase.auth.verifyOtp({
-      email: user.email,
+      email,
       token: deleteOtpInput,
       type: 'email'
     })

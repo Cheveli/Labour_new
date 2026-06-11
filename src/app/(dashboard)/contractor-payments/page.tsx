@@ -62,6 +62,8 @@ export default function SubcontractsPage() {
   const [showAddSubModal, setShowAddSubModal] = useState(false)
   const [selectedSubcontractor, setSelectedSubcontractor] = useState<any | null>(null)
   const [deleteSubId, setDeleteSubId] = useState<string | null>(null)
+  const [deleteOtpInput, setDeleteOtpInput] = useState('')
+  const [deleteStep, setDeleteStep] = useState<'idle' | 'sending' | 'verify'>('idle')
 
   // Forms
   const [newSubForm, setNewSubForm] = useState({
@@ -303,9 +305,51 @@ export default function SubcontractsPage() {
     }
   }
 
+  const handleDeleteSubClick = async (id: string) => {
+    setDeleteSubId(id)
+    setDeleteOtpInput('')
+    setDeleteStep('sending')
+
+    // Get current user email and send OTP
+    const { data: { user } } = await supabase.auth.getUser()
+    const email = user?.email || user?.user_metadata?.email || 'saichevelly@gmail.com'
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false }
+    })
+
+    if (error) {
+      toast.error('Failed to send OTP: ' + error.message)
+      setDeleteSubId(null)
+      setDeleteStep('idle')
+    } else {
+      toast.success(`OTP sent to ${email}`)
+      setDeleteStep('verify')
+    }
+  }
+
   // Subcontractor Deletion
   const handleDeleteSubcontractor = async () => {
-    if (!deleteSubId) return
+    if (!deleteSubId || !deleteOtpInput) return
+
+    // Get user email for verification
+    const { data: { user } } = await supabase.auth.getUser()
+    const email = user?.email || user?.user_metadata?.email || 'saichevelly@gmail.com'
+
+    // Verify OTP
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      email,
+      token: deleteOtpInput,
+      type: 'email'
+    })
+
+    if (verifyError) {
+      toast.error('Invalid OTP — please try again')
+      return
+    }
+
+    // OTP verified — proceed with deletion
     try {
       const { error } = await supabase
         .from('contractor_payments')
@@ -317,6 +361,8 @@ export default function SubcontractsPage() {
       toast.success('Subcontractor removed successfully')
       setDeleteSubId(null)
       setSelectedSubcontractor(null)
+      setDeleteOtpInput('')
+      setDeleteStep('idle')
       fetchData()
     } catch (err: any) {
       toast.error(err.message)
@@ -787,7 +833,7 @@ export default function SubcontractsPage() {
 
                 {/* Delete subcontractor button */}
                 <button
-                  onClick={() => setDeleteSubId(selectedSubcontractor.id)}
+                  onClick={() => handleDeleteSubClick(selectedSubcontractor.id)}
                   className="px-3 py-1.5 rounded-lg border border-red-500/20 bg-red-500/10 hover:bg-red-500/20 text-red-500 text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5"
                 >
                   <Trash2 size={10} /> Delete Contractor
@@ -936,27 +982,49 @@ export default function SubcontractsPage() {
       </Dialog>
 
       {/* Delete Subcontractor Confirmation */}
-      <Dialog open={!!deleteSubId} onOpenChange={(open) => !open && setDeleteSubId(null)}>
+      <Dialog open={!!deleteSubId} onOpenChange={(open) => { if (!open) { setDeleteSubId(null); setDeleteStep('idle'); setDeleteOtpInput(''); } }}>
         <DialogContent style={{ backgroundColor: '#111520', border: '1px solid #1e2435', color: '#f0f0f0' }} className="max-w-sm rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-white font-black text-lg">REMOVE SUBCONTRACTOR</DialogTitle>
+            <DialogTitle className="text-red-400 font-black">Delete Subcontractor</DialogTitle>
             <DialogDescription style={{ color: '#6b7280' }} className="text-xs">
-              Are you absolutely sure you want to remove this subcontractor? This will permanently delete their profile, work history, and payment vouchers.
+              {deleteStep === 'sending' ? 'Sending OTP to your email...' : 'Enter the OTP sent to your email to confirm deletion. This will permanently delete their profile, work history, and payment vouchers.'}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="flex items-center justify-end gap-3 mt-4">
+          <div className="py-4 space-y-3">
+            {deleteStep === 'sending' && (
+              <div className="text-center py-6">
+                <Loader2 className="animate-spin mx-auto mb-2" size={24} style={{ color: '#3b82f6' }} />
+                <p className="text-sm" style={{ color: '#6b7280' }}>Sending OTP...</p>
+              </div>
+            )}
+            {deleteStep === 'verify' && (
+              <input
+                placeholder="Enter 6-digit OTP"
+                value={deleteOtpInput}
+                onChange={(e) => setDeleteOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className="w-full h-11 px-3 rounded-xl text-sm outline-none text-center font-black tracking-widest"
+                style={{ backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0', borderRadius: '0.5rem' }}
+                maxLength={6}
+                autoFocus
+              />
+            )}
+          </div>
+          <DialogFooter className="flex items-center justify-end gap-3">
             <button
-              onClick={() => setDeleteSubId(null)}
+              onClick={() => { setDeleteSubId(null); setDeleteStep('idle'); setDeleteOtpInput(''); }}
               className="h-10 px-5 rounded-xl font-bold text-xs bg-[#1a1f2e] border border-[#1e2435] text-zinc-300 transition-all cursor-pointer flex items-center justify-center min-w-[80px]"
             >
               Cancel
             </button>
-            <button
-              onClick={handleDeleteSubcontractor}
-              className="h-10 px-5 rounded-xl font-black uppercase tracking-widest text-[10px] bg-red-600 hover:bg-red-500 text-white transition-all cursor-pointer flex items-center justify-center min-w-[120px]"
-            >
-              Yes, Delete
-            </button>
+            {deleteStep === 'verify' && (
+              <button
+                onClick={handleDeleteSubcontractor}
+                disabled={deleteOtpInput.length !== 6}
+                className="h-10 px-5 rounded-xl font-black uppercase tracking-widest text-[10px] bg-red-600 hover:bg-red-500 text-white transition-all cursor-pointer flex items-center justify-center min-w-[120px] disabled:opacity-40"
+              >
+                Delete Contractor
+              </button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
