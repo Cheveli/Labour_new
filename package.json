@@ -12,6 +12,8 @@
     "@base-ui/react": "^1.4.1",
     "@hookform/resolvers": "^5.2.2",
     "@pdfsmaller/pdf-encrypt": "^1.0.2",
+    "@radix-ui/react-label": "^2.1.9",
+    "@radix-ui/react-slot": "^1.2.5",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.106.2",
     "class-variance-authority": "^0.7.1",

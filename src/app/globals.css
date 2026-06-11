@@ -63,20 +63,24 @@
   * {
     @apply border-border outline-ring/50;
   }
-  html, body {
+
+  html,
+  body {
     background-color: #0a0c12;
     color: #f0f0f0;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+
   body.font-telugu {
     font-family: var(--font-telugu), sans-serif;
     font-size: 1.05rem;
     line-height: 1.7;
   }
+
   body {
     background-image:
-      radial-gradient(ellipse at 0% 0%, rgba(59,130,246,0.12) 0%, transparent 40%),
-      radial-gradient(ellipse at 100% 100%, rgba(59,130,246,0.06) 0%, transparent 40%);
+      radial-gradient(ellipse at 0% 0%, rgba(59, 130, 246, 0.12) 0%, transparent 40%),
+      radial-gradient(ellipse at 100% 100%, rgba(59, 130, 246, 0.06) 0%, transparent 40%);
     background-attachment: fixed;
   }
 }
@@ -89,7 +93,7 @@
 }
 
 .lm-card-hover:hover {
-  border-color: rgba(59,130,246,0.3);
+  border-color: rgba(59, 130, 246, 0.3);
 }
 
 .lm-input {
@@ -109,6 +113,7 @@
   color: #0a0c12;
   font-weight: 800;
 }
+
 .lm-btn-gold:hover {
   background-color: #2563eb;
 }
@@ -118,7 +123,7 @@
 }
 
 .lm-table-row:hover {
-  background-color: rgba(59,130,246,0.04);
+  background-color: rgba(59, 130, 246, 0.04);
 }
 
 .gold-text {
@@ -126,15 +131,15 @@
 }
 
 .lm-badge-active {
-  background-color: rgba(34,197,94,0.15);
+  background-color: rgba(34, 197, 94, 0.15);
   color: #22c55e;
-  border: 1px solid rgba(34,197,94,0.3);
+  border: 1px solid rgba(34, 197, 94, 0.3);
 }
 
 .lm-badge-inactive {
-  background-color: rgba(239,68,68,0.15);
+  background-color: rgba(239, 68, 68, 0.15);
   color: #ef4444;
-  border: 1px solid rgba(239,68,68,0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 /* ─── Styled native select ─── */
@@ -158,13 +163,16 @@
   cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
+
 .styled-select:hover {
   border-color: #2d3a52;
 }
+
 .styled-select:focus {
-  border-color: rgba(59,130,246,0.6);
-  box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
+
 .styled-select option {
   background-color: #111520;
   color: #f0f0f0;
@@ -176,15 +184,16 @@
   background-color: #111520;
   border: 1px solid #1e2435;
   border-radius: 0.875rem;
-  box-shadow: 0 4px 32px rgba(0,0,0,0.4);
+  box-shadow: 0 4px 32px rgba(0, 0, 0, 0.4);
 }
 
 .btn-construction {
   background-color: #3b82f6;
   color: #0a0c12;
   font-weight: 800;
-  box-shadow: 0 4px 14px rgba(59,130,246,0.3);
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.3);
 }
+
 .btn-construction:hover {
   background-color: #2563eb;
 }
