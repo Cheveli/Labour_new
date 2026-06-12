@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { startOfWeek, endOfWeek, format, eachDayOfInterval, parseISO } from 'date-fns'
+import { startOfWeek, endOfWeek, format, eachDayOfInterval, parseISO, subWeeks, subDays } from 'date-fns'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { PDF_COLORS, drawPremiumHeader, drawPremiumFooter, numberToWords } from '@/lib/report-utils'
@@ -12,6 +12,29 @@ const supabase = createClient(supabaseUrl, supabaseKey)
 
 const TELEGRAM_PIN = process.env.TELEGRAM_PIN || '1919'
 const ALLOWED_CHAT_IDS = (process.env.ALLOWED_CHAT_IDS || '').split(',').map(s => Number(s.trim()))
+
+// Helper to generate a week selection inline keyboard
+function getWeekSelectorKeyboard(prefix: 'sumweek' | 'pdfweek') {
+  const keyboard = []
+  const today = new Date()
+  
+  for (let i = 0; i < 4; i++) {
+    // startOfWeek subtraction for index i weeks
+    const start = startOfWeek(subWeeks(today, i), { weekStartsOn: 0 })
+    const end = endOfWeek(subWeeks(today, i), { weekStartsOn: 0 })
+    
+    let label = ''
+    if (i === 0) label = `📅 This Week (${format(start, 'dd MMM')} - ${format(end, 'dd MMM')})`
+    else if (i === 1) label = `📅 Last Week (${format(start, 'dd MMM')} - ${format(end, 'dd MMM')})`
+    else label = `📅 ${i} Weeks Ago (${format(start, 'dd MMM')} - ${format(end, 'dd MMM')})`
+    
+    keyboard.push([{
+      text: label,
+      callback_data: `${prefix}_${i}`
+    }])
+  }
+  return { inline_keyboard: keyboard }
+}
 
 // In-memory caches for PIN typing states and serverless fallback sessions
 const pinCache = new Map<number, string>() // chatId -> accumulated PIN string (e.g. "12")
@@ -254,14 +277,67 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true })
       }
 
-      // Handle worker PDF request
-      if (data.startsWith('pdf_')) {
-        const workerId = data.replace('pdf_', '')
+      // Handle weekly summary selection callback
+      if (data.startsWith('sumweek_')) {
+        const offset = Number(data.replace('sumweek_', ''))
+        await answerCallbackQuery(callbackQueryId, 'Calculating...')
+        await editTelegramMessage(chatId, messageId, '⏳ *Calculating Weekly Summary...* Please wait.')
+        
+        const start = startOfWeek(subWeeks(new Date(), offset), { weekStartsOn: 0 })
+        const end = endOfWeek(subWeeks(new Date(), offset), { weekStartsOn: 0 })
+        const summaryMsg = await getWeeklySummaryMessage(start, end)
+        await editTelegramMessage(chatId, messageId, summaryMsg)
+        return NextResponse.json({ ok: true })
+      }
+
+      // Handle worker PDF week selection callback
+      if (data.startsWith('pdfweek_')) {
+        const offset = Number(data.replace('pdfweek_', ''))
+        await answerCallbackQuery(callbackQueryId, 'Loading workers...')
+        
+        const start = startOfWeek(subWeeks(new Date(), offset), { weekStartsOn: 0 })
+        const end = endOfWeek(subWeeks(new Date(), offset), { weekStartsOn: 0 })
+        const startStr = format(start, 'yyyy-MM-dd')
+        const endStr = format(end, 'yyyy-MM-dd')
+
+        const { data: att } = await supabase
+          .from('attendance')
+          .select('labour_id, labour(name)')
+          .gte('date', startStr)
+          .lte('date', endStr)
+
+        if (!att || att.length === 0) {
+          await editTelegramMessage(chatId, messageId, `🤷‍♂️ *No workers registered attendance for the week:* ${format(start, 'dd MMM')} - ${format(end, 'dd MMM yyyy')}`)
+          return NextResponse.json({ ok: true })
+        }
+
+        const uniqueWorkers = new Map<string, string>()
+        att.forEach((r: any) => {
+          if (r.labour) uniqueWorkers.set(r.labour_id, r.labour.name)
+        })
+
+        const buttons = Array.from(uniqueWorkers.entries()).map(([id, name]) => {
+          return [{ text: name, callback_data: `workerpdf_${id}_${startStr}_${endStr}` }]
+        })
+
+        await editTelegramMessage(chatId, messageId, `👷 *Workers Active (${format(start, 'dd MMM')} - ${format(end, 'dd MMM')}):*\nSelect a worker to generate and download their Salary Slip PDF:`, {
+          inline_keyboard: buttons
+        })
+        return NextResponse.json({ ok: true })
+      }
+
+      // Handle worker PDF generation trigger
+      if (data.startsWith('workerpdf_')) {
+        const parts = data.split('_') // [workerpdf, id, startDate, endDate]
+        const workerId = parts[1]
+        const startDate = parts[2]
+        const endDate = parts[3]
+
         await answerCallbackQuery(callbackQueryId, 'Generating PDF...')
         await sendTelegramMessage(chatId, '⏳ *Generating Salary Slip PDF...* Please wait.')
         
         try {
-          const { pdfBuffer, filename } = await generateWorkerPDFBuffer(workerId)
+          const { pdfBuffer, filename } = await generateWorkerPDFBuffer(workerId, startDate, endDate)
           await sendTelegramDocument(chatId, filename, pdfBuffer)
         } catch (err: any) {
           await sendTelegramMessage(chatId, `❌ *Error generating PDF:* ${err.message}`)
@@ -289,11 +365,11 @@ export async function POST(req: Request) {
       }
 
       if (text === '/summary') {
-        await sendTelegramMessage(chatId, '⏳ *Calculating Weekly Summary...* Please wait.')
-        const summaryMsg = await getWeeklySummaryMessage()
-        await sendTelegramMessage(chatId, summaryMsg)
+        const markup = getWeekSelectorKeyboard('sumweek')
+        await sendTelegramMessage(chatId, '📊 *Select the week for the Site Summary:*', markup)
       } else if (text === '/workerpdf') {
-        await sendWorkerPDFOptions(chatId)
+        const markup = getWeekSelectorKeyboard('pdfweek')
+        await sendTelegramMessage(chatId, '👷 *Select the week for the Worker PDFs:*', markup)
       } else if (text === '/lock') {
         await lockSession(chatId)
         await sendTelegramMessage(chatId, '🔒 *Session Locked.*')
@@ -310,9 +386,7 @@ export async function POST(req: Request) {
 }
 
 // ── Weekly Summary Builder ───────────────────────────
-async function getWeeklySummaryMessage(): Promise<string> {
-  const start = startOfWeek(new Date(), { weekStartsOn: 0 })
-  const end = endOfWeek(new Date(), { weekStartsOn: 0 })
+async function getWeeklySummaryMessage(start: Date, end: Date): Promise<string> {
   const startStr = format(start, 'yyyy-MM-dd')
   const endStr = format(end, 'yyyy-MM-dd')
 
@@ -423,11 +497,9 @@ async function sendWorkerPDFOptions(chatId: number) {
 }
 
 // ── Generate Individual Worker PDF Buffer on Server ────
-async function generateWorkerPDFBuffer(workerId: string): Promise<{ pdfBuffer: Uint8Array; filename: string }> {
-  const start = startOfWeek(new Date(), { weekStartsOn: 0 })
-  const end = endOfWeek(new Date(), { weekStartsOn: 0 })
-  const startDate = format(start, 'yyyy-MM-dd')
-  const endDate = format(end, 'yyyy-MM-dd')
+async function generateWorkerPDFBuffer(workerId: string, startDate: string, endDate: string): Promise<{ pdfBuffer: Uint8Array; filename: string }> {
+  const start = parseISO(startDate)
+  const end = parseISO(endDate)
 
   const [{ data: worker }, { data: attData }, { data: payData }] = await Promise.all([
     supabase.from('labour').select('*').eq('id', workerId).single(),
