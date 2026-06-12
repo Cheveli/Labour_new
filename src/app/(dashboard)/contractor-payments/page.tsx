@@ -524,7 +524,7 @@ export default function SubcontractsPage() {
 
     doc.setFont('times', 'italic')
     doc.setFontSize(12)
-    doc.text('Cheveli Somaiah', 160, sigY + 16, { align: 'center' })
+    doc.text(COMPANY_DETAILS.contractorRaw, 160, sigY + 16, { align: 'center' })
     doc.line(140, sigY + 18, 180, sigY + 18)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(7); doc.text('Authorized Signatory', 160, sigY + 22, { align: 'center' })

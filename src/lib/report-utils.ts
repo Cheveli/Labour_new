@@ -14,11 +14,47 @@ export const PDF_COLORS = {
 }
 
 export const COMPANY_DETAILS = {
-  name: 'SRI SAI CONSTRUCTIONS',
-  tagline: 'BUILDING YOUR VISION',
-  address: 'Boduppal, Hyderabad',
-  contractor: 'Contractor: Cheveli Somaiah',
-  phones: '9849678296 / 9550017985'
+  get name() {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ssc_company_name') || 'SRI SAI CONSTRUCTIONS'
+    }
+    return 'SRI SAI CONSTRUCTIONS'
+  },
+  get tagline() {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ssc_company_slogan') || 'BUILDING YOUR VISION'
+    }
+    return 'BUILDING YOUR VISION'
+  },
+  get address() {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ssc_company_address') || 'Boduppal, Hyderabad'
+    }
+    return 'Boduppal, Hyderabad'
+  },
+  get contractor() {
+    if (typeof window !== 'undefined') {
+      const c = localStorage.getItem('ssc_contractor_name')
+      return c ? `Contractor: ${c}` : 'Contractor: Cheveli Somaiah'
+    }
+    return 'Contractor: Cheveli Somaiah'
+  },
+  get contractorRaw() {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ssc_contractor_name') || 'Cheveli Somaiah'
+    }
+    return 'Cheveli Somaiah'
+  },
+  get phones() {
+    if (typeof window !== 'undefined') {
+      const p1 = localStorage.getItem('ssc_company_phone_1')
+      const p2 = localStorage.getItem('ssc_company_phone_2')
+      if (p1 && p2) return `${p1} / ${p2}`
+      if (p1) return p1
+      if (p2) return p2
+    }
+    return '9849678296 / 9550017985'
+  }
 }
 
 

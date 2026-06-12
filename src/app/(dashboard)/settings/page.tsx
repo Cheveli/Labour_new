@@ -8,7 +8,7 @@ import AnalogueTimePicker from '@/components/ui/AnalogueTimePicker'
 import {
   Fingerprint, ShieldCheck, Trash2, Loader2, Briefcase,
   Bell, BellOff, Vibrate, Settings, CheckCircle2, Clock,
-  CalendarCheck
+  CalendarCheck, Building2
 } from 'lucide-react'
 
 const PANEL: React.CSSProperties = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
@@ -17,6 +17,26 @@ const INPUT_ST: React.CSSProperties = { backgroundColor: '#0d1018', border: '1px
 
 export default function SettingsPage() {
   const supabase = createClient()
+
+  // ── Section E: Construction Details ─────────────────
+  const [companyName, setCompanyName] = useState('')
+  const [contractorName, setContractorName] = useState('')
+  const [companyPhone1, setCompanyPhone1] = useState('')
+  const [companyPhone2, setCompanyPhone2] = useState('')
+  const [companySlogan, setCompanySlogan] = useState('')
+  const [companyAddress, setCompanyAddress] = useState('')
+
+  const handleSaveCompanyDetails = (e: React.FormEvent) => {
+    e.preventDefault()
+    localStorage.setItem('ssc_company_name', companyName.trim())
+    localStorage.setItem('ssc_contractor_name', contractorName.trim())
+    localStorage.setItem('ssc_company_phone_1', companyPhone1.trim())
+    localStorage.setItem('ssc_company_phone_2', companyPhone2.trim())
+    localStorage.setItem('ssc_company_slogan', companySlogan.trim())
+    localStorage.setItem('ssc_company_address', companyAddress.trim())
+    toast.success('Branding & Contractor details updated!')
+    window.dispatchEvent(new Event('ssc_settings_updated'))
+  }
 
   // ── Section A: Biometrics ────────────────────────────
   const [passkeys, setPasskeys] = useState<any[]>([])
@@ -170,6 +190,14 @@ export default function SettingsPage() {
     setHapticEnabled(saved !== 'false')
     const savedDefault = localStorage.getItem('ssc_default_project_id')
     if (savedDefault) setDefaultProjectId(savedDefault)
+
+    // Load company details
+    setCompanyName(localStorage.getItem('ssc_company_name') || 'SRI SAI CONSTRUCTIONS')
+    setContractorName(localStorage.getItem('ssc_contractor_name') || 'Cheveli Somaiah')
+    setCompanyPhone1(localStorage.getItem('ssc_company_phone_1') || '9849678296')
+    setCompanyPhone2(localStorage.getItem('ssc_company_phone_2') || '9550017985')
+    setCompanySlogan(localStorage.getItem('ssc_company_slogan') || 'BUILDING YOUR VISION')
+    setCompanyAddress(localStorage.getItem('ssc_company_address') || 'Boduppal, Hyderabad')
   }, [])
 
   const sectionClass = 'space-y-4'
@@ -318,6 +346,106 @@ export default function SettingsPage() {
             </>
           )}
         </div>
+      </div>
+
+      {/* ── Section E: Construction & Branding Details ── */}
+      <div style={PANEL} className="p-6 space-y-5">
+        <div className="flex items-center gap-3 pb-4 border-b border-[#1e2435]">
+          <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center">
+            <Building2 size={18} className="text-blue-400" />
+          </div>
+          <div>
+            <p className="text-sm font-black text-white uppercase tracking-wide">Construction &amp; Branding Details</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest mt-0.5" style={{ color: DIM }}>
+              Customize details shown on exported PDF receipts and statements
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveCompanyDetails} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Construction Name</label>
+              <input
+                type="text"
+                placeholder="e.g. SRI SAI CONSTRUCTIONS"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                className="w-full h-11 px-3 text-xs font-semibold outline-none focus:border-blue-500/50 transition-all"
+                style={INPUT_ST}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Contractor Name</label>
+              <input
+                type="text"
+                placeholder="e.g. Cheveli Somaiah"
+                value={contractorName}
+                onChange={(e) => setContractorName(e.target.value)}
+                className="w-full h-11 px-3 text-xs font-semibold outline-none focus:border-blue-500/50 transition-all"
+                style={INPUT_ST}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Primary Mobile Number</label>
+              <input
+                type="text"
+                placeholder="e.g. 9849678296"
+                value={companyPhone1}
+                onChange={(e) => setCompanyPhone1(e.target.value)}
+                className="w-full h-11 px-3 text-xs font-semibold outline-none focus:border-blue-500/50 transition-all"
+                style={INPUT_ST}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Secondary Mobile Number</label>
+              <input
+                type="text"
+                placeholder="e.g. 9550017985"
+                value={companyPhone2}
+                onChange={(e) => setCompanyPhone2(e.target.value)}
+                className="w-full h-11 px-3 text-xs font-semibold outline-none focus:border-blue-500/50 transition-all"
+                style={INPUT_ST}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Company Slogan / Tagline</label>
+            <input
+              type="text"
+              placeholder="e.g. BUILDING YOUR VISION"
+              value={companySlogan}
+              onChange={(e) => setCompanySlogan(e.target.value)}
+              className="w-full h-11 px-3 text-xs font-semibold outline-none focus:border-blue-500/50 transition-all"
+              style={INPUT_ST}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Office Address</label>
+            <input
+              type="text"
+              placeholder="e.g. Boduppal, Hyderabad"
+              value={companyAddress}
+              onChange={(e) => setCompanyAddress(e.target.value)}
+              className="w-full h-11 px-3 text-xs font-semibold outline-none focus:border-blue-500/50 transition-all"
+              style={INPUT_ST}
+            />
+          </div>
+
+          <div className="pt-2 flex justify-end">
+            <button
+              type="submit"
+              className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              Save Details
+            </button>
+          </div>
+        </form>
       </div>
 
       {/* ── Section C: Reminders ───────────────── */}

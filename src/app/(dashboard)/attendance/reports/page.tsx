@@ -383,7 +383,7 @@ export default function ReportsPage() {
 
     doc.setFont('times', 'italic')
     doc.setFontSize(12)
-    doc.text('Cheveli Somaiah', 160, sigY + 16, { align: 'center' })
+    doc.text(COMPANY_DETAILS.contractorRaw, 160, sigY + 16, { align: 'center' })
     doc.line(140, sigY + 18, 180, sigY + 18)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(7); doc.text('Authorized Signatory', 160, sigY + 22, { align: 'center' })
@@ -470,7 +470,7 @@ export default function ReportsPage() {
 
     doc.setFont('times', 'italic')
     doc.setFontSize(12)
-    doc.text('Cheveli Somaiah', 245, sigY + 16, { align: 'center' })
+    doc.text(COMPANY_DETAILS.contractorRaw, 245, sigY + 16, { align: 'center' })
     doc.line(225, sigY + 18, 265, sigY + 18)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(7); doc.text('Authorized Signatory', 245, sigY + 22, { align: 'center' })

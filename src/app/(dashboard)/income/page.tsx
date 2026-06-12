@@ -289,7 +289,7 @@ export default function IncomePage() {
     // Signature Text
     doc.setFont('times', 'italic')
     doc.setFontSize(12)
-    doc.text('Cheveli Somaiah', 160, finalY + 22, { align: 'center' })
+    doc.text(COMPANY_DETAILS.contractorRaw, 160, finalY + 22, { align: 'center' })
     doc.line(140, finalY + 24, 180, finalY + 24)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(7); doc.text('Authorized Signatory', 160, finalY + 28, { align: 'center' })

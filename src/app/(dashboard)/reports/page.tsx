@@ -7,7 +7,7 @@ import { FileText, Download, Filter, Loader2, ChevronLeft, ChevronRight } from '
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
-import { drawPremiumHeader, drawPremiumFooter, PDF_COLORS } from '@/lib/report-utils'
+import { drawPremiumHeader, drawPremiumFooter, PDF_COLORS, COMPANY_DETAILS } from '@/lib/report-utils'
 import { toast } from 'sonner'
 
 const PANEL = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
@@ -263,7 +263,7 @@ export default function ReportsPage() {
 
   const exportExcel = () => {
     const periodStr = 'All Time'
-    const rows: any[][] = [['SRI SAI CONSTRUCTIONS - Report'], [`Type: ${reportType} | ${periodStr}`], [], ['#', 'Date', 'Description', 'Notes', 'Amount']]
+    const rows: any[][] = [[`${COMPANY_DETAILS.name} - Report`], [`Type: ${reportType} | ${periodStr}`], [], ['#', 'Date', 'Description', 'Notes', 'Amount']]
     data.forEach((r, i) => rows.push([i + 1, format(new Date(r.date), 'dd/MM/yyyy'), getLabel(r), r.notes || '—', Number(r.amount || r.total_amount || 0)]))
     rows.push(['', '', '', 'TOTAL', getTotal()])
     const ws = XLSX.utils.aoa_to_sheet(rows)
