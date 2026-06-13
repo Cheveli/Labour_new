@@ -26,15 +26,50 @@ export default function SettingsPage() {
   const [companySlogan, setCompanySlogan] = useState('')
   const [companyAddress, setCompanyAddress] = useState('')
 
-  const handleSaveCompanyDetails = (e: React.FormEvent) => {
+  const handleSaveCompanyDetails = async (e: React.FormEvent) => {
     e.preventDefault()
-    localStorage.setItem('ssc_company_name', companyName.trim())
-    localStorage.setItem('ssc_contractor_name', contractorName.trim())
-    localStorage.setItem('ssc_company_phone_1', companyPhone1.trim())
-    localStorage.setItem('ssc_company_phone_2', companyPhone2.trim())
-    localStorage.setItem('ssc_company_slogan', companySlogan.trim())
-    localStorage.setItem('ssc_company_address', companyAddress.trim())
-    toast.success('Branding & Contractor details updated!')
+    const nameVal = companyName.trim()
+    const contractorVal = contractorName.trim()
+    const phone1Val = companyPhone1.trim()
+    const phone2Val = companyPhone2.trim()
+    const sloganVal = companySlogan.trim()
+    const addressVal = companyAddress.trim()
+
+    localStorage.setItem('ssc_company_name', nameVal)
+    localStorage.setItem('ssc_contractor_name', contractorVal)
+    localStorage.setItem('ssc_company_phone_1', phone1Val)
+    localStorage.setItem('ssc_company_phone_2', phone2Val)
+    localStorage.setItem('ssc_company_slogan', sloganVal)
+    localStorage.setItem('ssc_company_address', addressVal)
+
+    const settingsObj = {
+      company_name: nameVal,
+      contractor_name: contractorVal,
+      phone_1: phone1Val,
+      phone_2: phone2Val,
+      slogan: sloganVal,
+      address: addressVal
+    }
+
+    try {
+      // 1. Try to upsert into company_settings
+      const rows = Object.entries(settingsObj).map(([key, value]) => ({ key, value }))
+      await supabase.from('company_settings').upsert(rows)
+      
+      // 2. Also upsert fallback special project row
+      await supabase.from('projects').upsert({
+        id: '00000000-0000-0000-0000-000000000000',
+        name: 'SYSTEM_SETTINGS',
+        owner_name: 'SYSTEM',
+        status: 'SYSTEM',
+        description: JSON.stringify(settingsObj)
+      })
+      toast.success('Branding & Contractor details updated!')
+    } catch (err) {
+      console.error('Settings sync failed:', err)
+      toast.success('Branding details updated!')
+    }
+
     window.dispatchEvent(new Event('ssc_settings_updated'))
   }
 
@@ -97,7 +132,7 @@ export default function SettingsPage() {
   const [defaultProjectId, setDefaultProjectId] = useState<string>('')
 
   const fetchProjects = async () => {
-    const { data } = await supabase.from('projects').select('id, name').order('name')
+    const { data } = await supabase.from('projects').select('id, name').neq('status', 'SYSTEM').order('name')
     setProjects(data || [])
   }
 
@@ -192,12 +227,29 @@ export default function SettingsPage() {
     if (savedDefault) setDefaultProjectId(savedDefault)
 
     // Load company details
-    setCompanyName(localStorage.getItem('ssc_company_name') || 'SRI SAI CONSTRUCTIONS')
-    setContractorName(localStorage.getItem('ssc_contractor_name') || 'Cheveli Somaiah')
-    setCompanyPhone1(localStorage.getItem('ssc_company_phone_1') || '9849678296')
-    setCompanyPhone2(localStorage.getItem('ssc_company_phone_2') || '9550017985')
-    setCompanySlogan(localStorage.getItem('ssc_company_slogan') || 'BUILDING YOUR VISION')
-    setCompanyAddress(localStorage.getItem('ssc_company_address') || 'Boduppal, Hyderabad')
+    const localName = localStorage.getItem('ssc_company_name')
+    if (localName) {
+      setCompanyName(localStorage.getItem('ssc_company_name') || 'SRI SAI CONSTRUCTIONS')
+      setContractorName(localStorage.getItem('ssc_contractor_name') || 'Cheveli Somaiah')
+      setCompanyPhone1(localStorage.getItem('ssc_company_phone_1') || '9849678296')
+      setCompanyPhone2(localStorage.getItem('ssc_company_phone_2') || '9550017985')
+      setCompanySlogan(localStorage.getItem('ssc_company_slogan') || 'BUILDING YOUR VISION')
+      setCompanyAddress(localStorage.getItem('ssc_company_address') || 'Boduppal, Hyderabad')
+    } else {
+      supabase.from('projects').select('description').eq('id', '00000000-0000-0000-0000-000000000000').single().then(({ data }) => {
+        if (data && data.description) {
+          try {
+            const parsed = JSON.parse(data.description)
+            setCompanyName(parsed.company_name || 'SRI SAI CONSTRUCTIONS')
+            setContractorName(parsed.contractor_name || 'Cheveli Somaiah')
+            setCompanyPhone1(parsed.phone_1 || '9849678296')
+            setCompanyPhone2(parsed.phone_2 || '9550017985')
+            setCompanySlogan(parsed.slogan || 'BUILDING YOUR VISION')
+            setCompanyAddress(parsed.address || 'Boduppal, Hyderabad')
+          } catch (e) {}
+        }
+      })
+    }
   }, [])
 
   const sectionClass = 'space-y-4'

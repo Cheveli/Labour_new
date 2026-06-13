@@ -2,6 +2,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
 import { format } from 'date-fns'
+import { createClient } from '@supabase/supabase-js'
 
 export const PDF_COLORS = {
   NAVY: [13, 27, 62] as [number, number, number],
@@ -57,9 +58,59 @@ export const COMPANY_DETAILS = {
   }
 }
 
+export async function getCompanyDetailsServer() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  const supabase = createClient(supabaseUrl, supabaseKey)
 
-export function drawPremiumHeader(doc: jsPDF, title: string, subtitle: string) {
+  const defaults = {
+    name: 'SRI SAI CONSTRUCTIONS',
+    contractorRaw: 'Cheveli Somaiah',
+    phones: '9849678296 / 9550017985',
+    tagline: 'BUILDING YOUR VISION',
+    address: 'Boduppal, Hyderabad'
+  }
+
+  try {
+    const { data, error } = await supabase.from('company_settings').select('*')
+    if (error || !data || data.length === 0) {
+      // Fallback: check projects for special ID
+      const { data: proj } = await supabase.from('projects').select('description').eq('id', '00000000-0000-0000-0000-000000000000').single()
+      if (proj && proj.description) {
+        const parsed = JSON.parse(proj.description)
+        return {
+          name: parsed.company_name || defaults.name,
+          contractorRaw: parsed.contractor_name || defaults.contractorRaw,
+          phones: (parsed.phone_1 && parsed.phone_2) ? `${parsed.phone_1} / ${parsed.phone_2}` : (parsed.phone_1 || parsed.phone_2 || defaults.phones),
+          tagline: parsed.slogan || defaults.tagline,
+          address: parsed.address || defaults.address
+        }
+      }
+      return defaults
+    }
+
+    const map = new Map(data.map(item => [item.key, item.value]))
+    const name = map.get('company_name') || defaults.name
+    const contractorRaw = map.get('contractor_name') || defaults.contractorRaw
+    const phone1 = map.get('company_phone_1')
+    const phone2 = map.get('company_phone_2')
+    const tagline = map.get('company_slogan') || defaults.tagline
+    const address = map.get('company_address') || defaults.address
+
+    let phones = defaults.phones
+    if (phone1 && phone2) phones = `${phone1} / ${phone2}`
+    else if (phone1) phones = phone1
+    else if (phone2) phones = phone2
+
+    return { name, contractorRaw, phones, tagline, address }
+  } catch (err) {
+    return defaults
+  }
+}
+
+export function drawPremiumHeader(doc: jsPDF, title: string, subtitle: string, companyDetails?: any) {
   const W = doc.internal.pageSize.getWidth()
+  const details = companyDetails || COMPANY_DETAILS
 
   // Navy Header Box
   doc.setFillColor(...PDF_COLORS.NAVY)
@@ -69,13 +120,15 @@ export function drawPremiumHeader(doc: jsPDF, title: string, subtitle: string) {
   doc.setTextColor(255, 255, 255)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(18)
-  doc.text(COMPANY_DETAILS.name, 14, 15)
+  doc.text(details.name, 14, 15)
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
-  doc.text(COMPANY_DETAILS.tagline, 14, 21)
-  doc.text(COMPANY_DETAILS.address, 14, 27)
-  doc.text(`${COMPANY_DETAILS.contractor}  |  Ph: ${COMPANY_DETAILS.phones}`, 14, 33)
+  doc.text(details.tagline, 14, 21)
+  doc.text(details.address, 14, 27)
+  
+  const contractorLabel = details.contractor || (details.contractorRaw ? `Contractor: ${details.contractorRaw}` : 'Contractor: Cheveli Somaiah')
+  doc.text(`${contractorLabel}  |  Ph: ${details.phones}`, 14, 33)
 
   // Report Title
   doc.setTextColor(255, 255, 255)
@@ -98,9 +151,10 @@ export function drawPremiumHeader(doc: jsPDF, title: string, subtitle: string) {
   doc.rect(0, 44, W, 3, 'F')
 }
 
-export function drawPremiumFooter(doc: jsPDF) {
+export function drawPremiumFooter(doc: jsPDF, companyDetails?: any) {
   const W = doc.internal.pageSize.getWidth()
   const H = doc.internal.pageSize.getHeight()
+  const details = companyDetails || COMPANY_DETAILS
 
   doc.setFillColor(...PDF_COLORS.NAVY)
   doc.rect(0, H - 14, W, 14, 'F')
@@ -108,7 +162,7 @@ export function drawPremiumFooter(doc: jsPDF) {
   doc.setTextColor(180, 200, 240)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)
-  doc.text(`Tel: ${COMPANY_DETAILS.phones}  |  ${COMPANY_DETAILS.address}  |  ${COMPANY_DETAILS.name}`, W / 2, H - 6, { align: 'center' })
+  doc.text(`Tel: ${details.phones}  |  ${details.address}  |  ${details.name}`, W / 2, H - 6, { align: 'center' })
 }
 
 export function numberToWords(n: number): string {

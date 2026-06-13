@@ -159,7 +159,7 @@ export default function QuickMaterialModal({
     async function fetchProjects() {
       try {
         setLoadingProjects(true)
-        const { data, error } = await supabase.from('projects').select('id, name').order('name')
+        const { data, error } = await supabase.from('projects').select('id, name').neq('status', 'SYSTEM').order('name')
         if (error) throw error
         setProjects(data || [])
         

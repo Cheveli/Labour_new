@@ -42,7 +42,7 @@ export default function ProjectsPage() {
 
   async function fetchProjects() {
     setLoading(true)
-    const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false })
+    const { data } = await supabase.from('projects').select('*').neq('status', 'SYSTEM').order('created_at', { ascending: false })
     setProjects(data || [])
     setLoading(false)
   }

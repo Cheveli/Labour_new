@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { startOfWeek, endOfWeek, format, eachDayOfInterval, parseISO, subWeeks, subDays } from 'date-fns'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { PDF_COLORS, drawPremiumHeader, drawPremiumFooter, numberToWords } from '@/lib/report-utils'
+import { PDF_COLORS, drawPremiumHeader, drawPremiumFooter, numberToWords, getCompanyDetailsServer } from '@/lib/report-utils'
 
 // Initialize Supabase Client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -14,12 +14,12 @@ const TELEGRAM_PIN = process.env.TELEGRAM_PIN || '1919'
 const ALLOWED_CHAT_IDS = (process.env.ALLOWED_CHAT_IDS || '').split(',').map(s => Number(s.trim()))
 
 // Helper to generate a week selection inline keyboard
-function getWeekSelectorKeyboard(prefix: 'sumweek' | 'pdfweek') {
+// Helper to generate a week selection inline keyboard
+function getWeekSelectorKeyboard(prefix: 'sw' | 'pw') {
   const keyboard = []
   const today = new Date()
   
   for (let i = 0; i < 4; i++) {
-    // startOfWeek subtraction for index i weeks
     const start = startOfWeek(subWeeks(today, i), { weekStartsOn: 0 })
     const end = endOfWeek(subWeeks(today, i), { weekStartsOn: 0 })
     
@@ -116,10 +116,8 @@ async function checkIsUnlocked(chatId: number): Promise<boolean> {
       .single()
 
     if (error || !data) {
-      // Check in-memory fallback cache
       const cached = fallbackSessionCache.get(chatId)
       if (cached && cached.isUnlocked && cached.lastActive > Date.now() - 10 * 60 * 1000) {
-        // Touch active timestamp
         cached.lastActive = Date.now()
         fallbackSessionCache.set(chatId, cached)
         return true
@@ -128,7 +126,6 @@ async function checkIsUnlocked(chatId: number): Promise<boolean> {
     }
 
     if (data.is_unlocked) {
-      // Touch session last active time
       await supabase
         .from('telegram_sessions')
         .update({ last_active_at: new Date().toISOString() })
@@ -136,7 +133,6 @@ async function checkIsUnlocked(chatId: number): Promise<boolean> {
       return true
     }
   } catch (dbErr) {
-    // DB error / table missing fallback
     const cached = fallbackSessionCache.get(chatId)
     if (cached && cached.isUnlocked && cached.lastActive > Date.now() - 10 * 60 * 1000) {
       cached.lastActive = Date.now()
@@ -169,7 +165,6 @@ async function unlockSession(chatId: number) {
 
 // Generate keyboard markup for the PIN lock screen
 function getPinKeyboardMarkup(currentInputLength: number) {
-  const mask = '•'.repeat(currentInputLength) + ' '.repeat(4 - currentInputLength)
   return {
     inline_keyboard: [
       [
@@ -210,6 +205,18 @@ async function sendLockMessage(chatId: number, messageId?: number) {
   }
 }
 
+// Helper to get persistent main menu Reply Keyboard
+function getMainMenuMarkup() {
+  return {
+    keyboard: [
+      [{ text: '📊 Weekly Summary' }, { text: '👷 Worker PDFs' }],
+      [{ text: '🔎 Search / Check' }, { text: '🔒 Lock Bot' }]
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json()
@@ -229,57 +236,66 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true })
     }
 
-    // 2. Handle PIN Keyboard Callback Queries (Unlocked screen checks)
+    // 2. High-Performance PIN Callback handler (Bypasses Supabase session DB queries entirely)
+    if (callbackQuery && callbackQuery.data.startsWith('pin_')) {
+      const data: string = callbackQuery.data
+      const callbackQueryId = callbackQuery.id
+      const messageId = callbackQuery.message.message_id
+      let currentPin = pinCache.get(chatId) || ''
+      const action = data.replace('pin_', '')
+
+      if (action === 'clear') {
+        pinCache.set(chatId, '')
+        await Promise.all([
+          sendLockMessage(chatId, messageId),
+          answerCallbackQuery(callbackQueryId, 'PIN Cleared')
+        ])
+      } else if (action === 'submit') {
+        if (currentPin === TELEGRAM_PIN) {
+          pinCache.set(chatId, '')
+          await Promise.all([
+            unlockSession(chatId),
+            editTelegramMessage(chatId, messageId, '🔓 *Bot Unlocked Successfully!*\n\nWelcome to Nirmana Construction Hub Bot. Use the menu buttons below to navigate.'),
+            sendTelegramMessage(chatId, '📋 *Main Menu Active:*', getMainMenuMarkup()),
+            answerCallbackQuery(callbackQueryId, 'Unlocked!')
+          ])
+        } else {
+          pinCache.set(chatId, '')
+          await Promise.all([
+            sendTelegramMessage(chatId, '❌ *Incorrect PIN.* Please try again.'),
+            sendLockMessage(chatId),
+            answerCallbackQuery(callbackQueryId, 'Incorrect PIN')
+          ])
+        }
+      } else {
+        if (currentPin.length < 4) {
+          currentPin += action
+          pinCache.set(chatId, currentPin)
+        }
+        await Promise.all([
+          sendLockMessage(chatId, messageId),
+          answerCallbackQuery(callbackQueryId)
+        ])
+      }
+      return NextResponse.json({ ok: true })
+    }
+
+    // 3. Regular Callback Queries (Requires Unlock validation)
     if (callbackQuery) {
       const data: string = callbackQuery.data
       const callbackQueryId = callbackQuery.id
       const messageId = callbackQuery.message.message_id
       
-      // Check if session is already unlocked
       const isUnlocked = await checkIsUnlocked(chatId)
-
-      if (data.startsWith('pin_')) {
-        let currentPin = pinCache.get(chatId) || ''
-        const action = data.replace('pin_', '')
-
-        if (action === 'clear') {
-          pinCache.set(chatId, '')
-          await sendLockMessage(chatId, messageId)
-          await answerCallbackQuery(callbackQueryId, 'PIN Cleared')
-        } else if (action === 'submit') {
-          if (currentPin === TELEGRAM_PIN) {
-            pinCache.set(chatId, '')
-            await unlockSession(chatId)
-            await editTelegramMessage(chatId, messageId, '🔓 *Bot Unlocked Successfully!* Session active for 10 minutes.\n\nUse /summary or /workerpdf to proceed.')
-            await answerCallbackQuery(callbackQueryId, 'Unlocked!')
-          } else {
-            pinCache.set(chatId, '')
-            await sendTelegramMessage(chatId, '❌ *Incorrect PIN.* Please try again.')
-            await sendLockMessage(chatId)
-            await answerCallbackQuery(callbackQueryId, 'Incorrect PIN')
-          }
-        } else {
-          // It's a digit 0-9
-          if (currentPin.length < 4) {
-            currentPin += action
-            pinCache.set(chatId, currentPin)
-          }
-          await sendLockMessage(chatId, messageId)
-          await answerCallbackQuery(callbackQueryId)
-        }
-        return NextResponse.json({ ok: true })
-      }
-
-      // If locked and trying to click report buttons, redirect to PIN lock
       if (!isUnlocked) {
         await answerCallbackQuery(callbackQueryId, 'Session expired. Please unlock.')
         await sendLockMessage(chatId)
         return NextResponse.json({ ok: true })
       }
 
-      // Handle weekly summary selection callback
-      if (data.startsWith('sumweek_')) {
-        const offset = Number(data.replace('sumweek_', ''))
+      // Handle weekly summary selector callback
+      if (data.startsWith('sw_')) {
+        const offset = Number(data.replace('sw_', ''))
         await answerCallbackQuery(callbackQueryId, 'Calculating...')
         await editTelegramMessage(chatId, messageId, '⏳ *Calculating Weekly Summary...* Please wait.')
         
@@ -290,54 +306,56 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true })
       }
 
-      // Handle worker PDF week selection callback
-      if (data.startsWith('pdfweek_')) {
-        const offset = Number(data.replace('pdfweek_', ''))
+      // Handle worker PDF week selector callback
+      if (data.startsWith('pw_')) {
+        const offset = Number(data.replace('pw_', ''))
         await answerCallbackQuery(callbackQueryId, 'Loading workers...')
         
         const start = startOfWeek(subWeeks(new Date(), offset), { weekStartsOn: 0 })
         const end = endOfWeek(subWeeks(new Date(), offset), { weekStartsOn: 0 })
-        const startStr = format(start, 'yyyy-MM-dd')
-        const endStr = format(end, 'yyyy-MM-dd')
 
-        const { data: att } = await supabase
-          .from('attendance')
-          .select('labour_id, labour(name)')
-          .gte('date', startStr)
-          .lte('date', endStr)
+        // Fetch all registered workers
+        const { data: workers, error } = await supabase
+          .from('labour')
+          .select('id, name')
+          .order('name')
 
-        if (!att || att.length === 0) {
-          await editTelegramMessage(chatId, messageId, `🤷‍♂️ *No workers registered attendance for the week:* ${format(start, 'dd MMM')} - ${format(end, 'dd MMM yyyy')}`)
+        if (!workers || workers.length === 0) {
+          await editTelegramMessage(chatId, messageId, `🤷‍♂️ *No workers registered in database.*`)
           return NextResponse.json({ ok: true })
         }
 
-        const uniqueWorkers = new Map<string, string>()
-        att.forEach((r: any) => {
-          if (r.labour) uniqueWorkers.set(r.labour_id, r.labour.name)
+        // Generate worker lists as inline buttons (compact ids & offsets to fit under 64-byte Telegram limit)
+        const buttons = workers.map((w: any) => {
+          return [{ text: w.name, callback_data: `wp_${w.id.slice(0, 8)}_${offset}` }]
         })
 
-        const buttons = Array.from(uniqueWorkers.entries()).map(([id, name]) => {
-          return [{ text: name, callback_data: `workerpdf_${id}_${startStr}_${endStr}` }]
-        })
-
-        await editTelegramMessage(chatId, messageId, `👷 *Workers Active (${format(start, 'dd MMM')} - ${format(end, 'dd MMM')}):*\nSelect a worker to generate and download their Salary Slip PDF:`, {
+        await editTelegramMessage(chatId, messageId, `👷 *Select a worker to generate Salary Slip PDF*\n_Week: ${format(start, 'dd MMM')} - ${format(end, 'dd MMM yyyy')}_`, {
           inline_keyboard: buttons
         })
         return NextResponse.json({ ok: true })
       }
 
       // Handle worker PDF generation trigger
-      if (data.startsWith('workerpdf_')) {
-        const parts = data.split('_') // [workerpdf, id, startDate, endDate]
-        const workerId = parts[1]
-        const startDate = parts[2]
-        const endDate = parts[3]
+      if (data.startsWith('wp_')) {
+        const parts = data.split('_') // [wp, id_slice, offset]
+        const idSlice = parts[1]
+        const offset = Number(parts[2])
 
         await answerCallbackQuery(callbackQueryId, 'Generating PDF...')
         await sendTelegramMessage(chatId, '⏳ *Generating Salary Slip PDF...* Please wait.')
-        
+
+        const start = startOfWeek(subWeeks(new Date(), offset), { weekStartsOn: 0 })
+        const end = endOfWeek(subWeeks(new Date(), offset), { weekStartsOn: 0 })
+        const startDate = format(start, 'yyyy-MM-dd')
+        const endDate = format(end, 'yyyy-MM-dd')
+
         try {
-          const { pdfBuffer, filename } = await generateWorkerPDFBuffer(workerId, startDate, endDate)
+          // Resolve full UUID using idSlice
+          const { data: workerMatch } = await supabase.from('labour').select('id').ilike('id', `${idSlice}%`).single()
+          if (!workerMatch) throw new Error('Worker ID match not found.')
+          
+          const { pdfBuffer, filename } = await generateWorkerPDFBuffer(workerMatch.id, startDate, endDate)
           await sendTelegramDocument(chatId, filename, pdfBuffer)
         } catch (err: any) {
           await sendTelegramMessage(chatId, `❌ *Error generating PDF:* ${err.message}`)
@@ -346,7 +364,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3. Handle Text Commands
+    // 4. Handle Text Inputs
     if (message && message.text) {
       const text: string = message.text.trim()
       
@@ -356,7 +374,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true })
       }
 
-      // Check unlock status for regular commands
+      // Check unlock status for regular text commands
       const isUnlocked = await checkIsUnlocked(chatId)
       if (!isUnlocked) {
         pinCache.set(chatId, '')
@@ -364,17 +382,20 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true })
       }
 
-      if (text === '/summary') {
-        const markup = getWeekSelectorKeyboard('sumweek')
+      if (text === '/summary' || text === '📊 Weekly Summary') {
+        const markup = getWeekSelectorKeyboard('sw')
         await sendTelegramMessage(chatId, '📊 *Select the week for the Site Summary:*', markup)
-      } else if (text === '/workerpdf') {
-        const markup = getWeekSelectorKeyboard('pdfweek')
+      } else if (text === '/workerpdf' || text === '👷 Worker PDFs') {
+        const markup = getWeekSelectorKeyboard('pw')
         await sendTelegramMessage(chatId, '👷 *Select the week for the Worker PDFs:*', markup)
-      } else if (text === '/lock') {
+      } else if (text === '/lock' || text === '🔒 Lock Bot') {
         await lockSession(chatId)
-        await sendTelegramMessage(chatId, '🔒 *Session Locked.*')
+        await sendTelegramMessage(chatId, '🔒 *Session Locked. Keyboard removed.*', { remove_keyboard: true })
+      } else if (text === '🔎 Search / Check') {
+        await sendTelegramMessage(chatId, '🔎 *Global Search Active*\n\nType any worker\'s name, project name, material, or date (e.g. `2026-06-13`) to query the ledger instantly!')
       } else {
-        await sendTelegramMessage(chatId, '❓ *Unknown Command.* Available commands:\n\n📊 /summary - Weekly site totals\n👷 /workerpdf - Download salary slips\n🔒 /lock - Log out')
+        // Run global search if they sent a text query
+        await processGlobalSearch(chatId, text)
       }
     }
 
@@ -390,10 +411,29 @@ async function getWeeklySummaryMessage(start: Date, end: Date): Promise<string> 
   const startStr = format(start, 'yyyy-MM-dd')
   const endStr = format(end, 'yyyy-MM-dd')
 
-  const [{ data: att }, { data: mat }, { data: inc }, { data: contractPayments }] = await Promise.all([
+  const [
+    { data: att },
+    { data: mat },
+    { data: inc },
+    { data: contractPayments },
+    { data: persExp },
+    // All-time details for cash balance calculations
+    { data: allInc },
+    { data: allMat },
+    { data: allAtt },
+    { data: allPersExp },
+    { data: allContractors }
+  ] = await Promise.all([
     supabase.from('attendance').select('*, labour(name, type, daily_rate)').gte('date', startStr).lte('date', endStr),
     supabase.from('materials').select('total_amount').gte('date', startStr).lte('date', endStr),
     supabase.from('income').select('amount').gte('date', startStr).lte('date', endStr),
+    supabase.from('contractor_payments').select('*'),
+    supabase.from('personal_expenses').select('amount').gte('date', startStr).lte('date', endStr),
+    // All-time
+    supabase.from('income').select('amount'),
+    supabase.from('materials').select('total_amount'),
+    supabase.from('attendance').select('days_worked, custom_rate, overtime_amount, labour(daily_rate)'),
+    supabase.from('personal_expenses').select('amount'),
     supabase.from('contractor_payments').select('*')
   ])
 
@@ -405,8 +445,6 @@ async function getWeeklySummaryMessage(start: Date, end: Date): Promise<string> 
 
   att?.forEach((r: any) => {
     if (!r.labour) return
-    
-    // Group categories
     const rawType = r.labour.type || 'Labour'
     let category = 'Labour'
     if (rawType.toLowerCase().includes('skilled') || rawType.toLowerCase().includes('mason') || rawType.toLowerCase().includes('carpenter')) {
@@ -416,7 +454,6 @@ async function getWeeklySummaryMessage(start: Date, end: Date): Promise<string> 
     }
     workerCounts[category].add(r.labour.name)
 
-    // Calculate wages
     const rate = r.custom_rate || r.labour.daily_rate || 0
     labourWages += (Number(r.days_worked || 0) * rate) + Number(r.overtime_amount || 0)
     totalAdvances += Number(r.advance_amount || 0)
@@ -426,13 +463,13 @@ async function getWeeklySummaryMessage(start: Date, end: Date): Promise<string> 
     }
   })
 
-  // 2. Materials total
+  // 2. Weekly Materials total
   const materialsCost = mat?.reduce((acc, curr) => acc + Number(curr.total_amount || 0), 0) || 0
 
-  // 3. Income total
+  // 3. Weekly Income total
   const incomeReceived = inc?.reduce((acc, curr) => acc + Number(curr.amount || 0), 0) || 0
 
-  // 4. Contractor payouts this week
+  // 4. Weekly Contractor payouts
   let contractorWages = 0
   contractPayments?.forEach((sub: any) => {
     const installments = sub.installments || []
@@ -443,57 +480,157 @@ async function getWeeklySummaryMessage(start: Date, end: Date): Promise<string> 
     })
   })
 
+  // 5. Weekly Personal / Other Expenses
+  const personalExpensesTotal = persExp?.reduce((acc, curr) => acc + Number(curr.amount || 0), 0) || 0
+
+  // 6. Cash Summary Calculations (All-time)
+  const allTimeIncome = allInc?.reduce((acc, curr) => acc + Number(curr.amount || 0), 0) || 0
+  const allTimeMaterial = allMat?.reduce((acc, curr) => acc + Number(curr.total_amount || 0), 0) || 0
+  const allTimePersonal = allPersExp?.reduce((acc, curr) => acc + Number(curr.amount || 0), 0) || 0
+  const allTimeLabour = allAtt?.reduce((acc, att: any) => {
+    const rate = att.custom_rate || att.labour?.daily_rate || 0
+    return acc + (Number(att.days_worked || 0) * rate) + Number(att.overtime_amount || 0)
+  }, 0) || 0
+  
+  let allTimeContractor = 0
+  allContractors?.forEach((sub: any) => {
+    const installments = sub.installments || []
+    installments.forEach((inst: any) => {
+      allTimeContractor += Number(inst.amount || 0)
+    })
+    const sumInstallments = installments.reduce((sum: number, inst: any) => sum + Number(inst.amount || 0), 0)
+    if (sub.total_amount > sumInstallments) {
+      allTimeContractor += (sub.total_amount - sumInstallments)
+    }
+  })
+
+  const allTimeExpenses = allTimeLabour + allTimeMaterial + allTimePersonal + allTimeContractor
+  const currentNetCashBalance = allTimeIncome - allTimeExpenses
+
+  const weeklyTotalSpent = labourWages + materialsCost + contractorWages + personalExpensesTotal
+
   const uniqueNotes = Array.from(new Set(notesList)).slice(0, 5)
   const workCompletedNotes = uniqueNotes.length > 0 
     ? uniqueNotes.map(n => `• ${n}`).join('\n') 
     : '• No progress notes recorded.'
 
-  return `📊 *Nirmana Site Summary (This Week)*\n_Period: ${format(start, 'dd MMM')} - ${format(end, 'dd MMM yyyy')}_\n\n` +
+  return `📊 *Nirmana Site Summary (This Week)*\n` +
+         `_Period: ${format(start, 'dd MMM')} - ${format(end, 'dd MMM yyyy')}_\n` +
+         `━━━━━━━━━━━━━━━━━━━━\n\n` +
          `*👷 Crew Attendance (Active):*\n` +
          `• *Skilled Labours:* ${workerCounts['Skilled Labour'].size} workers\n` +
          `• *Labours:* ${workerCounts['Labour'].size} workers\n` +
          `• *Helpers:* ${workerCounts['Helper'].size} workers\n\n` +
-         `*💰 Financials (This Week):*\n` +
-         `• *Labour Wages Earned:* ₹${labourWages.toLocaleString('en-IN')}\n` +
-         `• *Labour Advances Paid:* ₹${totalAdvances.toLocaleString('en-IN')}\n` +
-         `• *Contractor Payouts:* ₹${contractorWages.toLocaleString('en-IN')}\n` +
+         `*💰 Weekly Spending Breakdown:*\n` +
+         `• *Labour Wages:* ₹${labourWages.toLocaleString('en-IN')}\n` +
+         `  _(Advances Paid: ₹${totalAdvances.toLocaleString('en-IN')})_\n` +
          `• *Materials Expenses:* ₹${materialsCost.toLocaleString('en-IN')}\n` +
-         `• *Collections / Income:* ₹${incomeReceived.toLocaleString('en-IN')}\n\n` +
+         `• *Contractor Payouts:* ₹${contractorWages.toLocaleString('en-IN')}\n` +
+         `• *Personal / Other Expenses:* ₹${personalExpensesTotal.toLocaleString('en-IN')}\n` +
+         `━━━━━━━━━━━━━━━━━━━━\n` +
+         `💸 *TOTAL WEEK EXPENSES:* ₹${weeklyTotalSpent.toLocaleString('en-IN')}\n` +
+         `📥 *WEEK COLLECTIONS:* ₹${incomeReceived.toLocaleString('en-IN')}\n\n` +
+         `*💼 Cash Position (All-Time):*\n` +
+         `• *Total Net Cash Balance:* ₹${currentNetCashBalance.toLocaleString('en-IN')}\n\n` +
          `*📝 Work Logs / Notes:*\n${workCompletedNotes}`
 }
 
-// ── Send Worker PDF List ────────────────────────────
-async function sendWorkerPDFOptions(chatId: number) {
-  const start = startOfWeek(new Date(), { weekStartsOn: 0 })
-  const end = endOfWeek(new Date(), { weekStartsOn: 0 })
-  const startStr = format(start, 'yyyy-MM-dd')
-  const endStr = format(end, 'yyyy-MM-dd')
-
-  // Fetch workers who attended this week
-  const { data: att } = await supabase
-    .from('attendance')
-    .select('labour_id, labour(name)')
-    .gte('date', startStr)
-    .lte('date', endStr)
-
-  if (!att || att.length === 0) {
-    await sendTelegramMessage(chatId, '🤷‍♂️ *No workers registered attendance this week.*')
+// ── Search Engine Functionality ──────────────────────
+async function processGlobalSearch(chatId: number, query: string) {
+  const cleanQuery = query.trim()
+  if (cleanQuery.length < 2) {
+    await sendTelegramMessage(chatId, '⚠️ *Search query must be at least 2 characters.*')
     return
   }
 
-  // Deduplicate workers
-  const uniqueWorkers = new Map<string, string>()
-  att.forEach((r: any) => {
-    if (r.labour) uniqueWorkers.set(r.labour_id, r.labour.name)
-  })
+  await sendTelegramMessage(chatId, `🔎 *Searching for:* "${cleanQuery}"...`)
 
-  const buttons = Array.from(uniqueWorkers.entries()).map(([id, name]) => {
-    return [{ text: name, callback_data: `pdf_${id}` }]
-  })
+  // 1. Check if it's a date query
+  const dateRegex = /^(\d{4}-\d{2}-\d{2})|(\d{2}-\d{2}-\d{4})|(\d{2}\/\d{2}\/\d{4})$/
+  if (dateRegex.test(cleanQuery)) {
+    let parsedDate: Date | null = null
+    try {
+      if (cleanQuery.includes('-')) {
+        const parts = cleanQuery.split('-')
+        if (parts[0].length === 4) {
+          parsedDate = new Date(cleanQuery)
+        } else {
+          parsedDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
+        }
+      } else if (cleanQuery.includes('/')) {
+        const parts = cleanQuery.split('/')
+        parsedDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
+      }
+    } catch (e) {}
 
-  await sendTelegramMessage(chatId, '👷 *Select a worker below to generate and download their Salary Slip PDF:*', {
-    inline_keyboard: buttons
-  })
+    if (parsedDate && !isNaN(parsedDate.getTime())) {
+      const start = startOfWeek(parsedDate, { weekStartsOn: 0 })
+      const end = endOfWeek(parsedDate, { weekStartsOn: 0 })
+      const summaryMsg = await getWeeklySummaryMessage(start, end)
+      await sendTelegramMessage(chatId, `📅 *Date Match Found!*\nSummary containing *${format(parsedDate, 'dd MMM yyyy')}*:\n\n${summaryMsg}`)
+      return
+    }
+  }
+
+  // 2. Perform DB search
+  const like = `%${cleanQuery}%`
+  const [{ data: workers }, { data: projects }, { data: materials }] = await Promise.all([
+    supabase.from('labour').select('*').ilike('name', like).limit(5),
+    supabase.from('projects').select('*').ilike('name', like).neq('status', 'SYSTEM').limit(5),
+    supabase.from('materials').select('*, projects(name)').ilike('name', like).order('date', { ascending: false }).limit(5)
+  ])
+
+  let responseText = `🔍 *Search Results for "${cleanQuery}":*\n\n`
+  let found = false
+
+  // Format Workers
+  if (workers && workers.length > 0) {
+    found = true
+    responseText += `👷 *Workers Matching (${workers.length}):*\n`
+    for (const w of workers) {
+      responseText += `• *${w.name}* (${w.type || 'Labour'})\n`
+      responseText += `  Rate: ₹${w.daily_rate}/day | Ph: ${w.phone || '—'}\n`
+    }
+    responseText += `\n`
+  }
+
+  // Format Projects
+  if (projects && projects.length > 0) {
+    found = true
+    responseText += `🏗️ *Projects Matching (${projects.length}):*\n`
+    for (const p of projects) {
+      responseText += `• *${p.name}*\n`
+      responseText += `  Client: ${p.owner_name || '—'} | Status: _${p.status}_\n`
+    }
+    responseText += `\n`
+  }
+
+  // Format Materials
+  if (materials && materials.length > 0) {
+    found = true
+    responseText += `📦 *Materials (${materials.length} recent):*\n`
+    for (const m of materials) {
+      responseText += `• *${m.name}* - ₹${Number(m.total_amount || 0).toLocaleString('en-IN')}\n`
+      responseText += `  Qty: ${m.quantity} ${m.unit} | Date: ${format(new Date(m.date), 'dd MMM yyyy')}\n`
+      if (m.projects) responseText += `  Site: ${m.projects.name}\n`
+    }
+    responseText += `\n`
+  }
+
+  if (!found) {
+    responseText += `🤷‍♂️ *No matches found.* Try searching for another name, material type (e.g. "cement"), site name, or date (YYYY-MM-DD).`
+    await sendTelegramMessage(chatId, responseText)
+  } else {
+    if (workers && workers.length > 0) {
+      const inlineKeyboard = workers.map((w: any) => [
+        { text: `📄 ${w.name} (This Week)`, callback_data: `wp_${w.id.slice(0, 8)}_0` },
+        { text: `📄 ${w.name} (Last Week)`, callback_data: `wp_${w.id.slice(0, 8)}_1` }
+      ])
+      await sendTelegramMessage(chatId, responseText, { inline_keyboard: inlineKeyboard })
+    } else {
+      await sendTelegramMessage(chatId, responseText)
+    }
+  }
 }
 
 // ── Generate Individual Worker PDF Buffer on Server ────
@@ -507,12 +644,11 @@ async function generateWorkerPDFBuffer(workerId: string, startDate: string, endD
     supabase.from('payments').select('*').eq('labour_id', workerId).gte('date', startDate).lte('date', endDate).eq('payment_type', 'ADVANCE')
   ])
 
-  if (!worker || !attData || attData.length === 0) {
-    throw new Error('Worker profile or weekly attendance not found.')
+  if (!worker) {
+    throw new Error('Worker profile not found.')
   }
 
-  const project = attData[0].projects
-  const breakdown = attData.map((att: any) => {
+  const breakdown = (attData || []).map((att: any) => {
     const rate = att.custom_rate || worker.daily_rate || 0
     const baseWage = Number(att.days_worked || 0) * Number(rate)
     const otAmount = Number(att.overtime_amount || 0)
@@ -530,15 +666,14 @@ async function generateWorkerPDFBuffer(workerId: string, startDate: string, endD
     }
   })
 
-  const totalDays = attData.reduce((acc, curr) => acc + Number(curr.days_worked), 0)
-  const totalOTAmount = attData.reduce((acc, curr) => acc + Number(curr.overtime_amount || 0), 0)
-  const totalWages = attData.reduce((acc, att) => {
+  const totalWages = (attData || []).reduce((acc, att) => {
     const rate = att.custom_rate || worker.daily_rate
     return acc + (Number(att.days_worked) * Number(rate))
   }, 0)
-  const attAdvances = attData.reduce((acc, att) => acc + Number(att.advance_amount || 0), 0)
+  const attAdvances = (attData || []).reduce((acc, att) => acc + Number(att.advance_amount || 0), 0)
   const payAdvances = payData?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0
   const totalAdvances = attAdvances + payAdvances
+  const totalOTAmount = (attData || []).reduce((acc, curr) => acc + Number(curr.overtime_amount || 0), 0)
   const netPayable = totalWages + totalOTAmount - totalAdvances
 
   const hasOT = totalOTAmount > 0
@@ -553,7 +688,10 @@ async function generateWorkerPDFBuffer(workerId: string, startDate: string, endD
     format: [210, pageHeight]
   })
 
-  drawPremiumHeader(doc, 'LABOUR WEEKLY REPORT', '(INDIVIDUAL)')
+  // Load server settings dynamically
+  const companyDetails = await getCompanyDetailsServer()
+
+  drawPremiumHeader(doc, 'LABOUR WEEKLY REPORT', '(INDIVIDUAL)', companyDetails)
 
   let y = 54
   doc.setTextColor(...PDF_COLORS.NAVY)
@@ -597,9 +735,9 @@ async function generateWorkerPDFBuffer(workerId: string, startDate: string, endD
     alternateRowStyles: { fillColor: PDF_COLORS.LIGHT },
     didDrawPage: (pageData) => {
       if (pageData.pageNumber > 1) {
-        drawPremiumHeader(doc, 'LABOUR WEEKLY REPORT (CONT.)', '(INDIVIDUAL)')
+        drawPremiumHeader(doc, 'LABOUR WEEKLY REPORT (CONT.)', '(INDIVIDUAL)', companyDetails)
       }
-      drawPremiumFooter(doc)
+      drawPremiumFooter(doc, companyDetails)
     },
     margin: { top: 50, left: 14, right: 14, bottom: 20 },
     didParseCell: (cellData) => {
@@ -638,8 +776,8 @@ async function generateWorkerPDFBuffer(workerId: string, startDate: string, endD
 
   if (finalY + summaryBoxH > H - 25) {
     doc.addPage()
-    drawPremiumHeader(doc, 'LABOUR WEEKLY REPORT (CONT.)', '(INDIVIDUAL)')
-    drawPremiumFooter(doc)
+    drawPremiumHeader(doc, 'LABOUR WEEKLY REPORT (CONT.)', '(INDIVIDUAL)', companyDetails)
+    drawPremiumFooter(doc, companyDetails)
     finalY = 50
   }
 
@@ -670,21 +808,16 @@ async function generateWorkerPDFBuffer(workerId: string, startDate: string, endD
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(...PDF_COLORS.NAVY)
   doc.setFontSize(8)
-  
-  // Dynamic signature company name
-  doc.text('FOR ' + (typeof window !== 'undefined' ? localStorage.getItem('ssc_company_name') || 'SRI SAI CONSTRUCTIONS' : 'SRI SAI CONSTRUCTIONS'), 160, sigY + 5, { align: 'center' })
+  doc.text('FOR ' + companyDetails.name, 160, sigY + 5, { align: 'center' })
 
   doc.setFont('times', 'italic')
   doc.setFontSize(12)
-  
-  // Dynamic signature contractor name
-  const contractorName = typeof window !== 'undefined' ? localStorage.getItem('ssc_contractor_name') || 'Cheveli Somaiah' : 'Cheveli Somaiah'
-  doc.text(contractorName, 160, sigY + 16, { align: 'center' })
+  doc.text(companyDetails.contractorRaw, 160, sigY + 16, { align: 'center' })
   doc.line(140, sigY + 18, 180, sigY + 18)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7); doc.text('Authorized Signatory', 160, sigY + 22, { align: 'center' })
 
-  drawPremiumFooter(doc)
+  drawPremiumFooter(doc, companyDetails)
 
   const pdfArrayBuffer = doc.output('arraybuffer')
   const pdfBuffer = new Uint8Array(pdfArrayBuffer)
