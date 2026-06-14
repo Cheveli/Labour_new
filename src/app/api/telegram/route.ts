@@ -313,24 +313,32 @@ export async function POST(req: Request) {
         
         const start = startOfWeek(subWeeks(new Date(), offset), { weekStartsOn: 0 })
         const end = endOfWeek(subWeeks(new Date(), offset), { weekStartsOn: 0 })
+        const startStr = format(start, 'yyyy-MM-dd')
+        const endStr = format(end, 'yyyy-MM-dd')
 
-        // Fetch all registered workers
-        const { data: workers, error } = await supabase
-          .from('labour')
-          .select('id, name')
-          .order('name')
+        // Fetch workers who registered attendance for this week specifically
+        const { data: att, error } = await supabase
+          .from('attendance')
+          .select('labour_id, labour(name)')
+          .gte('date', startStr)
+          .lte('date', endStr)
 
-        if (!workers || workers.length === 0) {
-          await editTelegramMessage(chatId, messageId, `🤷‍♂️ *No workers registered in database.*`)
+        if (!att || att.length === 0) {
+          await editTelegramMessage(chatId, messageId, `🤷‍♂️ *No workers registered attendance for the week:* ${format(start, 'dd MMM')} - ${format(end, 'dd MMM yyyy')}`)
           return NextResponse.json({ ok: true })
         }
 
-        // Generate worker lists as inline buttons (compact ids & offsets to fit under 64-byte Telegram limit)
-        const buttons = workers.map((w: any) => {
-          return [{ text: w.name, callback_data: `wp_${w.id.slice(0, 8)}_${offset}` }]
+        const uniqueWorkers = new Map<string, string>()
+        att.forEach((r: any) => {
+          if (r.labour) uniqueWorkers.set(r.labour_id, r.labour.name)
         })
 
-        await editTelegramMessage(chatId, messageId, `👷 *Select a worker to generate Salary Slip PDF*\n_Week: ${format(start, 'dd MMM')} - ${format(end, 'dd MMM yyyy')}_`, {
+        // Generate worker buttons using the FULL UUID (under 64-byte Telegram limit since prefix and offset are short)
+        const buttons = Array.from(uniqueWorkers.entries()).map(([id, name]) => {
+          return [{ text: name, callback_data: `wp_${id}_${offset}` }]
+        })
+
+        await editTelegramMessage(chatId, messageId, `👷 *Workers Active (${format(start, 'dd MMM')} - ${format(end, 'dd MMM')}):*\nSelect a worker to generate Salary Slip PDF:`, {
           inline_keyboard: buttons
         })
         return NextResponse.json({ ok: true })
@@ -338,8 +346,8 @@ export async function POST(req: Request) {
 
       // Handle worker PDF generation trigger
       if (data.startsWith('wp_')) {
-        const parts = data.split('_') // [wp, id_slice, offset]
-        const idSlice = parts[1]
+        const parts = data.split('_') // [wp, worker_id, offset]
+        const workerId = parts[1]
         const offset = Number(parts[2])
 
         await answerCallbackQuery(callbackQueryId, 'Generating PDF...')
@@ -351,11 +359,7 @@ export async function POST(req: Request) {
         const endDate = format(end, 'yyyy-MM-dd')
 
         try {
-          // Resolve full UUID using idSlice
-          const { data: workerMatch } = await supabase.from('labour').select('id').ilike('id', `${idSlice}%`).single()
-          if (!workerMatch) throw new Error('Worker ID match not found.')
-          
-          const { pdfBuffer, filename } = await generateWorkerPDFBuffer(workerMatch.id, startDate, endDate)
+          const { pdfBuffer, filename } = await generateWorkerPDFBuffer(workerId, startDate, endDate)
           await sendTelegramDocument(chatId, filename, pdfBuffer)
         } catch (err: any) {
           await sendTelegramMessage(chatId, `❌ *Error generating PDF:* ${err.message}`)
@@ -623,8 +627,8 @@ async function processGlobalSearch(chatId: number, query: string) {
   } else {
     if (workers && workers.length > 0) {
       const inlineKeyboard = workers.map((w: any) => [
-        { text: `📄 ${w.name} (This Week)`, callback_data: `wp_${w.id.slice(0, 8)}_0` },
-        { text: `📄 ${w.name} (Last Week)`, callback_data: `wp_${w.id.slice(0, 8)}_1` }
+        { text: `📄 ${w.name} (This Week)`, callback_data: `wp_${w.id}_0` },
+        { text: `📄 ${w.name} (Last Week)`, callback_data: `wp_${w.id}_1` }
       ])
       await sendTelegramMessage(chatId, responseText, { inline_keyboard: inlineKeyboard })
     } else {
