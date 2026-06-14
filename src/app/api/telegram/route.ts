@@ -205,12 +205,53 @@ async function sendLockMessage(chatId: number, messageId?: number) {
   }
 }
 
+// Conversational Personal Expenses Caching & Helpers
+const expenseFlowCache = new Map<number, {
+  step: 'amount' | 'person' | 'purpose' | 'date' | 'customdate' | 'confirm';
+  amount?: number;
+  person?: string;
+  purpose?: string;
+  date?: string;
+}>()
+
+function getExpensePreviewText(cached: any) {
+  return `📋 *Verify Personal Expense Details:*\n` +
+         `━━━━━━━━━━━━━━━━━━━━\n` +
+         `• *Amount:* ₹${cached.amount?.toLocaleString('en-IN')}\n` +
+         `• *Paid To/By:* ${cached.person}\n` +
+         `• *Purpose:* ${cached.purpose}\n` +
+         `• *Date:* ${format(new Date(cached.date), 'dd MMM yyyy')}\n` +
+         `━━━━━━━━━━━━━━━━━━━━\n\n` +
+         `Do you want to save this transaction to the database?`
+}
+
+function getExpenseConfirmMarkup() {
+  return {
+    inline_keyboard: [
+      [
+        { text: '✅ Save to Database', callback_data: 'expsave' },
+        { text: '❌ Cancel', callback_data: 'expcancel' }
+      ]
+    ]
+  }
+}
+
+function getExpenseDateMarkup() {
+  return {
+    inline_keyboard: [
+      [{ text: `📅 Today (${format(new Date(), 'dd MMM')})`, callback_data: 'expdate_today' }],
+      [{ text: `📅 Yesterday (${format(subDays(new Date(), 1), 'dd MMM')})`, callback_data: 'expdate_yesterday' }],
+      [{ text: '⌨️ Type Custom Date', callback_data: 'expdate_custom' }]
+    ]
+  }
+}
+
 // Helper to get persistent main menu Reply Keyboard
 function getMainMenuMarkup() {
   return {
     keyboard: [
       [{ text: '📊 Weekly Summary' }, { text: '👷 Worker PDFs' }],
-      [{ text: '🔎 Search / Check' }, { text: '🔒 Lock Bot' }]
+      [{ text: '💸 Record Expense' }, { text: '🔒 Lock Bot' }]
     ],
     resize_keyboard: true,
     one_time_keyboard: false
@@ -236,7 +277,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true })
     }
 
-    // 2. High-Performance PIN Callback handler (Bypasses Supabase session DB queries entirely)
+    // 2. High-Performance PIN Callback handler
     if (callbackQuery && callbackQuery.data.startsWith('pin_')) {
       const data: string = callbackQuery.data
       const callbackQueryId = callbackQuery.id
@@ -293,6 +334,82 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true })
       }
 
+      // Conversational Expense flow callback logic
+      if (data.startsWith('expdate_')) {
+        const action = data.replace('expdate_', '')
+        const cached = expenseFlowCache.get(chatId)
+        if (!cached || cached.step !== 'date') {
+          await answerCallbackQuery(callbackQueryId, 'Session expired.')
+          return NextResponse.json({ ok: true })
+        }
+
+        if (action === 'today') {
+          cached.date = format(new Date(), 'yyyy-MM-dd')
+          cached.step = 'confirm'
+          expenseFlowCache.set(chatId, cached)
+          await Promise.all([
+            answerCallbackQuery(callbackQueryId),
+            editTelegramMessage(chatId, messageId, getExpensePreviewText(cached), getExpenseConfirmMarkup())
+          ])
+        } else if (action === 'yesterday') {
+          cached.date = format(subDays(new Date(), 1), 'yyyy-MM-dd')
+          cached.step = 'confirm'
+          expenseFlowCache.set(chatId, cached)
+          await Promise.all([
+            answerCallbackQuery(callbackQueryId),
+            editTelegramMessage(chatId, messageId, getExpensePreviewText(cached), getExpenseConfirmMarkup())
+          ])
+        } else if (action === 'custom') {
+          cached.step = 'customdate'
+          expenseFlowCache.set(chatId, cached)
+          await Promise.all([
+            answerCallbackQuery(callbackQueryId),
+            editTelegramMessage(chatId, messageId, '📅 *Custom Date Selection*\n\nPlease type the date in `YYYY-MM-DD` format (e.g., `2026-06-14`):')
+          ])
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      if (data === 'expsave') {
+        const cached = expenseFlowCache.get(chatId)
+        if (!cached || cached.step !== 'confirm') {
+          await answerCallbackQuery(callbackQueryId, 'Session expired.')
+          return NextResponse.json({ ok: true })
+        }
+
+        try {
+          const { error } = await supabase.from('personal_expenses').insert([{
+            amount: cached.amount,
+            person_name: cached.person,
+            purpose: cached.purpose,
+            date: cached.date
+          }])
+
+          if (error) throw error
+
+          expenseFlowCache.delete(chatId)
+          await Promise.all([
+            answerCallbackQuery(callbackQueryId, 'Expense Saved!'),
+            editTelegramMessage(chatId, messageId, `✅ *Expense Saved Successfully!*\n\n• *Amount:* ₹${cached.amount?.toLocaleString('en-IN')}\n• *Paid To/By:* ${cached.person}\n• *Purpose:* ${cached.purpose}\n• *Date:* ${format(new Date(cached.date!), 'dd MMM yyyy')}\n\nRecorded in database ledger.`)
+          ])
+        } catch (err: any) {
+          await Promise.all([
+            answerCallbackQuery(callbackQueryId, 'Save Failed'),
+            sendTelegramMessage(chatId, `❌ *Error saving to database:* ${err.message}`)
+          ])
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      if (data === 'expcancel') {
+        expenseFlowCache.delete(chatId)
+        await Promise.all([
+          answerCallbackQuery(callbackQueryId, 'Cancelled'),
+          editTelegramMessage(chatId, messageId, '❌ *Expense recording cancelled.*')
+        ])
+        return NextResponse.json({ ok: true })
+      }
+
       // Handle weekly summary selector callback
       if (data.startsWith('sw_')) {
         const offset = Number(data.replace('sw_', ''))
@@ -316,7 +433,6 @@ export async function POST(req: Request) {
         const startStr = format(start, 'yyyy-MM-dd')
         const endStr = format(end, 'yyyy-MM-dd')
 
-        // Fetch workers who registered attendance for this week specifically
         const { data: att, error } = await supabase
           .from('attendance')
           .select('labour_id, labour(name)')
@@ -333,7 +449,6 @@ export async function POST(req: Request) {
           if (r.labour) uniqueWorkers.set(r.labour_id, r.labour.name)
         })
 
-        // Generate worker buttons using the FULL UUID (under 64-byte Telegram limit since prefix and offset are short)
         const buttons = Array.from(uniqueWorkers.entries()).map(([id, name]) => {
           return [{ text: name, callback_data: `wp_${id}_${offset}` }]
         })
@@ -346,7 +461,7 @@ export async function POST(req: Request) {
 
       // Handle worker PDF generation trigger
       if (data.startsWith('wp_')) {
-        const parts = data.split('_') // [wp, worker_id, offset]
+        const parts = data.split('_') 
         const workerId = parts[1]
         const offset = Number(parts[2])
 
@@ -374,6 +489,7 @@ export async function POST(req: Request) {
       
       if (text === '/start') {
         pinCache.set(chatId, '')
+        expenseFlowCache.delete(chatId)
         await sendLockMessage(chatId)
         return NextResponse.json({ ok: true })
       }
@@ -382,10 +498,64 @@ export async function POST(req: Request) {
       const isUnlocked = await checkIsUnlocked(chatId)
       if (!isUnlocked) {
         pinCache.set(chatId, '')
+        expenseFlowCache.delete(chatId)
         await sendLockMessage(chatId)
         return NextResponse.json({ ok: true })
       }
 
+      // Conversational Personal Expenses Flow Processor
+      const activeFlow = expenseFlowCache.get(chatId)
+      if (activeFlow) {
+        if (text.toLowerCase() === 'cancel' || text === '/cancel') {
+          expenseFlowCache.delete(chatId)
+          await sendTelegramMessage(chatId, '❌ *Expense recording cancelled.*', getMainMenuMarkup())
+          return NextResponse.json({ ok: true })
+        }
+
+        if (activeFlow.step === 'amount') {
+          const amountNum = Number(text)
+          if (isNaN(amountNum) || amountNum <= 0) {
+            await sendTelegramMessage(chatId, '⚠️ *Invalid amount.* Please type a valid number (e.g. `250` or `1500.50`):\n_Type cancel to abort._')
+            return NextResponse.json({ ok: true })
+          }
+          activeFlow.amount = amountNum
+          activeFlow.step = 'person'
+          expenseFlowCache.set(chatId, activeFlow)
+          await sendTelegramMessage(chatId, '👤 *Who spent this amount?*\n_(Enter name, e.g. Sai Kumar)_')
+          return NextResponse.json({ ok: true })
+        }
+
+        if (activeFlow.step === 'person') {
+          activeFlow.person = text
+          activeFlow.step = 'purpose'
+          expenseFlowCache.set(chatId, activeFlow)
+          await sendTelegramMessage(chatId, '📝 *What was the purpose of this expense?*\n_(e.g. Petrol, Cement loading charges, Site tea)_')
+          return NextResponse.json({ ok: true })
+        }
+
+        if (activeFlow.step === 'purpose') {
+          activeFlow.purpose = text
+          activeFlow.step = 'date'
+          expenseFlowCache.set(chatId, activeFlow)
+          await sendTelegramMessage(chatId, '📅 *Select the transaction date:*', getExpenseDateMarkup())
+          return NextResponse.json({ ok: true })
+        }
+
+        if (activeFlow.step === 'customdate') {
+          const dateRegex = /^\d{4}-\d{2}-\d{2}$/
+          if (!dateRegex.test(text)) {
+            await sendTelegramMessage(chatId, '⚠️ *Invalid date format.* Please type the date in `YYYY-MM-DD` format (e.g. `2026-06-14`):')
+            return NextResponse.json({ ok: true })
+          }
+          activeFlow.date = text
+          activeFlow.step = 'confirm'
+          expenseFlowCache.set(chatId, activeFlow)
+          await sendTelegramMessage(chatId, getExpensePreviewText(activeFlow), getExpenseConfirmMarkup())
+          return NextResponse.json({ ok: true })
+        }
+      }
+
+      // Normal Menu Routing
       if (text === '/summary' || text === '📊 Weekly Summary') {
         const markup = getWeekSelectorKeyboard('sw')
         await sendTelegramMessage(chatId, '📊 *Select the week for the Site Summary:*', markup)
@@ -395,11 +565,11 @@ export async function POST(req: Request) {
       } else if (text === '/lock' || text === '🔒 Lock Bot') {
         await lockSession(chatId)
         await sendTelegramMessage(chatId, '🔒 *Session Locked. Keyboard removed.*', { remove_keyboard: true })
-      } else if (text === '🔎 Search / Check') {
-        await sendTelegramMessage(chatId, '🔎 *Global Search Active*\n\nType any worker\'s name, project name, material, or date (e.g. `2026-06-13`) to query the ledger instantly!')
+      } else if (text === '💸 Record Expense' || text === '/addexpense') {
+        expenseFlowCache.set(chatId, { step: 'amount' })
+        await sendTelegramMessage(chatId, '💸 *Record Personal Expense*\n\nPlease type the *amount* spent in ₹:\n_(Or type cancel to abort)_')
       } else {
-        // Run global search if they sent a text query
-        await processGlobalSearch(chatId, text)
+        await sendTelegramMessage(chatId, '❓ *Unknown Option.* Use the menu keyboard buttons below to navigate.')
       }
     }
 
@@ -547,93 +717,128 @@ async function processGlobalSearch(chatId: number, query: string) {
     return
   }
 
-  await sendTelegramMessage(chatId, `🔎 *Searching for:* "${cleanQuery}"...`)
+  try {
+    await sendTelegramMessage(chatId, `🔎 *Searching ledger for:* "${cleanQuery}"...`)
 
-  // 1. Check if it's a date query
-  const dateRegex = /^(\d{4}-\d{2}-\d{2})|(\d{2}-\d{2}-\d{4})|(\d{2}\/\d{2}\/\d{4})$/
-  if (dateRegex.test(cleanQuery)) {
-    let parsedDate: Date | null = null
-    try {
-      if (cleanQuery.includes('-')) {
-        const parts = cleanQuery.split('-')
-        if (parts[0].length === 4) {
-          parsedDate = new Date(cleanQuery)
-        } else {
+    // 1. Check if it's a date query (using correctly grouped anchors)
+    const dateRegex = /^(?:\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4}|\d{2}\/\d{2}\/\d{4})$/
+    if (dateRegex.test(cleanQuery)) {
+      let parsedDate: Date | null = null
+      try {
+        if (cleanQuery.includes('-')) {
+          const parts = cleanQuery.split('-')
+          if (parts[0].length === 4) {
+            parsedDate = new Date(cleanQuery)
+          } else {
+            parsedDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
+          }
+        } else if (cleanQuery.includes('/')) {
+          const parts = cleanQuery.split('/')
           parsedDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
         }
-      } else if (cleanQuery.includes('/')) {
-        const parts = cleanQuery.split('/')
-        parsedDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`)
+      } catch (e) {}
+
+      if (parsedDate && !isNaN(parsedDate.getTime())) {
+        const start = startOfWeek(parsedDate, { weekStartsOn: 0 })
+        const end = endOfWeek(parsedDate, { weekStartsOn: 0 })
+        const summaryMsg = await getWeeklySummaryMessage(start, end)
+        await sendTelegramMessage(chatId, `📅 *Date Match Found!*\nSummary for the week containing *${format(parsedDate, 'dd MMM yyyy')}*:\n\n${summaryMsg}`)
+        return
       }
-    } catch (e) {}
-
-    if (parsedDate && !isNaN(parsedDate.getTime())) {
-      const start = startOfWeek(parsedDate, { weekStartsOn: 0 })
-      const end = endOfWeek(parsedDate, { weekStartsOn: 0 })
-      const summaryMsg = await getWeeklySummaryMessage(start, end)
-      await sendTelegramMessage(chatId, `📅 *Date Match Found!*\nSummary containing *${format(parsedDate, 'dd MMM yyyy')}*:\n\n${summaryMsg}`)
-      return
     }
-  }
 
-  // 2. Perform DB search
-  const like = `%${cleanQuery}%`
-  const [{ data: workers }, { data: projects }, { data: materials }] = await Promise.all([
-    supabase.from('labour').select('*').ilike('name', like).limit(5),
-    supabase.from('projects').select('*').ilike('name', like).neq('status', 'SYSTEM').limit(5),
-    supabase.from('materials').select('*, projects(name)').ilike('name', like).order('date', { ascending: false }).limit(5)
-  ])
+    // 2. Perform DB searches across all tables concurrently
+    const like = `%${cleanQuery}%`
+    const [
+      { data: workers },
+      { data: projects },
+      { data: materials },
+      { data: contractors },
+      { data: expenses }
+    ] = await Promise.all([
+      supabase.from('labour').select('*').ilike('name', like).limit(5),
+      supabase.from('projects').select('*').ilike('name', like).neq('status', 'SYSTEM').limit(5),
+      supabase.from('materials').select('*, projects(name)').ilike('name', like).order('date', { ascending: false }).limit(5),
+      supabase.from('contractor_payments').select('*').ilike('name', like).limit(5),
+      supabase.from('personal_expenses').select('*').or(`person_name.ilike.${like},purpose.ilike.${like}`).order('date', { ascending: false }).limit(5)
+    ])
 
-  let responseText = `🔍 *Search Results for "${cleanQuery}":*\n\n`
-  let found = false
+    let responseText = `🔍 *Search Results for "${cleanQuery}":*\n\n`
+    let found = false
 
-  // Format Workers
-  if (workers && workers.length > 0) {
-    found = true
-    responseText += `👷 *Workers Matching (${workers.length}):*\n`
-    for (const w of workers) {
-      responseText += `• *${w.name}* (${w.type || 'Labour'})\n`
-      responseText += `  Rate: ₹${w.daily_rate}/day | Ph: ${w.phone || '—'}\n`
-    }
-    responseText += `\n`
-  }
-
-  // Format Projects
-  if (projects && projects.length > 0) {
-    found = true
-    responseText += `🏗️ *Projects Matching (${projects.length}):*\n`
-    for (const p of projects) {
-      responseText += `• *${p.name}*\n`
-      responseText += `  Client: ${p.owner_name || '—'} | Status: _${p.status}_\n`
-    }
-    responseText += `\n`
-  }
-
-  // Format Materials
-  if (materials && materials.length > 0) {
-    found = true
-    responseText += `📦 *Materials (${materials.length} recent):*\n`
-    for (const m of materials) {
-      responseText += `• *${m.name}* - ₹${Number(m.total_amount || 0).toLocaleString('en-IN')}\n`
-      responseText += `  Qty: ${m.quantity} ${m.unit} | Date: ${format(new Date(m.date), 'dd MMM yyyy')}\n`
-      if (m.projects) responseText += `  Site: ${m.projects.name}\n`
-    }
-    responseText += `\n`
-  }
-
-  if (!found) {
-    responseText += `🤷‍♂️ *No matches found.* Try searching for another name, material type (e.g. "cement"), site name, or date (YYYY-MM-DD).`
-    await sendTelegramMessage(chatId, responseText)
-  } else {
+    // Format Workers
     if (workers && workers.length > 0) {
-      const inlineKeyboard = workers.map((w: any) => [
-        { text: `📄 ${w.name} (This Week)`, callback_data: `wp_${w.id}_0` },
-        { text: `📄 ${w.name} (Last Week)`, callback_data: `wp_${w.id}_1` }
-      ])
-      await sendTelegramMessage(chatId, responseText, { inline_keyboard: inlineKeyboard })
-    } else {
-      await sendTelegramMessage(chatId, responseText)
+      found = true
+      responseText += `👷 *Workers Matching (${workers.length}):*\n`
+      for (const w of workers) {
+        responseText += `• *${w.name}* (${w.type || 'Labour'})\n`
+        responseText += `  Rate: ₹${w.daily_rate}/day | Ph: ${w.phone || '—'}\n`
+      }
+      responseText += `\n`
     }
+
+    // Format Projects
+    if (projects && projects.length > 0) {
+      found = true
+      responseText += `🏗️ *Projects Matching (${projects.length}):*\n`
+      for (const p of projects) {
+        responseText += `• *${p.name}*\n`
+        responseText += `  Client: ${p.owner_name || '—'} | Status: _${p.status}_\n`
+      }
+      responseText += `\n`
+    }
+
+    // Format Materials
+    if (materials && materials.length > 0) {
+      found = true
+      responseText += `📦 *Materials (${materials.length} recent):*\n`
+      for (const m of materials) {
+        responseText += `• *${m.name}* - ₹${Number(m.total_amount || 0).toLocaleString('en-IN')}\n`
+        responseText += `  Qty: ${m.quantity} ${m.unit} | Date: ${format(new Date(m.date), 'dd MMM yyyy')}\n`
+        if (m.projects) responseText += `  Site: ${m.projects.name}\n`
+      }
+      responseText += `\n`
+    }
+
+    // Format Contractors
+    if (contractors && contractors.length > 0) {
+      found = true
+      responseText += `🚜 *Contractors Matching (${contractors.length}):*\n`
+      for (const c of contractors) {
+        responseText += `• *${c.name}* (${c.work_nature || 'Contractor'})\n`
+        responseText += `  Paid: ₹${(c.total_paid || 0).toLocaleString('en-IN')} / ₹${(c.total_amount || 0).toLocaleString('en-IN')}\n`
+      }
+      responseText += `\n`
+    }
+
+    // Format Personal Expenses
+    if (expenses && expenses.length > 0) {
+      found = true
+      responseText += `💸 *Other Expenses Matching (${expenses.length}):*\n`
+      for (const e of expenses) {
+        responseText += `• *${e.purpose}* (by ${e.person_name || '—'})\n`
+        responseText += `  Amount: ₹${Number(e.amount || 0).toLocaleString('en-IN')} | Date: ${format(new Date(e.date), 'dd MMM yyyy')}\n`
+      }
+      responseText += `\n`
+    }
+
+    if (!found) {
+      responseText += `🤷‍♂️ *No matches found.* Try searching for a worker's name, material type (e.g. "cement"), contractor name, site location, or a date (YYYY-MM-DD).`
+      await sendTelegramMessage(chatId, responseText)
+    } else {
+      if (workers && workers.length > 0) {
+        const inlineKeyboard = workers.map((w: any) => [
+          { text: `📄 ${w.name} (This Week)`, callback_data: `wp_${w.id}_0` },
+          { text: `📄 ${w.name} (Last Week)`, callback_data: `wp_${w.id}_1` }
+        ])
+        await sendTelegramMessage(chatId, responseText, { inline_keyboard: inlineKeyboard })
+      } else {
+        await sendTelegramMessage(chatId, responseText)
+      }
+    }
+  } catch (err: any) {
+    console.error('Search error:', err)
+    await sendTelegramMessage(chatId, `❌ *Search failed:* ${err.message || 'Database error occurred.'}`)
   }
 }
 
