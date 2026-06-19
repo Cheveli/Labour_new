@@ -30,11 +30,61 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   
   const isLoginPage = pathname === '/login'
+  const isRegisterPage = pathname === '/register'
+  const isPendingPage = pathname === '/pending-verification'
   const isAuthPage = pathname.startsWith('/auth')
+  const isApiRoute = pathname.startsWith('/api')
 
-  if (!user && !isLoginPage && !isAuthPage) {
-    const url = new URL('/login', request.url)
-    return NextResponse.redirect(url)
+  // If not logged in, only allow login, register, auth callback, or API endpoints
+  if (!user) {
+    if (!isLoginPage && !isRegisterPage && !isAuthPage && !isApiRoute && !isPendingPage) {
+      const url = new URL('/login', request.url)
+      return NextResponse.redirect(url)
+    }
+    return supabaseResponse
+  }
+
+  // If logged in, handle roles and subscription access
+  if (user) {
+    // 1. Super Admin Hardcoded Exception Rules
+    if (user.email === 'saichevelly@gmail.com') {
+      if (isLoginPage || isRegisterPage || isPendingPage) {
+        return NextResponse.redirect(new URL('/', request.url))
+      }
+      return supabaseResponse
+    }
+
+    // 2. Regular User Verification
+    try {
+      const { data: profile } = await supabase
+        .from('users')
+        .select('role, account_status, subscription_status')
+        .eq('id', user.id)
+        .single()
+
+      const isApproved = 
+        profile && 
+        profile.account_status === 'approved' && 
+        profile.subscription_status === 'active'
+
+      if (!isApproved) {
+        // Redirection to pending verification page if not approved
+        if (!isPendingPage && !isLoginPage && !isRegisterPage && !isAuthPage && !isApiRoute) {
+          return NextResponse.redirect(new URL('/pending-verification', request.url))
+        }
+      } else {
+        // If approved and on auth/pending pages, redirect to dashboard
+        if (isLoginPage || isRegisterPage || isPendingPage) {
+          return NextResponse.redirect(new URL('/', request.url))
+        }
+      }
+    } catch (err) {
+      console.error('Middleware database check failed:', err)
+      // Fallback: block on error to be safe, except on login/auth routes
+      if (!isPendingPage && !isLoginPage && !isRegisterPage && !isAuthPage && !isApiRoute) {
+        return NextResponse.redirect(new URL('/pending-verification', request.url))
+      }
+    }
   }
 
   return supabaseResponse
@@ -43,6 +93,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     '/',
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 }
+

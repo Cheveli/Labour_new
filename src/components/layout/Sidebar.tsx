@@ -22,6 +22,7 @@ import {
   BarChart3,
   Phone,
   Settings,
+  ShieldCheck,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -46,6 +47,7 @@ const menuItems = [
 export default function Sidebar() {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
   const supabase = createClient()
 
   // Collapsed State (persisted in localStorage)
@@ -55,6 +57,17 @@ export default function Sidebar() {
     }
     return false
   })
+
+  useEffect(() => {
+    async function getUser() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setUserEmail(user.email || '')
+      }
+    }
+    getUser()
+  }, [])
+
 
   useEffect(() => {
     localStorage.setItem('sidebar-collapsed', isCollapsed.toString())
@@ -183,12 +196,22 @@ export default function Sidebar() {
 
           {/* Nav */}
           <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto no-scrollbar">
-            {menuItems.map((item, idx) => {
-              const isActive = item.href !== '#' && (
-                item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
-              )
-              const Icon = item.icon
-              return (
+            {(() => {
+              const isAdminUser = userEmail === 'saichevelly@gmail.com'
+              const activeMenuItems = [
+                ...menuItems,
+                ...(isAdminUser ? [
+                  { label: 'Sub Requests', href: '/admin/subscription-requests', icon: ShieldCheck },
+                  { label: 'All Contractors', href: '/admin/all-contractors', icon: Users },
+                ] : [])
+              ]
+              return activeMenuItems.map((item, idx) => {
+                const isActive = item.href !== '#' && (
+                  item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
+                )
+                const Icon = item.icon
+                return (
+
                 <Link
                   key={`${item.label}-${idx}`}
                   href={item.href}
@@ -212,7 +235,7 @@ export default function Sidebar() {
                   )}
                 </Link>
               )
-            })}
+            })})()}
           </nav>
 
           {/* Admin Profile & Logout */}

@@ -4,10 +4,51 @@ import * as XLSX from 'xlsx'
 import { format } from 'date-fns'
 import { createClient } from '@supabase/supabase-js'
 
+export const PDF_THEMES = {
+  original_navy: {
+    primary: [13, 27, 62] as [number, number, number],
+    secondary: [245, 158, 11] as [number, number, number], // Gold/amber border strip
+  },
+  emerald_green: {
+    primary: [6, 78, 59] as [number, number, number], // Deep green
+    secondary: [16, 185, 129] as [number, number, number], // Emerald accent
+  },
+  royal_blue: {
+    primary: [30, 58, 138] as [number, number, number], // Deep royal blue
+    secondary: [59, 130, 246] as [number, number, number], // Tech blue accent
+  },
+  slate_charcoal: {
+    primary: [30, 41, 59] as [number, number, number], // Dark slate
+    secondary: [100, 116, 139] as [number, number, number], // Muted slate accent
+  },
+  sunset_amber: {
+    primary: [120, 53, 4] as [number, number, number], // Burnt orange/amber
+    secondary: [245, 158, 11] as [number, number, number], // Orange accent
+  }
+}
+
 export const PDF_COLORS = {
-  NAVY: [13, 27, 62] as [number, number, number],
-  BLUE: [37, 99, 235] as [number, number, number],
-  GOLD: [245, 158, 11] as [number, number, number],
+  get NAVY(): [number, number, number] {
+    if (typeof window !== 'undefined') {
+      const theme = localStorage.getItem('ssc_pdf_theme') || 'original_navy'
+      return PDF_THEMES[theme as keyof typeof PDF_THEMES]?.primary || [13, 27, 62]
+    }
+    return [13, 27, 62]
+  },
+  get BLUE(): [number, number, number] {
+    if (typeof window !== 'undefined') {
+      const theme = localStorage.getItem('ssc_pdf_theme') || 'original_navy'
+      return PDF_THEMES[theme as keyof typeof PDF_THEMES]?.secondary || [37, 99, 235]
+    }
+    return [37, 99, 235]
+  },
+  get GOLD(): [number, number, number] {
+    if (typeof window !== 'undefined') {
+      const theme = localStorage.getItem('ssc_pdf_theme') || 'original_navy'
+      return PDF_THEMES[theme as keyof typeof PDF_THEMES]?.secondary || [245, 158, 11]
+    }
+    return [245, 158, 11]
+  },
   GREEN: [22, 163, 74] as [number, number, number],
   RED: [239, 68, 68] as [number, number, number],
   MUTED: [100, 116, 139] as [number, number, number],
@@ -15,6 +56,13 @@ export const PDF_COLORS = {
 }
 
 export const COMPANY_DETAILS = {
+  get pdfTheme() {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ssc_pdf_theme') || 'original_navy'
+    }
+    return 'original_navy'
+  },
+
   get name() {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('ssc_company_name') || 'SRI SAI CONSTRUCTIONS'

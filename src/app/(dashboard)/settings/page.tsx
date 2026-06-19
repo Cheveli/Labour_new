@@ -15,6 +15,39 @@ const PANEL: React.CSSProperties = { backgroundColor: '#111520', border: '1px so
 const DIM = '#6b7280'
 const INPUT_ST: React.CSSProperties = { backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0', borderRadius: '0.75rem' }
 
+const THEME_OPTIONS = [
+  {
+    id: 'original_navy',
+    name: 'Original Color',
+    primary: 'rgb(13, 27, 62)',
+    secondary: 'rgb(245, 158, 11)',
+  },
+  {
+    id: 'emerald_green',
+    name: 'Emerald Green',
+    primary: 'rgb(6, 78, 59)',
+    secondary: 'rgb(16, 185, 129)',
+  },
+  {
+    id: 'royal_blue',
+    name: 'Royal Blue',
+    primary: 'rgb(30, 58, 138)',
+    secondary: 'rgb(59, 130, 246)',
+  },
+  {
+    id: 'slate_charcoal',
+    name: 'Slate Charcoal',
+    primary: 'rgb(30, 41, 59)',
+    secondary: 'rgb(100, 116, 139)',
+  },
+  {
+    id: 'sunset_amber',
+    name: 'Sunset Amber',
+    primary: 'rgb(120, 53, 4)',
+    secondary: 'rgb(245, 158, 11)',
+  },
+]
+
 export default function SettingsPage() {
   const supabase = createClient()
 
@@ -25,6 +58,7 @@ export default function SettingsPage() {
   const [companyPhone2, setCompanyPhone2] = useState('')
   const [companySlogan, setCompanySlogan] = useState('')
   const [companyAddress, setCompanyAddress] = useState('')
+  const [pdfTheme, setPdfTheme] = useState('original_navy')
 
   const handleSaveCompanyDetails = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,6 +75,7 @@ export default function SettingsPage() {
     localStorage.setItem('ssc_company_phone_2', phone2Val)
     localStorage.setItem('ssc_company_slogan', sloganVal)
     localStorage.setItem('ssc_company_address', addressVal)
+    localStorage.setItem('ssc_pdf_theme', pdfTheme)
 
     const settingsObj = {
       company_name: nameVal,
@@ -48,7 +83,8 @@ export default function SettingsPage() {
       phone_1: phone1Val,
       phone_2: phone2Val,
       slogan: sloganVal,
-      address: addressVal
+      address: addressVal,
+      pdf_theme: pdfTheme
     }
 
     try {
@@ -235,18 +271,67 @@ export default function SettingsPage() {
       setCompanyPhone2(localStorage.getItem('ssc_company_phone_2') || '9550017985')
       setCompanySlogan(localStorage.getItem('ssc_company_slogan') || 'BUILDING YOUR VISION')
       setCompanyAddress(localStorage.getItem('ssc_company_address') || 'Boduppal, Hyderabad')
+      setPdfTheme(localStorage.getItem('ssc_pdf_theme') || 'original_navy')
     } else {
-      supabase.from('projects').select('description').eq('id', '00000000-0000-0000-0000-000000000000').single().then(({ data }) => {
-        if (data && data.description) {
-          try {
-            const parsed = JSON.parse(data.description)
-            setCompanyName(parsed.company_name || 'SRI SAI CONSTRUCTIONS')
-            setContractorName(parsed.contractor_name || 'Cheveli Somaiah')
-            setCompanyPhone1(parsed.phone_1 || '9849678296')
-            setCompanyPhone2(parsed.phone_2 || '9550017985')
-            setCompanySlogan(parsed.slogan || 'BUILDING YOUR VISION')
-            setCompanyAddress(parsed.address || 'Boduppal, Hyderabad')
-          } catch (e) {}
+      // First try to load from company_settings table
+      supabase.from('company_settings').select('key, value').then(({ data, error }) => {
+        if (data && data.length > 0) {
+          const map = new Map(data.map(item => [item.key, item.value]))
+          const name = map.get('company_name') || 'SRI SAI CONSTRUCTIONS'
+          const contractor = map.get('contractor_name') || 'Cheveli Somaiah'
+          const phone1 = map.get('company_phone_1') || '9849678296'
+          const phone2 = map.get('company_phone_2') || '9550017985'
+          const slogan = map.get('company_slogan') || 'BUILDING YOUR VISION'
+          const address = map.get('company_address') || 'Boduppal, Hyderabad'
+          const theme = map.get('pdf_theme') || 'original_navy'
+
+          setCompanyName(name)
+          setContractorName(contractor)
+          setCompanyPhone1(phone1)
+          setCompanyPhone2(phone2)
+          setCompanySlogan(slogan)
+          setCompanyAddress(address)
+          setPdfTheme(theme)
+
+          localStorage.setItem('ssc_company_name', name)
+          localStorage.setItem('ssc_contractor_name', contractor)
+          localStorage.setItem('ssc_company_phone_1', phone1)
+          localStorage.setItem('ssc_company_phone_2', phone2)
+          localStorage.setItem('ssc_company_slogan', slogan)
+          localStorage.setItem('ssc_company_address', address)
+          localStorage.setItem('ssc_pdf_theme', theme)
+        } else {
+          // Fallback to legacy projects configuration description
+          supabase.from('projects').select('description').eq('id', '00000000-0000-0000-0000-000000000000').single().then(({ data }) => {
+            if (data && data.description) {
+              try {
+                const parsed = JSON.parse(data.description)
+                const name = parsed.company_name || 'SRI SAI CONSTRUCTIONS'
+                const contractor = parsed.contractor_name || 'Cheveli Somaiah'
+                const phone1 = parsed.phone_1 || '9849678296'
+                const phone2 = parsed.phone_2 || '9550017985'
+                const slogan = parsed.slogan || 'BUILDING YOUR VISION'
+                const address = parsed.address || 'Boduppal, Hyderabad'
+                const theme = parsed.pdf_theme || 'original_navy'
+
+                setCompanyName(name)
+                setContractorName(contractor)
+                setCompanyPhone1(phone1)
+                setCompanyPhone2(phone2)
+                setCompanySlogan(slogan)
+                setCompanyAddress(address)
+                setPdfTheme(theme)
+
+                localStorage.setItem('ssc_company_name', name)
+                localStorage.setItem('ssc_contractor_name', contractor)
+                localStorage.setItem('ssc_company_phone_1', phone1)
+                localStorage.setItem('ssc_company_phone_2', phone2)
+                localStorage.setItem('ssc_company_slogan', slogan)
+                localStorage.setItem('ssc_company_address', address)
+                localStorage.setItem('ssc_pdf_theme', theme)
+              } catch (e) {}
+            }
+          })
         }
       })
     }
@@ -475,6 +560,63 @@ export default function SettingsPage() {
               className="w-full h-11 px-3 text-xs font-semibold outline-none focus:border-blue-500/50 transition-all"
               style={INPUT_ST}
             />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block">
+              PDF Report Theme Color
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+              {THEME_OPTIONS.map((theme) => {
+                const isSelected = pdfTheme === theme.id
+                return (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    onClick={() => {
+                      setPdfTheme(theme.id)
+                      if (hapticEnabled && 'vibrate' in navigator) {
+                        navigator.vibrate([15])
+                      }
+                    }}
+                    className={`relative flex flex-col p-3 rounded-xl border text-left transition-all group overflow-hidden cursor-pointer select-none ${
+                      isSelected
+                        ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/15'
+                        : 'border-[#1e2435] bg-[#0d1018] hover:border-zinc-700 hover:bg-[#111520]'
+                    }`}
+                  >
+                    {/* Mini PDF Header Mockup Preview */}
+                    <div className="w-full h-12 rounded-lg overflow-hidden border border-zinc-800 flex flex-col mb-3">
+                      {/* Header Primary Block */}
+                      <div
+                        className="flex-1 transition-all duration-300 relative"
+                        style={{ backgroundColor: theme.primary }}
+                      >
+                        {/* Mockup visual document lines */}
+                        <div className="absolute left-2 top-2 w-8 h-1 bg-white/20 rounded" />
+                        <div className="absolute left-2 top-4 w-12 h-1 bg-white/10 rounded" />
+                        <div className="absolute right-2 top-2 w-6 h-1 bg-white/20 rounded" />
+                      </div>
+                      {/* Accent gold/secondary strip */}
+                      <div
+                        className="h-2 transition-all duration-300"
+                        style={{ backgroundColor: theme.secondary }}
+                      />
+                    </div>
+
+                    {/* Theme Label */}
+                    <div className="flex items-center justify-between gap-1 mt-auto">
+                      <span className={`text-[11px] font-bold tracking-tight truncate ${isSelected ? 'text-blue-400' : 'text-zinc-400 group-hover:text-zinc-300'}`}>
+                        {theme.name}
+                      </span>
+                      {isSelected && (
+                        <CheckCircle2 size={13} className="text-blue-400 shrink-0" />
+                      )}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           <div className="space-y-1.5">
