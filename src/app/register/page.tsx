@@ -120,12 +120,11 @@ export default function RegisterPage() {
     try {
       // 1. Upload payment screenshot to Supabase Storage
       const fileExt = screenshotFile.name.split('.').pop()
-      const fileName = `${Math.random().toString(36).slice(2)}-${Date.now()}.${fileExt}`
-      const filePath = `receipts/${fileName}`
+      const fileName = `sub_${Math.random().toString(36).slice(2)}-${Date.now()}.${fileExt}`
 
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('payment-screenshots')
-        .upload(filePath, screenshotFile, {
+        .from('receipts')
+        .upload(fileName, screenshotFile, {
           cacheControl: '3600',
           upsert: false
         })
@@ -136,8 +135,8 @@ export default function RegisterPage() {
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
-        .from('payment-screenshots')
-        .getPublicUrl(filePath)
+        .from('receipts')
+        .getPublicUrl(fileName)
 
       // 2. Submit details to the registration API route
       const regRes = await fetch('/api/auth/register-contractor', {
@@ -157,7 +156,7 @@ export default function RegisterPage() {
 
       if (!regRes.ok) {
         // Cleanup uploaded file if DB insertion failed
-        await supabase.storage.from('payment-screenshots').remove([filePath])
+        await supabase.storage.from('receipts').remove([fileName])
         throw new Error(regData.error || 'Failed to complete registration')
       }
 
