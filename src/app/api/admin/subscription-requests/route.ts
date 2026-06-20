@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
         account_status,
         subscription_status,
         created_at,
-        payments (
+        subscription_payments (
           id,
           amount,
           utr_number,

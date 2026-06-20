@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
 
     // 3. Validation: check duplicate UTR in payments
     const { data: existingPayment } = await supabase
-      .from('payments')
+      .from('subscription_payments')
       .select('utr_number')
       .eq('utr_number', utrNumber)
       .maybeSingle()
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
 
     // 6. Insert payment verification record
     const { error: paymentError } = await supabase
-      .from('payments')
+      .from('subscription_payments')
       .insert({
         user_id: userId,
         amount: Number(amount) || 1,

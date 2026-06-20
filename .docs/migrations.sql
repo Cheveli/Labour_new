@@ -32,8 +32,8 @@ CREATE POLICY "Allow update for owners and superadmins" ON public.users
   FOR UPDATE USING (true);
 
 
--- 2. Create payments table
-CREATE TABLE IF NOT EXISTS public.payments (
+-- 2. Create subscription_payments table
+CREATE TABLE IF NOT EXISTS public.subscription_payments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   amount DECIMAL(10, 2) NOT NULL,
@@ -45,22 +45,22 @@ CREATE TABLE IF NOT EXISTS public.payments (
   approved_by UUID REFERENCES public.users(id)
 );
 
--- Enable Row Level Security on public.payments
-ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
+-- Enable Row Level Security on public.subscription_payments
+ALTER TABLE public.subscription_payments ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist
-DROP POLICY IF EXISTS "Allow select for payments" ON public.payments;
-DROP POLICY IF EXISTS "Allow insert for own payments" ON public.payments;
-DROP POLICY IF EXISTS "Allow update for superadmins" ON public.payments;
+DROP POLICY IF EXISTS "Allow select for payments" ON public.subscription_payments;
+DROP POLICY IF EXISTS "Allow insert for own payments" ON public.subscription_payments;
+DROP POLICY IF EXISTS "Allow update for superadmins" ON public.subscription_payments;
 
--- Create policies for public.payments
-CREATE POLICY "Allow select for payments" ON public.payments 
+-- Create policies for public.subscription_payments
+CREATE POLICY "Allow select for payments" ON public.subscription_payments 
   FOR SELECT USING (true);
 
-CREATE POLICY "Allow insert for own payments" ON public.payments 
+CREATE POLICY "Allow insert for own payments" ON public.subscription_payments 
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Allow update for superadmins" ON public.payments 
+CREATE POLICY "Allow update for superadmins" ON public.subscription_payments 
   FOR UPDATE USING (true);
 
 

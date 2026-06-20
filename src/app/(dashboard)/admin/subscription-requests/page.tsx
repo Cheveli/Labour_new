@@ -182,7 +182,7 @@ export default function SubscriptionRequestsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {requests.map((req) => {
-            const payment = req.payments?.[0] || {}
+            const payment = req.subscription_payments?.[0] || {}
             const isProcessing = actioningId === req.id
 
             return (

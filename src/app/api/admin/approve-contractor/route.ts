@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Update payment record
     const { error: paymentError } = await supabase
-      .from('payments')
+      .from('subscription_payments')
       .update({
         payment_status: 'approved',
         approved_date: new Date().toISOString(),

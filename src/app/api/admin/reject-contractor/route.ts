@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Update payment record status
     const { error: paymentError } = await supabase
-      .from('payments')
+      .from('subscription_payments')
       .update({
         payment_status: 'rejected',
       })
