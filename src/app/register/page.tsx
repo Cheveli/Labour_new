@@ -37,7 +37,55 @@ export default function RegisterPage() {
     fetchAmount()
   }, [])
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const compressImage = (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const maxDim = 800;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = (height / width) * maxDim;
+              width = maxDim;
+            } else {
+              width = (width / height) * maxDim;
+              height = maxDim;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return resolve(file);
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          let quality = 0.9;
+          const attemptCompress = () => {
+            canvas.toBlob((blob) => {
+              if (!blob) return resolve(file);
+              // Target around 100KB max
+              if (blob.size > 100 * 1024 && quality > 0.1) {
+                quality -= 0.1;
+                attemptCompress();
+              } else {
+                resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+              }
+            }, 'image/jpeg', quality);
+          };
+          attemptCompress();
+        };
+        img.onerror = (err) => reject(err);
+      };
+      reader.onerror = (err) => reject(err);
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0]
       // Validate it's an image
@@ -45,12 +93,14 @@ export default function RegisterPage() {
         toast.error('Please upload an image file (PNG/JPG)')
         return
       }
-      // Limit file size to 5MB
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('File size must be under 5MB')
-        return
+      
+      try {
+        const compressed = await compressImage(file)
+        setScreenshotFile(compressed)
+      } catch (err) {
+        toast.error('Failed to compress image')
+        setScreenshotFile(file)
       }
-      setScreenshotFile(file)
     }
   }
 

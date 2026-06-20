@@ -254,24 +254,7 @@ export default function Sidebar() {
               )}
             </div>
 
-            {/* Logout */}
-            <button
-              onClick={handleLogout}
-              suppressHydrationWarning
-              className={cn(
-                "group relative w-full flex items-center gap-2 h-10 rounded-xl text-xs font-black uppercase tracking-widest text-zinc-400 hover:text-white transition-colors cursor-pointer",
-                !showExpanded ? "justify-center" : "justify-center lg:justify-start lg:px-4"
-              )}
-              style={{ background: '#1a1f2e' }}
-            >
-              <LogOut size={14} className="shrink-0" />
-              {showExpanded && <span>Logout</span>}
-              {!showExpanded && (
-                <div className="absolute left-20 hidden group-hover:block bg-[#111520] border border-[#1e2435] px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white z-50 pointer-events-none shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
-                  Logout
-                </div>
-              )}
-            </button>
+            {/* Logout button removed as per user request */}
           </div>
         </div>
       </div>

@@ -8,7 +8,7 @@ import AnalogueTimePicker from '@/components/ui/AnalogueTimePicker'
 import {
   Fingerprint, ShieldCheck, Trash2, Loader2, Briefcase,
   Bell, BellOff, Vibrate, Settings, CheckCircle2, Clock,
-  CalendarCheck, Building2
+  CalendarCheck, Building2, LogOut
 } from 'lucide-react'
 
 const PANEL: React.CSSProperties = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
@@ -21,6 +21,12 @@ const THEME_OPTIONS = [
     name: 'Original Color',
     primary: 'rgb(13, 27, 62)',
     secondary: 'rgb(245, 158, 11)',
+  },
+  {
+    id: 'classic_blue',
+    name: 'Classic Blue',
+    primary: 'rgb(37, 99, 235)',
+    secondary: 'rgb(13, 27, 62)',
   },
   {
     id: 'emerald_green',
@@ -50,6 +56,30 @@ const THEME_OPTIONS = [
 
 export default function SettingsPage() {
   const supabase = createClient()
+
+  const handleLogout = async () => {
+    // 1. Supabase SignOut
+    await supabase.auth.signOut()
+    
+    // 2. Clear all auth cookies manually just in case
+    if (typeof document !== 'undefined') {
+      const cookies = document.cookie.split(';')
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim()
+        if (cookie.startsWith('sb-')) {
+          const name = cookie.split('=')[0]
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+        }
+      }
+      
+      // 3. Clear local/session storage
+      localStorage.clear()
+      sessionStorage.clear()
+    }
+
+    toast.success('Logged out completely')
+    window.location.href = '/login'
+  }
 
   // ── Section E: Construction Details ─────────────────
   const [companyName, setCompanyName] = useState('')
@@ -793,6 +823,34 @@ export default function SettingsPage() {
             className={`relative w-12 h-6 rounded-full transition-colors cursor-pointer shrink-0 ${hapticEnabled ? 'bg-rose-600' : 'bg-zinc-700'}`}
           >
             <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${hapticEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Section F: Account & Logout ───────────────── */}
+      <div style={PANEL} className="p-6 space-y-5">
+        <div className="flex items-center gap-3 pb-4 border-b border-[#1e2435]">
+          <div className="w-9 h-9 rounded-xl bg-red-500/10 flex items-center justify-center">
+            <LogOut size={18} className="text-red-400" />
+          </div>
+          <div>
+            <p className="text-sm font-black text-white uppercase tracking-wide">Account</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest mt-0.5" style={{ color: DIM }}>
+              Manage your session and account security
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between p-4 rounded-xl bg-red-500/5 border border-red-500/15">
+          <div>
+            <p className="text-xs font-black text-white uppercase tracking-wide">Log Out</p>
+            <p className="text-[10px] text-zinc-500 mt-0.5">End your current session</p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="h-10 px-5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer"
+          >
+            <LogOut size={14} /> Log Out
           </button>
         </div>
       </div>

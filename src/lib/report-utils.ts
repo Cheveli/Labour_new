@@ -9,6 +9,10 @@ export const PDF_THEMES = {
     primary: [13, 27, 62] as [number, number, number],
     secondary: [245, 158, 11] as [number, number, number], // Gold/amber border strip
   },
+  classic_blue: {
+    primary: [37, 99, 235] as [number, number, number], // Tech blue
+    secondary: [13, 27, 62] as [number, number, number], // Navy accent
+  },
   emerald_green: {
     primary: [6, 78, 59] as [number, number, number], // Deep green
     secondary: [16, 185, 129] as [number, number, number], // Emerald accent
