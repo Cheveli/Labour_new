@@ -191,8 +191,11 @@ export default function MaterialsPage() {
       const file = e.target.files[0];
       if (file.type.startsWith('image/')) {
         try {
-          const compressed = await compressImage(file);
-          setReceiptFile(compressed);
+          let finalFile = file;
+          if (file.size > 100 * 1024) {
+            finalFile = await compressImage(file);
+          }
+          setReceiptFile(finalFile);
         } catch (err) {
           toast.error('Failed to compress image');
           setReceiptFile(file);

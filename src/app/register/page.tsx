@@ -95,8 +95,11 @@ export default function RegisterPage() {
       }
       
       try {
-        const compressed = await compressImage(file)
-        setScreenshotFile(compressed)
+        let finalFile = file
+        if (file.size > 100 * 1024) {
+          finalFile = await compressImage(file)
+        }
+        setScreenshotFile(finalFile)
       } catch (err) {
         toast.error('Failed to compress image')
         setScreenshotFile(file)
