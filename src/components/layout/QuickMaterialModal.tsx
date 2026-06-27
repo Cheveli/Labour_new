@@ -264,7 +264,9 @@ export default function QuickMaterialModal({
         cost_per_unit: rVal,
         total_amount: finalTotal,
         date: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD
-        notes: notesParts.join(' | ')
+        notes: notesParts.join(' | '),
+        payment_system_v2: true,
+        payment_status: 'unpaid'
       }
 
       const { error } = await supabase.from('materials').insert([payload])

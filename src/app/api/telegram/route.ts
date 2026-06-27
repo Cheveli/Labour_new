@@ -599,13 +599,13 @@ async function getWeeklySummaryMessage(start: Date, end: Date): Promise<string> 
     { data: allContractors }
   ] = await Promise.all([
     supabase.from('attendance').select('*, labour(name, type, daily_rate)').gte('date', startStr).lte('date', endStr),
-    supabase.from('materials').select('total_amount').gte('date', startStr).lte('date', endStr),
+    supabase.from('materials').select('total_amount, payment_status, payment_system_v2').gte('date', startStr).lte('date', endStr),
     supabase.from('income').select('amount').gte('date', startStr).lte('date', endStr),
     supabase.from('contractor_payments').select('*'),
     supabase.from('personal_expenses').select('amount').gte('date', startStr).lte('date', endStr),
     // All-time
     supabase.from('income').select('amount'),
-    supabase.from('materials').select('total_amount'),
+    supabase.from('materials').select('total_amount, payment_status, payment_system_v2'),
     supabase.from('attendance').select('days_worked, custom_rate, overtime_amount, labour(daily_rate)'),
     supabase.from('personal_expenses').select('amount'),
     supabase.from('contractor_payments').select('*')
@@ -638,7 +638,10 @@ async function getWeeklySummaryMessage(start: Date, end: Date): Promise<string> 
   })
 
   // 2. Weekly Materials total
-  const materialsCost = mat?.reduce((acc, curr) => acc + Number(curr.total_amount || 0), 0) || 0
+  const materialsCost = mat?.reduce((acc, curr) => {
+    if (curr.payment_system_v2 && curr.payment_status !== 'paid') return acc
+    return acc + Number(curr.total_amount || 0)
+  }, 0) || 0
 
   // 3. Weekly Income total
   const incomeReceived = inc?.reduce((acc, curr) => acc + Number(curr.amount || 0), 0) || 0
@@ -659,7 +662,10 @@ async function getWeeklySummaryMessage(start: Date, end: Date): Promise<string> 
 
   // 6. Cash Summary Calculations (All-time)
   const allTimeIncome = allInc?.reduce((acc, curr) => acc + Number(curr.amount || 0), 0) || 0
-  const allTimeMaterial = allMat?.reduce((acc, curr) => acc + Number(curr.total_amount || 0), 0) || 0
+  const allTimeMaterial = allMat?.reduce((acc, curr) => {
+    if (curr.payment_system_v2 && curr.payment_status !== 'paid') return acc
+    return acc + Number(curr.total_amount || 0)
+  }, 0) || 0
   const allTimePersonal = allPersExp?.reduce((acc, curr) => acc + Number(curr.amount || 0), 0) || 0
   const allTimeLabour = allAtt?.reduce((acc, att: any) => {
     const rate = att.custom_rate || att.labour?.daily_rate || 0

@@ -6,11 +6,13 @@ import { usePathname } from 'next/navigation'
 import { LayoutDashboard, CalendarCheck, Package, Settings } from 'lucide-react'
 
 const NAV = [
-  { label: 'Dashboard',  href: '/',          Icon: LayoutDashboard },
+  { label: 'Dashboard', href: '/', Icon: LayoutDashboard },
   { label: 'Attendance', href: '/attendance', Icon: CalendarCheck },
-  { label: 'Materials',  href: '/materials',  Icon: Package },
-  { label: 'Settings',   href: '/settings',   Icon: Settings },
+  { label: 'Materials', href: '/materials', Icon: Package },
+  { label: 'Important Dates', href: '/important-dates', Icon: CalendarCheck },
+  { label: 'Settings', href: '/settings', Icon: Settings },
 ]
+
 
 export default function MobileBottomNav() {
   const pathname = usePathname()

@@ -152,7 +152,8 @@ export default function ExportCalculationPage() {
       
       const weeklySummaries = Array.from(weekMap.values()).sort((a: any, b: any) => a.sortKey - b.sortKey)
       const totalLabourCost = weeklySummaries.reduce((a, w) => a + w.gross, 0)
-      const totalMaterialCost = (matData || []).reduce((a: number, m: any) => a + Number(m.total_amount || 0), 0)
+      const filteredMaterials = (matData || []).filter((m: any) => !(m.payment_system_v2 && m.payment_status !== 'paid'))
+      const totalMaterialCost = filteredMaterials.reduce((a: number, m: any) => a + Number(m.total_amount || 0), 0)
       const totalExtraWorkCost = (extraData || []).reduce((a: number, e: any) => a + Number(e.amount || 0), 0)
 
       // 4. Fetch personal expenses (only when "All Projects" is selected)
@@ -175,7 +176,7 @@ export default function ExportCalculationPage() {
 
       setReportData({
         weeklySummaries,
-        materials: matData || [],
+        materials: filteredMaterials,
         extraWork: extraData || [],
         personalExpenses: peData,
         totalLabourCost,

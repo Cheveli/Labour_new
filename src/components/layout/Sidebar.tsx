@@ -6,13 +6,13 @@ import React, { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { 
-  Users, 
-  Briefcase, 
-  CalendarCheck, 
-  Wallet, 
-  TrendingUp, 
-  Package, 
+import {
+  Users,
+  Briefcase,
+  CalendarCheck,
+  Wallet,
+  TrendingUp,
+  Package,
   Menu,
   X,
   LogOut,
@@ -33,6 +33,7 @@ const menuItems = [
   { label: 'Workforce', href: '/labour', icon: Users },
   { label: 'Attendance', href: '/attendance', icon: CalendarCheck },
   { label: 'Materials', href: '/materials', icon: Package },
+  { label: 'Important Dates', href: '/important-dates', icon: CalendarCheck },
   { label: 'Payments', href: '/payments', icon: Wallet },
   { label: 'Reports', href: '/reports', icon: BarChart3 },
   { label: 'Export Calculation', href: '/export-calculation', icon: Calculator },
@@ -85,7 +86,7 @@ export default function Sidebar() {
   const handleLogout = async () => {
     // 1. Supabase SignOut
     await supabase.auth.signOut()
-    
+
     // 2. Clear all auth cookies manually just in case
     if (typeof document !== 'undefined') {
       const cookies = document.cookie.split(';')
@@ -96,7 +97,7 @@ export default function Sidebar() {
           document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
         }
       }
-      
+
       // 3. Clear local/session storage
       localStorage.clear()
       sessionStorage.clear()
@@ -119,7 +120,8 @@ export default function Sidebar() {
       )}
 
       {/* Stylesheet injection for sidebar utilities */}
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         ${isCollapsed ? `
           @media (min-width: 1024px) {
             main {
@@ -212,30 +214,32 @@ export default function Sidebar() {
                 const Icon = item.icon
                 return (
 
-                <Link
-                  key={`${item.label}-${idx}`}
-                  href={item.href}
-                  onClick={() => setIsOpen(false)}
-                  className={cn(
-                    'group relative flex items-center gap-3 py-[10px] rounded-xl text-sm font-semibold transition-all duration-150',
-                    !showExpanded ? 'justify-center px-0 w-10 h-10 mx-auto' : 'px-4',
-                    isActive ? 'text-[#0a0c12] font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                  )}
-                  style={isActive ? {
-                    background: 'linear-gradient(90deg,#3b82f6,#2563eb)',
-                    boxShadow: '0 4px 16px rgba(59,130,246,0.25)',
-                  } : undefined}
-                >
-                  <Icon size={18} className={cn(isActive ? 'text-[#0a0c12]' : 'text-zinc-500 group-hover:text-blue-400', "shrink-0")} />
-                  {showExpanded && <span>{item.label}</span>}
-                  {!showExpanded && (
-                    <div className="absolute left-20 hidden group-hover:block bg-[#111520] border border-[#1e2435] px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white z-50 pointer-events-none shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
-                      {item.label}
-                    </div>
-                  )}
-                </Link>
-              )
-            })})()}
+                  <Link
+                    key={`${item.label}-${idx}`}
+                    href={item.href}
+                    title={!showExpanded ? item.label : undefined}
+                    onClick={() => setIsOpen(false)}
+                    className={cn(
+                      'group relative flex items-center gap-3 py-[10px] rounded-xl text-sm font-semibold transition-all duration-150',
+                      !showExpanded ? 'justify-center px-0 w-10 h-10 mx-auto' : 'px-4',
+                      isActive ? 'text-[#0a0c12] font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                    )}
+                    style={isActive ? {
+                      background: 'linear-gradient(90deg,#3b82f6,#2563eb)',
+                      boxShadow: '0 4px 16px rgba(59,130,246,0.25)',
+                    } : undefined}
+                  >
+                    <Icon size={18} className={cn(isActive ? 'text-[#0a0c12]' : 'text-zinc-500 group-hover:text-blue-400', "shrink-0")} />
+                    {showExpanded && <span>{item.label}</span>}
+                    {!showExpanded && (
+                      <div className="absolute left-20 hidden group-hover:block bg-[#111520] border border-[#1e2435] px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white z-50 pointer-events-none shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
+                        {item.label}
+                      </div>
+                    )}
+                  </Link>
+                )
+              })
+            })()}
           </nav>
 
           {/* Admin Profile & Logout */}

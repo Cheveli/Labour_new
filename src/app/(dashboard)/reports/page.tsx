@@ -74,7 +74,7 @@ export default function ReportsPage() {
     setPage(0)
     let q: any
     if (reportType === 'materials') {
-      q = supabase.from('materials').select('date, name, quantity, unit, total_amount, notes, projects(name)').order('date', { ascending: false })
+      q = supabase.from('materials').select('date, name, quantity, unit, total_amount, notes, payment_system_v2, payment_status, projects(name)').order('date', { ascending: false })
       if (projectId) q = q.eq('project_id', projectId)
     } else if (reportType === 'revenue') {
       q = supabase.from('income').select('date, amount, notes, projects(name)').order('date', { ascending: false })
@@ -167,7 +167,11 @@ export default function ReportsPage() {
       return
     }
 
-    setData(rows || [])
+    let finalRows = rows || []
+    if (reportType === 'materials') {
+      finalRows = finalRows.filter((r: any) => !(r.payment_system_v2 && r.payment_status !== 'paid'))
+    }
+    setData(finalRows)
     setLoading(false)
   }
 

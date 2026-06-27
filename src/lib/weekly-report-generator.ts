@@ -133,12 +133,12 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
   ] = await Promise.all([
     supabase.from('projects').select('*').order('name'),
     supabase.from('attendance').select('*, labour(name, type, daily_rate)').gte('date', startDateStr).lte('date', endDateStr),
-    supabase.from('materials').select('name, total_amount, date').gte('date', startDateStr).lte('date', endDateStr),
+    supabase.from('materials').select('name, total_amount, date, payment_status, payment_system_v2').gte('date', startDateStr).lte('date', endDateStr),
     supabase.from('contractor_payments').select('*'),
     supabase.from('personal_expenses').select('amount, date, person_name, purpose').gte('date', startDateStr).lte('date', endDateStr),
     // All-time data for cash position
     supabase.from('income').select('amount, project_id'),
-    supabase.from('materials').select('total_amount, project_id'),
+    supabase.from('materials').select('total_amount, project_id, payment_status, payment_system_v2'),
     supabase.from('attendance').select('days_worked, custom_rate, overtime_amount, project_id, labour(daily_rate)'),
     supabase.from('personal_expenses').select('amount')
   ])
@@ -209,11 +209,21 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
   // B. Weekly Material Expenses
   const materialExpensesGrouped: Record<string, number> = {}
   materials.forEach((mat: any) => {
+    // Financial rule: ignore v2 unpaid
+    if (isV2(mat) && !isPaid(mat)) return
+
     const name = mat.name || 'Other Materials'
     materialExpensesGrouped[name] = (materialExpensesGrouped[name] || 0) + Number(mat.total_amount || 0)
   })
   const materialExpensesList = Object.entries(materialExpensesGrouped).map(([name, amount]) => ({ name, amount }))
   const totalMaterialExpense = materialExpensesList.reduce((acc, curr) => acc + curr.amount, 0)
+
+  // Material Payment System V2 filtering (financial calculations only):
+  // - Old records (payment_system_v2=false/NULL) keep existing behavior.
+  // - New v2 unpaid records do NOT count towards expenses/balance.
+  const isV2 = (m: { payment_system_v2?: boolean }) => Boolean(m?.payment_system_v2)
+  const isPaid = (m: { payment_status?: string }) => (m?.payment_status || '').toLowerCase() === 'paid'
+
 
   // C. Weekly Contractor Expenses
   const contractorInstallments = getContractorInstallments(contractorPayments)
@@ -252,7 +262,10 @@ export async function generateAndEmailWeeklyReport(config: ReportConfig) {
     return acc + (Number(att.days_worked || 0) * Number(rate)) + Number(att.overtime_amount || 0)
   }, 0)
 
-  const totalAllTimeMaterialCost = allMaterials.reduce((acc: number, curr: any) => acc + Number(curr.total_amount || 0), 0)
+  const totalAllTimeMaterialCost = allMaterials.reduce((acc: number, curr: any) => {
+    if (isV2(curr) && !isPaid(curr)) return acc
+    return acc + Number(curr.total_amount || 0)
+  }, 0)
 
   const totalAllTimeContractorCost = contractorInstallments.reduce((acc, inst) => acc + inst.amount, 0)
 

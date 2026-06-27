@@ -129,7 +129,7 @@ export default function DashboardPage() {
       // 2. Prepare queries with optional project filter
       let incomeQ = supabase.from('income').select('amount, date, project_id')
       let attQ = supabase.from('attendance').select('date, days_worked, custom_rate, overtime_amount, project_id, labour(daily_rate)')
-      let matQ = supabase.from('materials').select('total_amount, date, project_id')
+      let matQ = supabase.from('materials').select('total_amount, date, project_id, payment_status, payment_system_v2')
       let subQ = supabase.from('contractor_payments').select('*')
       let peQ = supabase.from('personal_expenses').select('amount, date')
 
@@ -149,7 +149,7 @@ export default function DashboardPage() {
 
       const incomeData = incomeRes.data
       const attAllData = attRes.data
-      const materialData = matRes.data
+      const materialData = (matRes.data || []).filter((m: any) => !(m.payment_system_v2 && m.payment_status !== 'paid'))
       const contractorPaymentsData = subRes.data || []
       const personalExpensesData = peRes.data || []
 
@@ -463,7 +463,7 @@ export default function DashboardPage() {
       } else if (type === 'LABOUR') {
         q = supabase.from('attendance').select('date, days_worked, custom_rate, overtime_amount, labour(name, daily_rate), projects(name)').order('date', { ascending: true })
       } else if (type === 'MATERIAL') {
-        q = supabase.from('materials').select('date, total_amount, name, quantity, unit, notes, projects(name)').order('date', { ascending: true })
+        q = supabase.from('materials').select('date, total_amount, name, quantity, unit, notes, payment_status, payment_system_v2, projects(name)').order('date', { ascending: true })
       } else if (type === 'PERSONAL_EXPENSE') {
         q = supabase.from('personal_expenses').select('date, amount, person_name, purpose').order('date', { ascending: true })
       } else if (type === 'EXTRA_WORK') {
@@ -562,6 +562,9 @@ export default function DashboardPage() {
         if (filterEnd) q = q.lte('date', filterEnd)
         const res = await q
         data = res.data || []
+        if (type === 'MATERIAL') {
+          data = data.filter((m: any) => !(m.payment_system_v2 && m.payment_status !== 'paid'))
+        }
       }
       setDetailsModalData(data)
       setDetailsPage(0)

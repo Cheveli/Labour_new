@@ -88,3 +88,54 @@ CREATE POLICY "Allow all for settings" ON public.company_settings
 INSERT INTO public.company_settings (key, value)
 VALUES ('subscription_amount', '1')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+
+
+-- =========================================================
+-- 4. Important Dates (construction milestones + personal reminders)
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.important_dates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  date DATE NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE public.important_dates ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow select important dates" ON public.important_dates;
+DROP POLICY IF EXISTS "Allow insert own important dates" ON public.important_dates;
+DROP POLICY IF EXISTS "Allow update own important dates" ON public.important_dates;
+
+CREATE POLICY "Allow select important dates" ON public.important_dates
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Allow insert own important dates" ON public.important_dates
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Allow update own important dates" ON public.important_dates
+  FOR UPDATE USING (auth.uid() = user_id);
+
+
+-- =========================================================
+-- 5. Materials Paid/Unpaid system (v2 only; old rows untouched)
+-- =========================================================
+
+-- Add rollout/version flag + payment fields to existing materials table.
+-- NOTE: This assumes `materials` table already exists.
+
+ALTER TABLE public.materials
+  ADD COLUMN IF NOT EXISTS payment_system_v2 BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) DEFAULT 'unpaid', -- 'paid' | 'unpaid'
+  ADD COLUMN IF NOT EXISTS payment_date DATE,
+  ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(20), -- 'cash' | 'online'
+  ADD COLUMN IF NOT EXISTS account_name TEXT;
+
+-- Optional defaults for v2 workflow
+UPDATE public.materials
+SET
+  payment_status = COALESCE(payment_status, 'unpaid')
+WHERE payment_system_v2 = true;
+

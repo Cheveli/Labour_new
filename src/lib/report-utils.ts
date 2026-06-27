@@ -1,7 +1,5 @@
 import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
-import { format } from 'date-fns'
 import { createClient } from '@supabase/supabase-js'
 
 export const PDF_THEMES = {
@@ -31,6 +29,7 @@ export const PDF_THEMES = {
   }
 }
 
+
 export const PDF_COLORS = {
   get NAVY(): [number, number, number] {
     if (typeof window !== 'undefined') {
@@ -42,7 +41,10 @@ export const PDF_COLORS = {
   get BLUE(): [number, number, number] {
     if (typeof window !== 'undefined') {
       const theme = localStorage.getItem('ssc_pdf_theme') || 'original_navy'
-      return PDF_THEMES[theme as keyof typeof PDF_THEMES]?.secondary || [37, 99, 235]
+      if (theme === 'original_navy') {
+        return [37, 99, 235] // Use bright tech blue for table headers in default navy theme
+      }
+      return PDF_THEMES[theme as keyof typeof PDF_THEMES]?.primary || [37, 99, 235]
     }
     return [37, 99, 235]
   },
@@ -160,6 +162,7 @@ export async function getCompanyDetailsServer() {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function drawPremiumHeader(doc: jsPDF, title: string, subtitle: string, companyDetails?: any) {
   const W = doc.internal.pageSize.getWidth()
   const details = companyDetails || COMPANY_DETAILS
@@ -203,6 +206,7 @@ export function drawPremiumHeader(doc: jsPDF, title: string, subtitle: string, c
   doc.rect(0, 44, W, 3, 'F')
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function drawPremiumFooter(doc: jsPDF, companyDetails?: any) {
   const W = doc.internal.pageSize.getWidth()
   const H = doc.internal.pageSize.getHeight()
@@ -233,6 +237,7 @@ export function numberToWords(n: number): string {
   return 'Rupees ' + conv(Math.floor(n)).trim() + ' Only'
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function exportToExcel(data: any[][], fileName: string, sheetName: string = 'Sheet1') {
   const ws = XLSX.utils.aoa_to_sheet(data)
   const wb = XLSX.utils.book_new()

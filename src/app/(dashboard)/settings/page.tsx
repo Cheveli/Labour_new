@@ -21,42 +21,49 @@ const THEME_OPTIONS = [
     name: 'Original Color',
     primary: 'rgb(13, 27, 62)',
     secondary: 'rgb(245, 158, 11)',
+    tertiary: 'rgb(37, 99, 235)',
   },
   {
     id: 'classic_blue',
     name: 'Classic Blue',
     primary: 'rgb(37, 99, 235)',
     secondary: 'rgb(13, 27, 62)',
+    tertiary: 'rgb(37, 99, 235)',
   },
   {
     id: 'emerald_green',
     name: 'Emerald Green',
     primary: 'rgb(6, 78, 59)',
     secondary: 'rgb(16, 185, 129)',
+    tertiary: 'rgb(6, 78, 59)',
   },
   {
     id: 'royal_blue',
     name: 'Royal Blue',
     primary: 'rgb(30, 58, 138)',
     secondary: 'rgb(59, 130, 246)',
+    tertiary: 'rgb(30, 58, 138)',
   },
   {
     id: 'slate_charcoal',
     name: 'Slate Charcoal',
     primary: 'rgb(30, 41, 59)',
     secondary: 'rgb(100, 116, 139)',
+    tertiary: 'rgb(30, 41, 59)',
   },
   {
     id: 'sunset_amber',
     name: 'Sunset Amber',
     primary: 'rgb(120, 53, 4)',
     secondary: 'rgb(245, 158, 11)',
+    tertiary: 'rgb(120, 53, 4)',
   },
 ]
 
 export default function SettingsPage() {
   const supabase = createClient()
 
+  /* eslint-disable react-hooks/immutability */
   const handleLogout = async () => {
     // 1. Supabase SignOut
     await supabase.auth.signOut()
@@ -80,6 +87,7 @@ export default function SettingsPage() {
     toast.success('Logged out completely')
     window.location.href = '/login'
   }
+  /* eslint-enable react-hooks/immutability */
 
   // ── Section E: Construction Details ─────────────────
   const [companyName, setCompanyName] = useState('')
@@ -140,7 +148,13 @@ export default function SettingsPage() {
   }
 
   // ── Section A: Biometrics ────────────────────────────
-  const [passkeys, setPasskeys] = useState<any[]>([])
+  interface PasskeyItem {
+    id: string
+    friendly_name: string
+    created_at: string
+  }
+
+  const [passkeys, setPasskeys] = useState<PasskeyItem[]>([])
   const [loadingPasskeys, setLoadingPasskeys] = useState(true)
   const [registeringPasskey, setRegisteringPasskey] = useState(false)
   const [friendlyName, setFriendlyName] = useState('')
@@ -150,8 +164,8 @@ export default function SettingsPage() {
     try {
       const { data, error } = await supabase.auth.passkey.list()
       if (error) throw error
-      setPasskeys(data || [])
-    } catch (err: any) {
+      setPasskeys((data || []) as unknown as PasskeyItem[])
+    } catch (err: unknown) {
       console.error('Error listing passkeys:', err)
     } finally {
       setLoadingPasskeys(false)
@@ -174,8 +188,9 @@ export default function SettingsPage() {
       toast.success('Fingerprint registered successfully!')
       setFriendlyName('')
       fetchPasskeys()
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to register fingerprint.')
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      toast.error(errMsg || 'Failed to register fingerprint.')
     } finally {
       setRegisteringPasskey(false)
     }
@@ -188,13 +203,19 @@ export default function SettingsPage() {
       if (error) throw error
       toast.success('Fingerprint deleted.')
       fetchPasskeys()
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete fingerprint.')
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      toast.error(errMsg || 'Failed to delete fingerprint.')
     }
   }
 
   // ── Section B: Default Project ───────────────────────
-  const [projects, setProjects] = useState<any[]>([])
+  interface SettingsProject {
+    id: string
+    name: string
+  }
+
+  const [projects, setProjects] = useState<SettingsProject[]>([])
   const [defaultProjectId, setDefaultProjectId] = useState<string>('')
 
   const fetchProjects = async () => {
@@ -202,77 +223,63 @@ export default function SettingsPage() {
     setProjects(data || [])
   }
 
-  const handleSetDefaultProject = (id: string) => {
+  const saveDefaultProject = async (id: string) => {
     setDefaultProjectId(id)
-    if (id) {
-      localStorage.setItem('ssc_default_project_id', id)
-      localStorage.setItem('ssc_active_project_id', id)
-      localStorage.setItem('ssc_overview_selection', id)
-    } else {
-      localStorage.removeItem('ssc_default_project_id')
-    }
-    toast.success(id ? 'Default project updated.' : 'Default project cleared.')
-    window.dispatchEvent(new Event('ssc_project_changed'))
+    localStorage.setItem('ssc_default_project_id', id)
+    toast.success('Default project updated!')
+    window.dispatchEvent(new Event('ssc_settings_updated'))
   }
 
-  // ── Section C: Notification Reminders ───────────────
+  // ── Section C: Notification Settings ─────────────────
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default')
   const [attendanceReminderEnabled, setAttendanceReminderEnabled] = useState(false)
-  const [attendanceReminderTime, setAttendanceReminderTime] = useState('08:00')
+  const [attendanceReminderTime, setAttendanceReminderTime] = useState('09:00')
   const [weeklyReportEnabled, setWeeklyReportEnabled] = useState(false)
 
-  const loadNotifPrefs = () => {
-    setAttendanceReminderEnabled(localStorage.getItem('ssc_notif_attendance') === 'true')
-    setAttendanceReminderTime(localStorage.getItem('ssc_notif_attendance_time') || '08:00')
-    setWeeklyReportEnabled(localStorage.getItem('ssc_notif_weekly_report') === 'true')
-    if (typeof Notification !== 'undefined') {
+  const checkNotificationPermission = () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
       setNotifPermission(Notification.permission)
     }
   }
 
   const requestNotifPermission = async () => {
-    if (typeof Notification === 'undefined') {
-      toast.error('Notifications are not supported in this browser.')
-      return
-    }
-    const result = await Notification.requestPermission()
-    setNotifPermission(result)
-    if (result === 'granted') {
-      toast.success('Notification permission granted!')
-    } else {
-      toast.error('Permission denied. Please enable notifications from browser settings.')
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      const permission = await Notification.requestPermission()
+      setNotifPermission(permission)
+      if (permission === 'granted') {
+        toast.success('Notifications allowed!')
+      } else {
+        toast.error('Notifications permission denied.')
+      }
     }
   }
 
-  const saveAttendanceReminder = (enabled: boolean, time?: string) => {
-    const t = time ?? attendanceReminderTime
-    localStorage.setItem('ssc_notif_attendance', String(enabled))
-    if (time) localStorage.setItem('ssc_notif_attendance_time', t)
-    setAttendanceReminderEnabled(enabled)
-    if (time) setAttendanceReminderTime(t)
+  const loadNotifPrefs = () => {
+    const attEnabled = localStorage.getItem('ssc_notif_attendance_enabled') === 'true'
+    const attTime = localStorage.getItem('ssc_notif_attendance_time') || '09:00'
+    const weeklyEnabled = localStorage.getItem('ssc_notif_weekly_enabled') === 'true'
 
-    if (enabled && notifPermission === 'granted') {
-      toast.success(`Attendance reminder set for ${t} daily.`)
-    } else if (!enabled) {
-      toast.success('Attendance reminder disabled.')
-    }
+    setAttendanceReminderEnabled(attEnabled)
+    setAttendanceReminderTime(attTime)
+    setWeeklyReportEnabled(weeklyEnabled)
+  }
+
+  const saveAttendanceReminder = (enabled: boolean) => {
+    setAttendanceReminderEnabled(enabled)
+    localStorage.setItem('ssc_notif_attendance_enabled', String(enabled))
+    toast.success(`Daily attendance reminder ${enabled ? 'enabled' : 'disabled'}`)
     window.dispatchEvent(new Event('ssc_settings_updated'))
   }
 
   const saveWeeklyReminder = (enabled: boolean) => {
-    localStorage.setItem('ssc_notif_weekly_report', String(enabled))
     setWeeklyReportEnabled(enabled)
-    if (enabled && notifPermission === 'granted') {
-      toast.success('Weekly reminder set for every Saturday at 7:00 PM.')
-    } else if (!enabled) {
-      toast.success('Weekly report reminder disabled.')
-    }
+    localStorage.setItem('ssc_notif_weekly_enabled', String(enabled))
+    toast.success(`Weekly report reminder ${enabled ? 'enabled' : 'disabled'}`)
     window.dispatchEvent(new Event('ssc_settings_updated'))
   }
 
-  // ── Section D: Haptic Feedback ───────────────────────
+  // ── Section D: Haptic feedback settings ──────────────
   const [hapticEnabled, setHapticEnabled] = useState(true)
-
   const toggleHaptic = (val: boolean) => {
     setHapticEnabled(val)
     localStorage.setItem('ssc_haptic_enabled', String(val))
@@ -284,6 +291,7 @@ export default function SettingsPage() {
 
   // ── On Mount ─────────────────────────────────────────
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     fetchPasskeys()
     fetchProjects()
     loadNotifPrefs()
@@ -304,7 +312,7 @@ export default function SettingsPage() {
       setPdfTheme(localStorage.getItem('ssc_pdf_theme') || 'original_navy')
     } else {
       // First try to load from company_settings table
-      supabase.from('company_settings').select('key, value').then(({ data, error }) => {
+      supabase.from('company_settings').select('key, value').then(({ data }) => {
         if (data && data.length > 0) {
           const map = new Map(data.map(item => [item.key, item.value]))
           const name = map.get('company_name') || 'SRI SAI CONSTRUCTIONS'
@@ -332,10 +340,10 @@ export default function SettingsPage() {
           localStorage.setItem('ssc_pdf_theme', theme)
         } else {
           // Fallback to legacy projects configuration description
-          supabase.from('projects').select('description').eq('id', '00000000-0000-0000-0000-000000000000').single().then(({ data }) => {
-            if (data && data.description) {
+          supabase.from('projects').select('description').eq('id', '00000000-0000-0000-0000-000000000000').single().then(({ data: legacyData }) => {
+            if (legacyData && legacyData.description) {
               try {
-                const parsed = JSON.parse(data.description)
+                const parsed = JSON.parse(legacyData.description)
                 const name = parsed.company_name || 'SRI SAI CONSTRUCTIONS'
                 const contractor = parsed.contractor_name || 'Cheveli Somaiah'
                 const phone1 = parsed.phone_1 || '9849678296'
@@ -365,6 +373,8 @@ export default function SettingsPage() {
         }
       })
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const sectionClass = 'space-y-4'
@@ -492,7 +502,7 @@ export default function SettingsPage() {
             <>
               <select
                 value={defaultProjectId}
-                onChange={(e) => handleSetDefaultProject(e.target.value)}
+                onChange={(e) => saveDefaultProject(e.target.value)}
                 className="w-full h-11 px-4 text-sm font-semibold outline-none focus:border-emerald-500 transition-all"
                 style={INPUT_ST}
               >
@@ -616,22 +626,28 @@ export default function SettingsPage() {
                     }`}
                   >
                     {/* Mini PDF Header Mockup Preview */}
-                    <div className="w-full h-12 rounded-lg overflow-hidden border border-zinc-800 flex flex-col mb-3">
+                    <div className="w-full h-14 rounded-lg overflow-hidden border border-zinc-800 flex flex-col mb-3 bg-[#0d1018]">
                       {/* Header Primary Block */}
                       <div
-                        className="flex-1 transition-all duration-300 relative"
+                        className="h-6 transition-all duration-300 relative"
                         style={{ backgroundColor: theme.primary }}
                       >
                         {/* Mockup visual document lines */}
-                        <div className="absolute left-2 top-2 w-8 h-1 bg-white/20 rounded" />
-                        <div className="absolute left-2 top-4 w-12 h-1 bg-white/10 rounded" />
-                        <div className="absolute right-2 top-2 w-6 h-1 bg-white/20 rounded" />
+                        <div className="absolute left-2 top-1.5 w-8 h-0.5 bg-white/20 rounded" />
+                        <div className="absolute left-2 top-3.5 w-12 h-0.5 bg-white/10 rounded" />
+                        <div className="absolute right-2 top-1.5 w-6 h-0.5 bg-white/20 rounded" />
                       </div>
                       {/* Accent gold/secondary strip */}
                       <div
-                        className="h-2 transition-all duration-300"
+                        className="h-1.5 transition-all duration-300"
                         style={{ backgroundColor: theme.secondary }}
                       />
+                      {/* Table Header Row Mockup */}
+                      <div className="flex-1 flex gap-1 px-2 items-center bg-[#07090e]">
+                        <div className="h-1.5 rounded flex-1" style={{ backgroundColor: theme.tertiary }} />
+                        <div className="h-1.5 rounded flex-1" style={{ backgroundColor: theme.tertiary }} />
+                        <div className="h-1.5 rounded flex-1" style={{ backgroundColor: theme.tertiary }} />
+                      </div>
                     </div>
 
                     {/* Theme Label */}
