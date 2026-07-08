@@ -3,6 +3,28 @@ import { createServerClient } from '@supabase/ssr'
 import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
+  // 1. Create a public anon client to read request cookies and verify session
+  const supabaseAnon = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {},
+      },
+    }
+  )
+
+  // Security Check: verify requester is Super Admin using the anon client
+  const { data: { user: adminUser } } = await supabaseAnon.auth.getUser()
+  if (!adminUser || adminUser.email !== 'saichevelly@gmail.com') {
+    logger.error('Unauthorized contractor rejection attempt', { email: adminUser?.email })
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  // 2. Create admin client with service role key to perform database operations
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -15,13 +37,6 @@ export async function POST(request: NextRequest) {
       },
     }
   )
-
-  // Security Check: verify requester is Super Admin
-  const { data: { user: adminUser } } = await supabase.auth.getUser()
-  if (!adminUser || adminUser.email !== 'saichevelly@gmail.com') {
-    logger.error('Unauthorized contractor rejection attempt', { email: adminUser?.email })
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
 
   try {
     const { userId, paymentId } = await request.json()
