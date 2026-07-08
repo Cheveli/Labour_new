@@ -231,8 +231,8 @@ export default function SubscriptionRequestsPage() {
                         
                         <div className="flex gap-2">
                           <Dialog>
-                            <DialogTrigger render={<Button size="xs" variant="outline" className="text-xs border-zinc-800 text-zinc-300 hover:text-white cursor-pointer h-7 flex items-center gap-1.5" />}>
-                              <ImageIcon size={12} /> Preview
+                            <DialogTrigger render={<button className="inline-flex shrink-0 items-center justify-center border text-xs border-zinc-800 text-zinc-300 hover:bg-zinc-900 hover:text-white cursor-pointer h-7 px-2.5 rounded-lg gap-1.5 bg-zinc-900" />}>
+                              <ImageIcon size={12} className="h-3 w-3" /> Preview
                             </DialogTrigger>
                             <DialogContent className="w-[95vw] max-w-3xl bg-zinc-950 border-zinc-800 text-white rounded-3xl p-4 sm:p-6">
                               <DialogHeader>

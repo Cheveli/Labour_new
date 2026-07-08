@@ -40,10 +40,10 @@ export async function POST(req: Request) {
     // 1. Worker Name Filtering & Aggregation
     const mentionedWorkers = labour?.filter(l => {
       const nameLower = l.name.toLowerCase()
-      return userQueryLower.includes(nameLower) || 
-             nameLower.split(' ').some((part: string) => part.length > 2 && userQueryLower.includes(part))
+      return userQueryLower.includes(nameLower) ||
+        nameLower.split(' ').some((part: string) => part.length > 2 && userQueryLower.includes(part))
     }).map(l => l.name) || []
-    
+
     const hasWorkerMention = mentionedWorkers.length > 0
 
     // Pre-aggregate attendance by worker name
@@ -86,18 +86,18 @@ export async function POST(req: Request) {
             work_history: []
           }
         }
-        
+
         const summary = workerSummary[workerName]
         const days = Number(a.days_worked || 0)
         const rate = Number(a.custom_rate || summary.daily_rate || 0)
         const ot = Number(a.overtime_amount || 0)
         const adv = Number(a.advance_amount || 0)
-        
+
         summary.total_days_worked += days
         summary.total_overtime += ot
         summary.total_advance += adv
         summary.total_earned += (days * rate) + ot
-        
+
         summary.work_history.push({
           date: a.date,
           project: (a.project as any)?.name || 'Unknown',
@@ -111,9 +111,9 @@ export async function POST(req: Request) {
     // Map summaries with conditional detail rendering to keep context small
     const formattedWorkers = Object.values(workerSummary).map(w => {
       const nameLower = w.name.toLowerCase()
-      const isMentioned = userQueryLower.includes(nameLower) || 
-                          nameLower.split(' ').some((part: string) => part.length > 2 && userQueryLower.includes(part))
-      
+      const isMentioned = userQueryLower.includes(nameLower) ||
+        nameLower.split(' ').some((part: string) => part.length > 2 && userQueryLower.includes(part))
+
       return {
         name: w.name,
         role: w.role,
@@ -169,8 +169,8 @@ export async function POST(req: Request) {
         } else {
           parsedNotes = { description: cp.notes || '' };
         }
-      } catch (e) {}
-      
+      } catch (e) { }
+
       let installments = cp.installments || [];
       const sumInstallments = installments.reduce((sum: number, inst: any) => sum + Number(inst.amount || 0), 0);
       if (cp.total_amount > sumInstallments) {
@@ -259,7 +259,7 @@ ${JSON.stringify(context)}
     const data = await response.json()
     const messageObj = data.choices?.[0]?.message
     let reply = messageObj?.content || messageObj?.reasoning || messageObj?.reasoning_content || ''
-    
+
     if (!reply && messageObj) {
       reply = "Sorry, I fetched the database records but was unable to formulate a text response. Please try rephrasing your question."
     }
