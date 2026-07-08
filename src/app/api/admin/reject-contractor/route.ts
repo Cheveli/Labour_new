@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { logger } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
   const supabase = createServerClient(
@@ -18,6 +19,7 @@ export async function POST(request: NextRequest) {
   // Security Check: verify requester is Super Admin
   const { data: { user: adminUser } } = await supabase.auth.getUser()
   if (!adminUser || adminUser.email !== 'saichevelly@gmail.com') {
+    logger.error('Unauthorized contractor rejection attempt', { email: adminUser?.email })
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -27,6 +29,8 @@ export async function POST(request: NextRequest) {
     if (!userId || !paymentId) {
       return NextResponse.json({ error: 'User ID and Payment ID are required' }, { status: 400 })
     }
+
+    logger.info('Starting contractor rejection transaction', { admin: adminUser.email, userId, paymentId })
 
     // 1. Update user account status
     const { error: userError } = await supabase
@@ -49,9 +53,10 @@ export async function POST(request: NextRequest) {
 
     if (paymentError) throw paymentError
 
+    logger.info('Contractor rejection completed successfully', { userId, paymentId })
     return NextResponse.json({ message: 'Contractor account has been rejected.' })
   } catch (error: any) {
-    console.error('Reject contractor error:', error)
+    logger.error('Reject contractor error', error)
     return NextResponse.json({ error: 'Internal server error occurred' }, { status: 500 })
   }
 }
