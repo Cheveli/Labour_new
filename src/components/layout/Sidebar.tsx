@@ -23,6 +23,7 @@ import {
   Phone,
   Settings,
   ShieldCheck,
+  FileText,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -33,6 +34,7 @@ const menuItems = [
   { label: 'Workforce', href: '/labour', icon: Users },
   { label: 'Attendance', href: '/attendance', icon: CalendarCheck },
   { label: 'Materials', href: '/materials', icon: Package },
+  { label: 'Agreements', href: '/agreements', icon: FileText },
   { label: 'Important Dates', href: '/important-dates', icon: CalendarCheck },
   { label: 'Payments', href: '/payments', icon: Wallet },
   { label: 'Reports', href: '/reports', icon: BarChart3 },

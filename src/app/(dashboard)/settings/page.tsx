@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { registerPasskey } from '@/lib/passkey-helpers'
 import { toast } from 'sonner'
@@ -8,7 +9,7 @@ import AnalogueTimePicker from '@/components/ui/AnalogueTimePicker'
 import {
   Fingerprint, ShieldCheck, Trash2, Loader2, Briefcase,
   Bell, BellOff, Vibrate, Settings, CheckCircle2, Clock,
-  CalendarCheck, Building2, LogOut
+  CalendarCheck, Building2, LogOut, FileText
 } from 'lucide-react'
 
 const PANEL: React.CSSProperties = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
@@ -522,6 +523,35 @@ export default function SettingsPage() {
               )}
             </>
           )}
+        </div>
+      </div>
+
+      {/* ── Section F: Agreements Defaults ───────────────── */}
+      <div style={PANEL} className="p-6 space-y-5">
+        <div className="flex items-center gap-3 pb-4 border-b border-[#1e2435]">
+          <div className="w-9 h-9 rounded-xl bg-purple-500/10 flex items-center justify-center">
+            <FileText size={18} className="text-purple-400" />
+          </div>
+          <div>
+            <p className="text-sm font-black text-white uppercase tracking-wide">Agreement Checklist Settings</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest mt-0.5" style={{ color: DIM }}>
+              Manage the default list of construction work specifications
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <p className="text-xs leading-relaxed" style={{ color: DIM }}>
+            Configure the standard list of 19 material/work details (like Cement, Steel, Sand) that are prefilled by default when generating a new construction agreement. You can add new items, delete them, or reorder the rows.
+          </p>
+          <div>
+            <Link
+              href="/settings/agreements"
+              className="inline-flex h-11 px-5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-black uppercase tracking-wider items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <Settings size={14} /> Customize Default Checklist
+            </Link>
+          </div>
         </div>
       </div>
 

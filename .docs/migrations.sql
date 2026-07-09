@@ -139,3 +139,46 @@ SET
   payment_status = COALESCE(payment_status, 'unpaid')
 WHERE payment_system_v2 = true;
 
+
+-- =========================================================
+-- 6. Agreements System for Construction Contracts
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS public.agreements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+  agreement_number TEXT UNIQUE NOT NULL,
+  agreement_date DATE NOT NULL,
+  project_id UUID REFERENCES public.projects(id),
+  site_address TEXT,
+  owner_name TEXT,
+  contractor_name TEXT,
+  total_square_feet DECIMAL(10, 2),
+  rate_per_square_foot DECIMAL(10, 2),
+  total_contract_amount DECIMAL(12, 2),
+  number_of_floors TEXT,
+  work_items JSONB NOT NULL, -- Array of { serial: number, name: string, description: string }
+  owner_signature TEXT,
+  contractor_signature TEXT,
+  witness_signature TEXT,
+  remarks TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Enable RLS on agreements
+ALTER TABLE public.agreements ENABLE ROW LEVEL SECURITY;
+
+-- Fallback alter if table already created in previous run
+ALTER TABLE public.agreements ADD COLUMN IF NOT EXISTS number_of_floors TEXT;
+
+DROP POLICY IF EXISTS "Allow select agreements" ON public.agreements;
+DROP POLICY IF EXISTS "Allow insert agreements" ON public.agreements;
+DROP POLICY IF EXISTS "Allow update agreements" ON public.agreements;
+DROP POLICY IF EXISTS "Allow delete agreements" ON public.agreements;
+
+CREATE POLICY "Allow select agreements" ON public.agreements FOR SELECT USING (true);
+CREATE POLICY "Allow insert agreements" ON public.agreements FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow update agreements" ON public.agreements FOR UPDATE USING (true);
+CREATE POLICY "Allow delete agreements" ON public.agreements FOR DELETE USING (true);
+
