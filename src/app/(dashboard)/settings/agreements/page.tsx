@@ -10,10 +10,29 @@ const DIM = '#6b7280'
 const INPUT_ST = { backgroundColor: '#0d1018', border: '1px solid #1e2435', color: '#f0f0f0', borderRadius: '0.5rem' }
 
 const DEFAULT_WORK_ITEMS = [
-  'Cement', 'Steel', 'Bricks / Blocks', 'Sand', 'Coarse Aggregate (Metal)',
-  'Fine Aggregate', 'Concrete Mix', 'Roof Height', 'Roof Design', 'Steel Quantity',
-  'Water Supply', 'Walls', 'Doors', 'Windows', 'Painting', 'Flooring',
-  'Staircase', 'Columns', 'Beams'
+  'Cement (Slab) / సిమెంట్ (స్లాబ్)',
+  'Cement (Walls) / సిమెంట్ (గోడలు)',
+  'Steel / స్టీల్',
+  'Bricks / ఇటుకలు',
+  'Sand / ఇసుక',
+  'Slab Electrical Pipe / స్లాబ్ ఎలక్ట్రికల్ పైపు',
+  'Wall Electrical Pipe / గోడల ఎలక్ట్రికల్ పైపు',
+  'Electrical Wire / ఎలక్ట్రికల్ వైర్',
+  'Switches / స్విచ్లు',
+  'Door Frames / డోర్ ఫ్రేమ్లు',
+  'Doors & Windows / తలుపులు మరియు కిటికీలు',
+  'Flooring Marble / ఫ్లోరింగ్ మార్బుль',
+  'Water Pipe / నీటి పైపు',
+  'Staircase / మెట్లు',
+  'Tiles / టైల్స్',
+  'Sintex Water Tank / సిన్టెక్స్ నీటి ట్యాంక్',
+  'False Ceiling / ఫాల్స్ సీలింగ్',
+  'Columns / కాలమ్స్',
+  'Beams / బీమ్స్',
+  'Water Taps / నీటి ట్యాపులు',
+  'Western Commode / వెస్ట్రన్ కమోడ్',
+  'Indian Commode / ఇండియన్ కమోడ్',
+  'Painting / పెయింటింగ్'
 ]
 
 interface WorkItem {
@@ -29,7 +48,18 @@ export default function AgreementSettingsPage() {
     const saved = localStorage.getItem('ssc_agreement_default_items')
     if (saved) {
       try {
-        setItems(JSON.parse(saved))
+        const parsed = JSON.parse(saved)
+        const hasTelugu = parsed.some((item: any) => /[\u0c00-\u0c7f]/.test(item.name))
+        if (parsed.length < 20 || !hasTelugu) {
+          loadDefaults()
+          // Automatically save updated migrated defaults
+          localStorage.setItem('ssc_agreement_default_items', JSON.stringify(DEFAULT_WORK_ITEMS.map((name, idx) => ({
+            id: `${idx}-${Date.now()}-${Math.random()}`,
+            name
+          }))))
+        } else {
+          setItems(parsed)
+        }
       } catch (e) {
         loadDefaults()
       }
@@ -52,7 +82,7 @@ export default function AgreementSettingsPage() {
   }
 
   const handleReset = () => {
-    if (confirm('Reset checklist to standard 19 default items? Any custom items will be lost.')) {
+    if (confirm('Reset checklist to standard 23 default items? Any custom items will be lost.')) {
       loadDefaults()
       toast.success('Reset to defaults')
     }

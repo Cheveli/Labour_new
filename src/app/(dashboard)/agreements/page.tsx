@@ -11,8 +11,8 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table'
-import { 
-  Plus, Loader2, FileText, Trash2, Edit3, Download, 
+import {
+  Plus, Loader2, FileText, Trash2, Edit3, Download,
   ArrowUp, ArrowDown, Check, CheckCircle2, ChevronRight, X, Info
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { drawPremiumHeader, drawPremiumFooter, PDF_COLORS } from '@/lib/report-utils'
+import { TELUGU_FONT_BASE64 } from '@/lib/telugu-font'
 
 const PANEL = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
 const DIM = '#6b7280'
@@ -35,7 +36,7 @@ interface Agreement {
   id: string
   agreement_number: string
   agreement_date: string
-  project_id: string
+  project_id?: string | null
   site_address: string
   owner_name: string
   contractor_name: string
@@ -53,10 +54,29 @@ interface Agreement {
 }
 
 const DEFAULT_WORK_ITEMS = [
-  'Cement', 'Steel', 'Bricks / Blocks', 'Sand', 'Coarse Aggregate (Metal)',
-  'Fine Aggregate', 'Concrete Mix', 'Roof Height', 'Roof Design', 'Steel Quantity',
-  'Water Supply', 'Walls', 'Doors', 'Windows', 'Painting', 'Flooring',
-  'Staircase', 'Columns', 'Beams'
+  'Cement (Slab) / సిమెంట్ (స్లాబ్)',
+  'Cement (Walls) / సిమెంట్ (గోడలు)',
+  'Steel / స్టీల్',
+  'Bricks / ఇటుకలు',
+  'Sand / ఇసుక',
+  'Slab Electrical Pipe / స్లాబ్ ఎలక్ట్రికల్ పైపు',
+  'Wall Electrical Pipe / గోడల ఎలక్ట్రికల్ పైపు',
+  'Electrical Wire / ఎలక్ట్రికల్ వైర్',
+  'Switches / స్విచ్లు',
+  'Door Frames / డోర్ ఫ్రేమ్లు',
+  'Doors & Windows / తలుపులు మరియు కిటికీలు',
+  'Flooring Marble / ఫ్లోరింగ్ మార్బుల్',
+  'Water Pipe / నీటి పైపు',
+  'Staircase / మెట్లు',
+  'Tiles / టైల్స్',
+  'Sintex Water Tank / సిన్టెక్స్ నీటి ట్యాంక్',
+  'False Ceiling / ఫాల్స్ సీలింగ్',
+  'Columns / కాలమ్స్',
+  'Beams / బీమ్స్',
+  'Water Taps / నీటి ట్యాపులు',
+  'Western Commode / వెస్ట్రన్ కమోడ్',
+  'Indian Commode / ఇండియన్ కమోడ్',
+  'Painting / పెయింటింగ్'
 ]
 
 export default function AgreementsPage() {
@@ -75,11 +95,14 @@ export default function AgreementsPage() {
   const [projectId, setProjectId] = useState('')
   const [siteAddress, setSiteAddress] = useState('')
   const [ownerName, setOwnerName] = useState('')
+  const [ownerFatherName, setOwnerFatherName] = useState('')
+  const [ownerPhone, setOwnerPhone] = useState('')
   const [contractorName, setContractorName] = useState('')
   const [ratePerSquareFoot, setRatePerSquareFoot] = useState<number>(0)
   const [numberOfFloors, setNumberOfFloors] = useState<string>('G+1')
   const [workItems, setWorkItems] = useState<WorkItem[]>([])
   const [remarks, setRemarks] = useState('')
+  const [hasDraft, setHasDraft] = useState(false)
 
   // Company profile details for PDF
   const [companyDetails, setCompanyDetails] = useState({
@@ -103,6 +126,97 @@ export default function AgreementsPage() {
       fetchAgreements()
     }
   }, [projects])
+
+  // Load draft from localStorage on form open
+  useEffect(() => {
+    if (showForm) {
+      const draft = localStorage.getItem('ssc_agreement_form_draft')
+      if (draft) {
+        try {
+          const data = JSON.parse(draft)
+          const currentId = editingAgreement ? editingAgreement.id : 'new'
+          if (data.editingId === currentId) {
+            setHasDraft(true)
+          } else {
+            setHasDraft(false)
+          }
+        } catch (e) {
+          setHasDraft(false)
+        }
+      } else {
+        setHasDraft(false)
+      }
+    }
+  }, [showForm, editingAgreement])
+
+  // Auto-save form progress to localStorage on any state changes
+  useEffect(() => {
+    if (!showForm) return
+
+    const draftData = {
+      editingId: editingAgreement ? editingAgreement.id : 'new',
+      agreementNumber,
+      agreementDate,
+      projectId,
+      siteAddress,
+      ownerName,
+      ownerFatherName,
+      ownerPhone,
+      contractorName,
+      ratePerSquareFoot,
+      numberOfFloors,
+      workItems,
+      remarks
+    }
+
+    localStorage.setItem('ssc_agreement_form_draft', JSON.stringify(draftData))
+  }, [
+    showForm,
+    editingAgreement,
+    agreementNumber,
+    agreementDate,
+    projectId,
+    siteAddress,
+    ownerName,
+    ownerFatherName,
+    ownerPhone,
+    contractorName,
+    ratePerSquareFoot,
+    numberOfFloors,
+    workItems,
+    remarks
+  ])
+
+  const restoreDraft = () => {
+    const draft = localStorage.getItem('ssc_agreement_form_draft')
+    if (draft) {
+      try {
+        const data = JSON.parse(draft)
+        setAgreementNumber(data.agreementNumber || '')
+        setAgreementDate(data.agreementDate || '')
+        setProjectId(data.projectId || '')
+        setSiteAddress(data.siteAddress || '')
+        setOwnerName(data.ownerName || '')
+        setOwnerFatherName(data.ownerFatherName || '')
+        setOwnerPhone(data.ownerPhone || '')
+        setContractorName(data.contractorName || '')
+        setRatePerSquareFoot(Number(data.ratePerSquareFoot) || 0)
+        setNumberOfFloors(data.numberOfFloors || 'G+1')
+        setWorkItems(data.workItems || [])
+        setRemarks(data.remarks || '')
+        toast.success('Draft restored successfully!')
+      } catch (e) {
+        toast.error('Failed to restore draft.')
+      }
+    }
+    setHasDraft(false)
+  }
+
+  const discardDraft = () => {
+    localStorage.removeItem('ssc_agreement_form_draft')
+    setHasDraft(false)
+    toast.info('Draft discarded.')
+  }
 
   const fetchCompanyDetails = () => {
     const localName = localStorage.getItem('ssc_company_name')
@@ -177,31 +291,38 @@ export default function AgreementsPage() {
   // Auto pre-fill default values on creation
   const handleOpenCreate = () => {
     setEditingAgreement(null)
-    
+
     // Auto generate agreement number
     const year = new Date().getFullYear()
     const nextNum = agreements.length + 1
     setAgreementNumber(`AGR-${year}-${String(nextNum).padStart(5, '0')}`)
     setAgreementDate(new Date().toISOString().split('T')[0])
-    
+
     setProjectId('')
     setSiteAddress('')
     setOwnerName('')
+    setOwnerFatherName('')
+    setOwnerPhone('')
     setContractorName(companyDetails.contractor)
     setRatePerSquareFoot(0)
     setNumberOfFloors('G+1')
     setRemarks('All materials and works mentioned above are included in this agreement. Any additional work will be charged extra as mutually agreed.')
 
-    // Load custom checklist items if saved in Settings, else standard 19
+    // Load custom checklist items if saved in Settings, else standard 23
     const savedDefaults = localStorage.getItem('ssc_agreement_default_items')
     if (savedDefaults) {
       try {
         const parsed = JSON.parse(savedDefaults)
-        setWorkItems(parsed.map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          description: ''
-        })))
+        const hasTelugu = parsed.some((item: any) => /[\u0c00-\u0c7f]/.test(item.name))
+        if (parsed.length < 20 || !hasTelugu) {
+          loadDefaultChecklist()
+        } else {
+          setWorkItems(parsed.map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            description: ''
+          })))
+        }
       } catch (e) {
         loadDefaultChecklist()
       }
@@ -224,14 +345,25 @@ export default function AgreementsPage() {
     setEditingAgreement(agreement)
     setAgreementNumber(agreement.agreement_number)
     setAgreementDate(agreement.agreement_date)
-    setProjectId(agreement.project_id)
-    setSiteAddress(agreement.site_address)
-    setOwnerName(agreement.owner_name)
-    setContractorName(agreement.contractor_name)
-    setRatePerSquareFoot(agreement.rate_per_square_foot)
+    setProjectId(agreement.project_id || '')
+    setSiteAddress(agreement.site_address || '')
+    const ownerParts = (agreement.owner_name || '').split(' | ')
+    const ownerVal = ownerParts[0] || ''
+
+    const soPart = ownerParts.find((p: string) => p.startsWith('S/o: '))
+    const fatherVal = soPart ? soPart.replace('S/o: ', '') : ''
+
+    const phPart = ownerParts.find((p: string) => p.startsWith('Ph: '))
+    const phoneVal = phPart ? phPart.replace('Ph: ', '') : ''
+
+    setOwnerName(ownerVal)
+    setOwnerFatherName(fatherVal)
+    setOwnerPhone(phoneVal)
+    setContractorName(agreement.contractor_name || '')
+    setRatePerSquareFoot(agreement.rate_per_square_foot || 0)
     setNumberOfFloors(agreement.number_of_floors || '')
-    setWorkItems(agreement.work_items)
-    setRemarks(agreement.remarks)
+    setWorkItems(agreement.work_items || [])
+    setRemarks(agreement.remarks || '')
     setShowForm(true)
   }
 
@@ -277,7 +409,11 @@ export default function AgreementsPage() {
       agreement_date: agreementDate,
       project_id: projectId || null,
       site_address: siteAddress,
-      owner_name: ownerName,
+      owner_name: [
+        ownerName.trim(),
+        ownerFatherName.trim() ? `S/o: ${ownerFatherName.trim()}` : '',
+        ownerPhone.trim() ? `Ph: ${ownerPhone.trim()}` : ''
+      ].filter(Boolean).join(' | '),
       contractor_name: contractorName,
       rate_per_square_foot: Number(ratePerSquareFoot),
       number_of_floors: numberOfFloors,
@@ -287,8 +423,14 @@ export default function AgreementsPage() {
 
     setSaving(true)
     try {
+      let savedRecord: any = null
       if (editingAgreement) {
-        const { error } = await supabase.from('agreements').update(payload).eq('id', editingAgreement.id)
+        const { data, error } = await supabase.from('agreements')
+          .update(payload)
+          .eq('id', editingAgreement.id)
+          .select('*')
+          .maybeSingle()
+
         if (error) {
           if (error.code === 'PGRST205') {
             saveLocalAgreement(editingAgreement.id, payload)
@@ -296,9 +438,14 @@ export default function AgreementsPage() {
           }
           throw error
         }
+        savedRecord = data
         toast.success('Agreement updated successfully!')
       } else {
-        const { error } = await supabase.from('agreements').insert([payload])
+        const { data, error } = await supabase.from('agreements')
+          .insert([payload])
+          .select('*')
+          .maybeSingle()
+
         if (error) {
           if (error.code === 'PGRST205') {
             saveLocalAgreement(null, payload)
@@ -306,10 +453,26 @@ export default function AgreementsPage() {
           }
           throw error
         }
+        savedRecord = data
         toast.success('Agreement created successfully!')
       }
+
       setShowForm(false)
       fetchAgreements()
+      localStorage.removeItem('ssc_agreement_form_draft')
+
+      // Automatically generate PDF on save
+      const activeProject = projects.find(p => p.id === payload.project_id)
+      const fullRecord = {
+        ...payload,
+        id: savedRecord?.id || (editingAgreement ? editingAgreement.id : `db-${Date.now()}`),
+        created_at: savedRecord?.created_at || new Date().toISOString(),
+        project: activeProject ? { name: activeProject.name } : undefined
+      }
+      setTimeout(() => {
+        generatePDF(fullRecord)
+      }, 300)
+
     } catch (err: any) {
       console.warn('DB save failed, falling back to local storage:', err)
       saveLocalAgreement(editingAgreement ? editingAgreement.id : null, payload)
@@ -321,10 +484,19 @@ export default function AgreementsPage() {
   const saveLocalAgreement = (id: string | null, payload: any) => {
     const local = localStorage.getItem('ssc_agreements')
     let list = local ? JSON.parse(local) : []
+    let recordToDownload: any = null
+
+    const activeProject = projects.find(p => p.id === payload.project_id)
 
     if (id) {
       // Edit mode
-      list = list.map((item: any) => item.id === id ? { ...item, ...payload, updated_at: new Date().toISOString() } : item)
+      const existing = list.find((item: any) => item.id === id)
+      recordToDownload = {
+        ...existing,
+        ...payload,
+        project: activeProject ? { name: activeProject.name } : undefined
+      }
+      list = list.map((item: any) => item.id === id ? recordToDownload : item)
       toast.success('Agreement updated successfully!')
     } else {
       // Create mode
@@ -334,14 +506,25 @@ export default function AgreementsPage() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
+      recordToDownload = {
+        ...newRecord,
+        project: activeProject ? { name: activeProject.name } : undefined
+      }
       list.unshift(newRecord)
       toast.success('Agreement created successfully!')
     }
 
     localStorage.setItem('ssc_agreements', JSON.stringify(list))
+    localStorage.removeItem('ssc_agreement_form_draft')
     setShowForm(false)
     loadLocalAgreements()
     setSaving(false)
+
+    if (recordToDownload) {
+      setTimeout(() => {
+        generatePDF(recordToDownload)
+      }, 300)
+    }
   }
 
   // Dynamic checklist actions
@@ -388,14 +571,25 @@ export default function AgreementsPage() {
     setProjectId(pId)
     const selected = projects.find(p => p.id === pId)
     if (selected) {
-      setOwnerName(selected.owner_name || '')
+      const ownerParts = (selected.owner_name || '').split(' | ')
+      const ownerVal = ownerParts[0] || ''
+
+      const soPart = ownerParts.find((p: string) => p.startsWith('S/o: '))
+      const fatherVal = soPart ? soPart.replace('S/o: ', '') : ''
+
+      const phPart = ownerParts.find((p: string) => p.startsWith('Ph: '))
+      const phoneVal = phPart ? phPart.replace('Ph: ', '') : ''
+
+      setOwnerName(ownerVal)
+      setOwnerFatherName(fatherVal)
+      setOwnerPhone(phoneVal)
       // Check if address is stored in project description/address
       try {
         if (selected.description && selected.description.includes('{')) {
           const parsed = JSON.parse(selected.description)
           setSiteAddress(parsed.address || '')
         }
-      } catch (e) {}
+      } catch (e) { }
     }
   }
 
@@ -423,7 +617,7 @@ export default function AgreementsPage() {
 
     doc.setDrawColor(255, 255, 255)
     doc.setLineWidth(0.8)
-    
+
     // Roof triangle
     doc.line(x + 4, y + 9, x + 8, y + 4)
     doc.line(x + 8, y + 4, x + 12, y + 9)
@@ -437,7 +631,7 @@ export default function AgreementsPage() {
   const drawCursiveSignature = (doc: jsPDF, x: number, y: number) => {
     doc.setDrawColor(37, 99, 235) // Blue pen color
     doc.setLineWidth(0.5)
-    
+
     // Cursive path segments
     doc.line(x, y - 2, x + 4, y - 6)
     doc.line(x + 4, y - 6, x + 8, y - 1)
@@ -450,8 +644,70 @@ export default function AgreementsPage() {
     doc.line(x + 32, y - 1, x + 40, y - 4)
   }
 
+  const containsTelugu = (text: string): boolean => {
+    return /[\u0c00-\u0c7f]/.test(text || '');
+  };
+
+  const sanitizeText = (text: string): string => {
+    if (!text) return '';
+    return text
+      .replace(/₹/g, 'Rs. ')
+      .replace(/[‘’`´\u2018\u2019\u00b9]/g, "'")
+      .replace(/[“”]/g, '"');
+  };
+
+  const drawTeluguTextToCanvasSync = (text: string, widthMm: number, heightMm: number): string => {
+    if (typeof window === 'undefined') return '';
+    const canvas = document.createElement('canvas');
+
+    const scale = 3.5;
+    const pxPerMm = 96 / 25.4;
+    canvas.width = Math.round(widthMm * pxPerMm * scale);
+    canvas.height = Math.round(heightMm * pxPerMm * scale);
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.scale(scale, scale);
+
+    ctx.fillStyle = '#000000';
+    ctx.font = 'normal 10px "Noto Sans Telugu", "Gidugu", "Inter", sans-serif';
+    ctx.textBaseline = 'middle';
+
+    const padX = 4 * pxPerMm;
+    const lines = text.split('\n');
+    const lineSpacing = 3.8 * pxPerMm;
+    const startY = (heightMm / 2) * pxPerMm - ((lines.length - 1) * lineSpacing / 2);
+
+    lines.forEach((line, index) => {
+      ctx.fillText(line, padX, startY + (index * lineSpacing));
+    });
+
+    return canvas.toDataURL('image/jpeg', 0.9);
+  };
+
   // Generate Construction Agreement PDF matching the exact template layout
-  const generatePDF = (agr: Agreement) => {
+  const generatePDF = async (agr: Agreement) => {
+    // Ensure Telugu webfont is loaded in document head
+    if (typeof window !== 'undefined' && !document.getElementById('telugu-webfont')) {
+      const link = document.createElement('link');
+      link.id = 'telugu-webfont';
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Gidugu&family=Noto+Sans+Telugu:wght@400;700&display=swap';
+      document.head.appendChild(link);
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        await document.fonts.ready;
+      } catch (e) {
+        console.warn('Fonts ready wait failed:', e);
+      }
+    }
+
     const doc = new jsPDF({
       orientation: 'p',
       unit: 'mm',
@@ -461,12 +717,22 @@ export default function AgreementsPage() {
     const W = doc.internal.pageSize.getWidth()
     const H = doc.internal.pageSize.getHeight()
 
+    // Register Telugu Gidugu Font (supports both English & Telugu glyphs)
+    try {
+      doc.addFileToVFS('Gidugu-Regular.ttf', TELUGU_FONT_BASE64)
+      doc.addFont('Gidugu-Regular.ttf', 'Gidugu', 'normal')
+      doc.addFont('Gidugu-Regular.ttf', 'Gidugu', 'bold')
+      doc.setFont('Gidugu', 'normal')
+    } catch (e) {
+      console.warn('Failed to load Telugu font:', e)
+    }
+
     // Color definitions
     const greyText = [100, 116, 139]
     const lightGreyLine = [225, 230, 240]
 
-    // Function to draw header only on Page 1 (No circle logo, bigger brand name)
-    const drawPremiumHeaderPage1 = () => {
+    // Function to draw header on Page 1 (Keep existing layout but improve spacing/alignment)
+    const drawPremiumHeader = (pageNum: number) => {
       // 1. Solid Navy background
       doc.setFillColor(13, 27, 62)
       doc.rect(0, 0, W, 38, 'F')
@@ -475,318 +741,418 @@ export default function AgreementsPage() {
       doc.setFillColor(245, 158, 11)
       doc.rect(0, 38, W, 1.8, 'F')
 
-      //  Sri Sai Constructions Title (Left) - HIGHLIGHT HEADER
+      // Sri Sai Constructions Title (Left) - HIGHLIGHT HEADER
       doc.setTextColor(255, 255, 255)
       doc.setFont('helvetica', 'bold')
-      doc.setFontSize(18) // Highlight size
-      doc.text('SRI SAI CONSTRUCTIONS', 14, 12)
+      doc.setFontSize(18) // 18pt = 24px
+      doc.text('SRI SAI CONSTRUCTIONS', 15, 12)
 
       doc.setTextColor(245, 158, 11)
       doc.setFont('helvetica', 'bold')
-      doc.setFontSize(7.5)
-      doc.text('BUILDING YOUR VISION', 14, 16.5)
+      doc.setFontSize(8.25) // 8.25pt = 11px
+      doc.text('BUILDING YOUR VISION', 15, 16.5)
 
       // Spaced details below left title
       doc.setTextColor(230, 235, 245)
       doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7)
-      doc.text(`Boduppal, Hyderabad, Telangana - 500092`, 14, 23)
-      doc.text(`Contractor: Cheveli Somaiah`, 14, 27.5)
-      doc.text(`Ph: 9849678296 / 9550017985`, 14, 32)
+      doc.setFontSize(7.5) // 7.5pt = 10px
+      doc.text('Boduppal, Hyderabad, Telangana - 500092', 15, 23)
+      doc.text('Contractor: Cheveli Somaiah', 15, 27.5)
+      doc.text('Ph: 9849678296 / 9550017985', 15, 32)
 
-      // Title & orange badge (Right)
+      // Title & orange badge (Right) - repositioned to prevent overlaps
       doc.setTextColor(255, 255, 255)
       doc.setFont('helvetica', 'bold')
-      doc.setFontSize(12)
-      doc.text('CONSTRUCTION AGREEMENT', W - 14, 12, { align: 'right' })
+      doc.setFontSize(15) // 15pt = 20px Bold
+      doc.text('CONSTRUCTION AGREEMENT', W - 15, 15, { align: 'right' })
 
       // Badge rounded rect
       doc.setFillColor(245, 158, 11)
-      doc.roundedRect(W - 48, 14.5, 34, 4.5, 0.8, 0.8, 'F')
+      doc.roundedRect(W - 53, 17.5, 38, 5, 0.8, 0.8, 'F')
       doc.setTextColor(255, 255, 255)
       doc.setFont('helvetica', 'bold')
-      doc.setFontSize(7)
-      doc.text('AGREEMENT CONTRACT', W - 31, 17.8, { align: 'center' })
+      doc.setFontSize(8.25) // 8.25pt = 11px
+      doc.text('AGREEMENT CONTRACT', W - 34, 21, { align: 'center' })
 
-      // Metadata
+      // Metadata - aligned on the right side
       doc.setTextColor(220, 225, 235)
       doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7.5)
-      doc.text(`Agreement No : ${agr.agreement_number}`, W - 14, 27.5, { align: 'right' })
-      doc.text(`Date : ${new Date(agr.agreement_date).toLocaleDateString('en-GB')}`, W - 14, 32, { align: 'right' })
+      doc.setFontSize(8.25) // 8.25pt = 11px
+      doc.text(`Agreement No : ${agr.agreement_number}`, W - 15, 29, { align: 'right' })
+      doc.text(`Date : ${new Date(agr.agreement_date).toLocaleDateString('en-GB')}`, W - 15, 33.5, { align: 'right' })
+    }
 
-      // Page number pill inside header (prevents overlapping details)
-      doc.setDrawColor(245, 158, 11)
-      doc.setLineWidth(0.4)
+    // Function to draw header for continuation pages (Page 2+)
+    const drawContinuationHeader = (pageNum: number) => {
+      // 15mm high navy bar
       doc.setFillColor(13, 27, 62)
-      doc.roundedRect(W - 32, 4, 18, 4, 0.6, 0.6, 'FD')
+      doc.rect(0, 0, W, 15, 'F')
+
+      // Orange bottom border
+      doc.setFillColor(245, 158, 11)
+      doc.rect(0, 15, W, 1.2, 'F')
+
+      // Left text
       doc.setTextColor(255, 255, 255)
       doc.setFont('helvetica', 'bold')
-      doc.setFontSize(6.5)
-      doc.text('Page 1 of 2', W - 23, 7, { align: 'center' })
+      doc.setFontSize(8.25) // 11px
+      doc.text('CONSTRUCTION AGREEMENT - CONTINUATION', 15, 9.5)
+
+      // Right text (Agreement No) - aligned next to page number badge
+      doc.setTextColor(220, 225, 235)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8.25) // 11px
+      doc.text(`Agreement No : ${agr.agreement_number}`, W - 40, 9.5, { align: 'right' })
     }
 
     // Spaced Footer drawing function for all pages
-    const drawSpacedFooter = () => {
+    const drawSpacedFooter = (pageNum: number) => {
       // 1. Navy bottom background
       doc.setFillColor(13, 27, 62)
-      doc.rect(0, H - 12, W, 12, 'F')
+      doc.rect(0, H - 8, W, 8, 'F')
 
       // 2. Orange top border
       doc.setFillColor(245, 158, 11)
-      doc.rect(0, H - 12, W, 1.5, 'F')
+      doc.rect(0, H - 8, W, 1.2, 'F')
 
       // 3. Spaced footer details
       doc.setTextColor(230, 235, 245)
       doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7.5)
+      doc.setFontSize(6.75) // 6.75pt = 9px
 
       // Left
-      doc.text('Ph: 9849678296 / 9550017985', 14, H - 5)
+      doc.text('SRI SAI CONSTRUCTIONS', 15, H - 3.5)
       // Center
-      doc.text('Boduppal, Hyderabad, Telangana - 500092', W / 2, H - 5, { align: 'center' })
+      doc.text('Ph: 9849678296 / 9550017985', W / 2, H - 3.5, { align: 'center' })
       // Right
-      doc.text('SRI SAI CONSTRUCTIONS', W - 14, H - 5, { align: 'right' })
+      doc.text('Boduppal, Hyderabad, Telangana - 500092', W - 15, H - 3.5, { align: 'right' })
     }
 
     // DRAW PAGE 1
-    drawPremiumHeaderPage1()
-    drawSpacedFooter()
+    drawPremiumHeader(1)
+    drawSpacedFooter(1)
 
-    // Details Grid Layout (3 Column Grid starting at y = 48)
-    let detailY = 48
+    // Details Grid Layout (Structured Tabular Columns starting at y = 44)
+    doc.setFont('helvetica', 'normal')
 
-    // Headers with orange icon and dotted underline
-    const drawColHeader = (title: string, cx: number, iconType: 'owner' | 'contractor' | 'project') => {
-      doc.setTextColor(13, 27, 62)
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(10.5) // Increased header size
-      
-      // Draw small orange icon
+    // Headers with navy block background and white text/vector icons
+    const drawColHeader = (title: string, colX: number, iconType: 'owner' | 'contractor' | 'project') => {
+      // 1. Navy background header block
+      doc.setFillColor(13, 27, 62)
+      doc.rect(colX, 44, 60, 6, 'F')
+
+      // 2. Orange bottom accent border line
       doc.setFillColor(245, 158, 11)
+      doc.rect(colX, 50, 60, 0.8, 'F')
+
+      // 3. Body light-grey border box
+      doc.setDrawColor(220, 225, 235)
+      doc.setLineWidth(0.2)
+      doc.rect(colX, 50, 60, 24)
+
+      // Calculate centering for dynamic combined block (white text + vector icon)
+      doc.setTextColor(255, 255, 255)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9.75) // 13px = 9.75pt
+
+      const textWidth = doc.getTextWidth(title)
+      const iconWidth = 5.2 // 18px-20px equivalent bounding box width in mm
+      const spacing = 2.5 // space between icon and text
+      const totalW = textWidth + iconWidth + spacing
+      const startX = colX + 30 - (totalW / 2)
+      const cx = startX + (iconWidth / 2) // center of the icon
+      const textX = startX + iconWidth + spacing
+
+      // Draw premium white/orange vector icon centered at cx
+      doc.setFillColor(255, 255, 255)
       if (iconType === 'owner') {
-        doc.circle(cx - 3, detailY - 1, 1.2, 'F')
-        doc.ellipse(cx - 3, detailY + 1.5, 2, 0.8, 'F')
+        // Owner user avatar silhouette
+        doc.circle(cx, 46.2, 1.3, 'F')
+        doc.ellipse(cx, 48.6, 2.5, 0.9, 'F')
       } else if (iconType === 'contractor') {
-        doc.rect(cx - 4.5, detailY - 2, 3, 3, 'F')
-        doc.circle(cx - 3, detailY + 1, 0.8, 'F')
+        // Contractor Worker silhouette with Hardhat dome/brim
+        doc.circle(cx, 46.5, 1.1, 'F') // head
+        doc.ellipse(cx, 48.6, 2.5, 0.9, 'F') // shoulders
+        doc.setDrawColor(245, 158, 11)
+        doc.setLineWidth(0.4)
+        doc.line(cx - 1.8, 46.2, cx + 1.8, 46.2) // orange brim
+        doc.setFillColor(245, 158, 11)
+        doc.ellipse(cx, 46.0, 1.3, 0.9, 'F') // orange cap dome
       } else {
-        doc.rect(cx - 4.5, detailY - 2.5, 3.5, 4.5, 'F')
+        // Project house silhouette
+        doc.setFillColor(245, 158, 11)
+        doc.triangle(cx - 2.8, 47.4, cx, 44.6, cx + 2.8, 47.4, 'F') // roof
+        doc.rect(cx - 2.4, 47.4, 4.8, 2.0, 'F') // body
+        doc.setFillColor(255, 255, 255)
+        doc.rect(cx - 0.7, 48.2, 1.4, 1.2, 'F') // white door
       }
 
-      doc.text(title, cx + 1, detailY)
-
-      // Dotted underline
-      doc.setDrawColor(245, 158, 11)
-      doc.setLineWidth(0.25)
-      let startX = cx - 5
-      for (let x = startX; x < startX + 50; x += 1.5) {
-        doc.line(x, detailY + 2.5, x + 0.6, detailY + 2.5)
-      }
+      // Draw white centered title text
+      doc.setTextColor(255, 255, 255)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9.75)
+      doc.text(title, textX, 48.2)
     }
 
-    drawColHeader('OWNER DETAILS', 19, 'owner')
-    drawColHeader('CONTRACTOR DETAILS', 81, 'contractor')
-    drawColHeader('PROJECT DETAILS', 145, 'project')
+    drawColHeader('OWNER DETAILS', 15, 'owner')
+    drawColHeader('CONTRACTOR DETAILS', 75, 'contractor')
+    drawColHeader('PROJECT DETAILS', 135, 'project')
 
-    // Vertical Divider Lines (extended to y = 82)
-    doc.setDrawColor(220, 225, 235)
-    doc.setLineWidth(0.25)
-    doc.line(72, detailY + 5, 72, detailY + 34)
-    doc.line(136, detailY + 5, 136, detailY + 34)
-
-    // Details text
-    const drawColRow = (key: string, val: string, cx: number, valOffset: number, rY: number) => {
+    // Details text inside tabular cards (padded by 3mm left and aligned colons)
+    const drawColRow = (key: string, val: string, cx: number, colonX: number, valX: number, rY: number) => {
       doc.setTextColor(100, 116, 139)
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(8.5) // Increased key size
-      doc.text(key, cx, rY)
-      
-      doc.setTextColor(0, 0, 0)
       doc.setFont('helvetica', 'bold')
-      doc.setFontSize(9.5) // Increased value size
-      doc.text(`:  ${val}`, cx + valOffset, rY)
+      doc.setFontSize(7.5) // Field Label: 10px = 7.5pt
+      doc.text(key, cx, rY)
+
+      doc.setTextColor(0, 0, 0)
+      doc.text(':', colonX, rY)
+
+      if (containsTelugu(val)) {
+        doc.setFont('Gidugu', 'normal')
+      } else {
+        doc.setFont('helvetica', 'normal')
+      }
+      doc.setFontSize(7.5) // Field Value: 10px = 7.5pt
+      doc.text(val, valX, rY)
     }
 
     // Column 1 (Owner) values
-    let rowY = detailY + 9 // starts somewhat below
-    const spacingStep = 7.5 // row spacing increased
+    let rowY = 54.5
+    const spacingStep = 5.2
 
-    drawColRow('Owner Name', agr.owner_name, 14, 24, rowY)
-    drawColRow('Mobile Number', companyDetails.phone1, 14, 24, rowY + spacingStep)
-    
+    const ownerParts = (agr.owner_name || '').split(' | ')
+    const ownerVal = ownerParts[0] || ''
+
+    const soPart = ownerParts.find((p: string) => p.startsWith('S/o: '))
+    const fatherVal = soPart ? soPart.replace('S/o: ', '') : ''
+
+    const phPart = ownerParts.find((p: string) => p.startsWith('Ph: '))
+    const phoneVal = phPart ? phPart.replace('Ph: ', '') : (companyDetails.phone1 || '')
+
+    drawColRow('Owner Name', ownerVal, 18, 43, 45.5, rowY)
+    drawColRow('Son of (S/o)', fatherVal, 18, 43, 45.5, rowY + spacingStep)
+    drawColRow('Mobile Number', phoneVal, 18, 43, 45.5, rowY + (spacingStep * 2))
+
     // Auto wrap long address
     doc.setTextColor(100, 116, 139)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8.5)
-    doc.text('Address', 14, rowY + (spacingStep * 2))
-    doc.setTextColor(0, 0, 0)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(9.5)
-    const splitOwnerAddr = doc.splitTextToSize(agr.site_address || '—', 35)
-    doc.text(':', 38, rowY + (spacingStep * 2))
-    doc.text(splitOwnerAddr, 39.5, rowY + (spacingStep * 2))
+    doc.setFontSize(7.5)
+    doc.text('Address', 18, rowY + (spacingStep * 3))
+
+    doc.setTextColor(0, 0, 0)
+    doc.text(':', 43, rowY + (spacingStep * 3))
+
+    const valOwnerAddress = agr.site_address || '—'
+    if (containsTelugu(valOwnerAddress)) {
+      doc.setFont('Gidugu', 'normal')
+    } else {
+      doc.setFont('helvetica', 'normal')
+    }
+    doc.setFontSize(7.5)
+    const splitOwnerAddr = doc.splitTextToSize(valOwnerAddress, 27)
+    doc.text(splitOwnerAddr, 45.5, rowY + (spacingStep * 3))
 
     // Column 2 (Contractor) values
-    drawColRow('Contractor Name', agr.contractor_name, 76, 26, rowY)
-    drawColRow('Mobile Number', companyDetails.phone2, 76, 26, rowY + spacingStep)
-    
+    drawColRow('Contractor Name', agr.contractor_name, 78, 103, 105.5, rowY)
+    // Row 2 is skipped to align horizontally with Owner column
+    drawColRow('Mobile Number', companyDetails.phone1, 78, 103, 105.5, rowY + (spacingStep * 2))
+
     doc.setTextColor(100, 116, 139)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8.5)
-    doc.text('Address', 76, rowY + (spacingStep * 2))
-    doc.setTextColor(0, 0, 0)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(9.5)
-    const splitContrAddr = doc.splitTextToSize(companyDetails.address, 34)
-    doc.text(':', 102, rowY + (spacingStep * 2))
-    doc.text(splitContrAddr, 103.5, rowY + (spacingStep * 2))
+    doc.setFontSize(7.5)
+    doc.text('Address', 78, rowY + (spacingStep * 3))
+
+    doc.setTextColor(0, 0, 0)
+    doc.text(':', 103, rowY + (spacingStep * 3))
+
+    const valContrAddress = companyDetails.address
+    if (containsTelugu(valContrAddress)) {
+      doc.setFont('Gidugu', 'normal')
+    } else {
+      doc.setFont('helvetica', 'normal')
+    }
+    doc.setFontSize(7.5)
+    const splitContrAddr = doc.splitTextToSize(valContrAddress, 27)
+    doc.text(splitContrAddr, 105.5, rowY + (spacingStep * 3))
 
     // Column 3 (Project) values
+    drawColRow('Number of Floors', agr.number_of_floors || '—', 138, 163, 165.5, rowY)
+    drawColRow('Rate Per Sq.Ft.', `Rs. ${Number(agr.rate_per_square_foot).toLocaleString('en-IN')}/-`, 138, 163, 165.5, rowY + spacingStep)
+
     doc.setTextColor(100, 116, 139)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8.5)
-    doc.text('Site Address', 140, rowY)
-    doc.setTextColor(0, 0, 0)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(9.5)
-    const splitProjAddr = doc.splitTextToSize(agr.site_address || '—', 32)
-    doc.text(':', 168, rowY)
-    doc.text(splitProjAddr, 169.5, rowY)
+    doc.setFontSize(7.5)
+    doc.text('Site Address', 138, rowY + (spacingStep * 3))
 
-    drawColRow('Number of Floors', agr.number_of_floors || '—', 140, 28, rowY + spacingStep)
-    drawColRow('Rate Per Sq.Ft.', `Rs. ${Number(agr.rate_per_square_foot).toLocaleString('en-IN')}/-`, 140, 28, rowY + (spacingStep * 2))
+    doc.setTextColor(0, 0, 0)
+    doc.text(':', 163, rowY + (spacingStep * 3))
 
-    // Note about extra floors in column 3 (red, size 6.5, italic)
-    doc.setTextColor(220, 38, 38)
-    doc.setFont('helvetica', 'bolditalic')
-    doc.setFontSize(6.5)
-    const splitNoteText = doc.splitTextToSize('Note: If extra floors are added, additional charges will be applicable.', 54)
-    doc.text(splitNoteText, 140, rowY + (spacingStep * 3))
+    const valProjAddress = agr.site_address || '—'
+    if (containsTelugu(valProjAddress)) {
+      doc.setFont('Gidugu', 'normal')
+    } else {
+      doc.setFont('helvetica', 'normal')
+    }
+    doc.setFontSize(7.5)
+    const splitProjAddr = doc.splitTextToSize(valProjAddress, 27)
+    doc.text(splitProjAddr, 165.5, rowY + (spacingStep * 3))
 
-    // WORK DETAILS Header
+    // WORK DETAILS Header - spaced down
     // Horizontal orange line
     doc.setDrawColor(245, 158, 11)
     doc.setLineWidth(0.5)
-    doc.line(14, 85, W - 14, 85)
+    doc.line(15, 80, W - 15, 80)
 
-    // Navy pill block
+    // Navy pill block centered
     doc.setFillColor(13, 27, 62)
-    doc.roundedRect(85, 82, 40, 6, 1.2, 1.2, 'F')
+    doc.roundedRect(85, 77, 40, 6, 1.2, 1.2, 'F')
     doc.setTextColor(255, 255, 255)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8.5)
-    doc.text('WORK DETAILS', 105, 86.2, { align: 'center' })
+    doc.setFontSize(8.25)
+    doc.text('WORK DETAILS', 105, 81.2, { align: 'center' })
 
-    // Page 1 Work details table (occupies space dynamically, pagebreaks handled automatically)
+    // Pad checklist to exactly 28 rows if it contains fewer items
+    const displayItems = [...agr.work_items]
+    const minRows = 28
+    if (displayItems.length < minRows) {
+      const padCount = minRows - displayItems.length
+      for (let i = 0; i < padCount; i++) {
+        displayItems.push({ id: `padded-${i}`, name: '', description: '' })
+      }
+    }
+
+    // Page 1 Work details table
     autoTable(doc, {
-      startY: 90,
+      startY: 86,
       head: [['No.', 'Item Name', 'Value / Description']],
-      body: agr.work_items.map((item, idx) => [idx + 1, item.name, item.description || '—']),
+      body: displayItems.map((item, idx) => [
+        idx + 1,
+        sanitizeText(item.name || ''),
+        sanitizeText(item.description || '')
+      ]),
       theme: 'grid',
-      headStyles: { fillColor: [13, 27, 62], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
-      bodyStyles: { textColor: [0, 0, 0], fontSize: 8, cellPadding: 3.5 }, // Increased spacing (Height of cell)
+      styles: { font: 'helvetica', lineColor: [220, 225, 235], lineWidth: 0.1 },
+      headStyles: { fillColor: [13, 27, 62], textColor: 255, fontStyle: 'bold', fontSize: 7.5, minCellHeight: 7.4, halign: 'center', valign: 'middle' },
+      bodyStyles: { textColor: [0, 0, 0], fontSize: 7.5, minCellHeight: 6.35, valign: 'middle', cellPadding: 1.5 },
+      alternateRowStyles: { fillColor: [255, 255, 255] },
       columnStyles: {
-        0: { cellWidth: 15, halign: 'center' },
-        1: { cellWidth: 60, fontStyle: 'bold', fontSize: 8.5 }, // Item name is bold and slightly bigger!
-        2: { cellWidth: 107 }
+        0: { cellWidth: 14.4, halign: 'center' },
+        1: { cellWidth: 81.0, halign: 'left' },
+        2: { cellWidth: 84.6, halign: 'left' }
       },
-      margin: { left: 14, right: 14, top: 14, bottom: 20 },
-      didDrawPage: (data) => {
-        // Draw footer on every page
-        drawSpacedFooter()
+      margin: { left: 15, right: 15, top: 22, bottom: 20 },
+      didDrawCell: (data) => {
+        if (data.cell.section === 'body') {
+          const val = data.cell.text.join('\n')
+          if (containsTelugu(val)) {
+            // Draw a solid white rect to hide the linear text
+            doc.setFillColor(255, 255, 255)
+            doc.rect(data.cell.x + 0.1, data.cell.y + 0.1, data.cell.width - 0.2, data.cell.height - 0.2, 'F')
 
-        // Page number pill (Only for subsequent pages, Page 1 drawn manually)
-        if (data.pageNumber > 1) {
-          doc.setDrawColor(210, 215, 225)
-          doc.setLineWidth(0.3)
-          doc.setFillColor(255, 255, 255)
-          doc.roundedRect(W - 36, 6, 22, 5, 0.8, 0.8, 'FD')
-          doc.setTextColor(110, 115, 125)
-          doc.setFont('helvetica', 'normal')
-          doc.setFontSize(7)
-          doc.text(`(Page ${data.pageNumber})`, W - 25, 9.5, { align: 'center' })
+            // Draw the perfectly shaped canvas image
+            const imgData = drawTeluguTextToCanvasSync(val, data.cell.width, data.cell.height)
+            if (imgData) {
+              doc.addImage(imgData, 'JPEG', data.cell.x + 0.2, data.cell.y + 0.2, data.cell.width - 0.4, data.cell.height - 0.4)
+            }
+          }
+        }
+      },
+      didDrawPage: (data) => {
+        // Draw header and footer on every page automatically
+        if (data.pageNumber === 1) {
+          // Page 1 header and footer are drawn manually before autotable
+        } else {
+          drawContinuationHeader(data.pageNumber)
+          drawSpacedFooter(data.pageNumber)
         }
       }
     })
 
-    // Dotted caption under table
+    // Draw red notes directly under the table
     const tableFinalY = (doc as any).lastAutoTable.finalY + 4
-    doc.setTextColor(110, 115, 125)
-    doc.setFont('helvetica', 'italic')
-    doc.setFontSize(7.5)
-    doc.text('+ Additional items can be added in continuation if required.', 14, tableFinalY)
+    doc.setTextColor(220, 38, 38)
+    doc.setFont('helvetica', 'oblique')
+    doc.setFontSize(7.5) // 10px
 
-    // Calculate final Y position after autoTable
-    let finalY = (doc as any).lastAutoTable.finalY
+    const note1 = 'Note 1: If extra floors are added, additional charges will be applicable.'
+    const note2 = 'Note 2: All work will be executed strictly in accordance with this agreement. Any work exceeding this scope shall be billed additionally and borne by the owner.'
+
+    const splitNote1 = doc.splitTextToSize(note1, W - 30)
+    const splitNote2 = doc.splitTextToSize(note2, W - 30)
+
+    doc.text(splitNote1, 15, tableFinalY)
+    doc.text(splitNote2, 15, tableFinalY + (splitNote1.length * 4))
+
+    // Calculate final Y position after both notes
+    let finalY = tableFinalY + (splitNote1.length * 4) + (splitNote2.length * 4)
     let y2 = finalY + 8
 
-    // If remarks + signatures overflow the page (limit ~ 197 Y), create a new page
-    if (y2 > 197) {
+    // If remarks + signatures overflow the page (limit ~ H - 65 to fit 5 ruled lines + margins), create a new page
+    if (y2 > H - 65) {
       doc.addPage()
-      drawSpacedFooter()
-      
-      // Page number pill
-      doc.setDrawColor(210, 215, 225)
-      doc.setLineWidth(0.3)
-      doc.setFillColor(255, 255, 255)
-      doc.roundedRect(W - 36, 6, 22, 5, 0.8, 0.8, 'FD')
-      doc.setTextColor(110, 115, 125)
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7)
-      doc.text('(Page 2)', W - 25, 9.5, { align: 'center' })
-
-      y2 = 14
+      const lastPageNum = doc.getNumberOfPages()
+      drawContinuationHeader(lastPageNum)
+      drawSpacedFooter(lastPageNum)
+      y2 = 22 // start below continuation header on new page
     }
 
     // Additional Remarks header (orange icon, dotted line)
     doc.setFillColor(245, 158, 11)
-    doc.rect(14, y2 - 2.5, 3.5, 3.5, 'F')
+    doc.rect(15, y2 - 2.5, 3.5, 3.5, 'F')
     doc.setTextColor(13, 27, 62)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(9)
-    doc.text('ADDITIONAL REMARKS / NOTES', 19, y2)
-    
+    doc.setFontSize(9.75) // Section headers: 13px = 9.75pt
+    doc.text('ADDITIONAL REMARKS / NOTES', 20, y2)
+
     // Dotted divider below header
     doc.setDrawColor(220, 225, 235)
     doc.setLineWidth(0.2)
-    for (let x = 14; x < W - 14; x += 1.5) {
+    for (let x = 15; x < W - 15; x += 1.5) {
       doc.line(x, y2 + 2, x + 0.6, y2 + 2)
     }
 
-    doc.setTextColor(0, 0, 0)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8)
-    const splitRemarks = doc.splitTextToSize(agr.remarks || 'No additional remarks.', W - 28)
-    doc.text(splitRemarks, 14, y2 + 6)
-
-    // Ruled lines for manual comments
-    let lineY = y2 + 6 + (splitRemarks.length * 4) + 6
-    doc.setDrawColor(230, 235, 245)
+    // Ruled lines for manual comments (exactly five blank lines, no default text)
+    let lineY = y2 + 8
+    doc.setDrawColor(200, 205, 215)
     doc.setLineWidth(0.15)
-    for (let i = 0; i < 4; i++) {
-      if (lineY < H - 38) {
-        doc.line(14, lineY, W - 14, lineY)
-        lineY += 6
-      }
+    for (let i = 0; i < 5; i++) {
+      doc.line(15, lineY, W - 15, lineY)
+      lineY += 7
     }
 
-    // Signatures section at bottom (left blank, no arrow marks!)
-    const sigY = H - 24
+    // Signatures section at bottom
+    const sigY = H - 20
 
-    // Divider lines for signatures
+    // Divider lines for signatures (aligned to margins)
     doc.setDrawColor(13, 27, 62)
     doc.setLineWidth(0.4)
-    doc.line(14, sigY, 64, sigY)
+    doc.line(15, sigY, 65, sigY)
     doc.line(W / 2 - 25, sigY, W / 2 + 25, sigY)
-    doc.line(W - 64, sigY, W - 14, sigY)
+    doc.line(W - 65, sigY, W - 15, sigY)
 
     doc.setTextColor(13, 27, 62)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8)
-    doc.text('HOUSE OWNER SIGNATURE', 39, sigY + 4.5, { align: 'center' })
+    doc.setFontSize(6.75) // 6.75pt = 9px
+    doc.text('HOUSE OWNER SIGNATURE', 40, sigY + 4.5, { align: 'center' })
     doc.text('CONTRACTOR SIGNATURE', W / 2, sigY + 4.5, { align: 'center' })
-    doc.text('WITNESS SIGNATURE', W - 39, sigY + 4.5, { align: 'center' })
+    doc.text('WITNESS SIGNATURE', W - 40, sigY + 4.5, { align: 'center' })
+
+    // Add page numbers in post-processing on every page
+    const totalPages = doc.getNumberOfPages()
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i)
+
+      // Page number pill inside header
+      doc.setDrawColor(245, 158, 11)
+      doc.setLineWidth(0.3)
+      doc.setFillColor(13, 27, 62)
+      doc.roundedRect(W - 36, 2.5, 22, 5.2, 0.6, 0.6, 'FD')
+      doc.setTextColor(255, 255, 255)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(6.75) // 6.75pt = 9px
+      doc.text(`Page ${i} of ${totalPages}`, W - 25, 6.2, { align: 'center' })
+    }
 
     // Save PDF
     doc.save(`Agreement_${agr.agreement_number}.pdf`)
@@ -904,7 +1270,7 @@ export default function AgreementsPage() {
       {showForm && (
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex items-center justify-between gap-4 pb-4 border-b border-[#1e2435]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#1e2435]">
             <div>
               <div className="flex items-center gap-2 text-zinc-500 text-xs font-bold uppercase tracking-wider">
                 <Link href="#" onClick={(e: React.MouseEvent) => { e.preventDefault(); setShowForm(false); }} className="hover:text-white transition-colors">Agreements</Link>
@@ -919,11 +1285,36 @@ export default function AgreementsPage() {
 
             <button
               onClick={() => setShowForm(false)}
-              className="h-10 px-4 rounded-xl border border-zinc-800 bg-zinc-950/60 text-zinc-400 hover:text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
+              className="w-full sm:w-auto h-10 px-4 rounded-xl border border-zinc-800 bg-zinc-950/60 text-zinc-400 hover:text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
             >
               <X size={14} /> Back to Agreements
             </button>
           </div>
+
+          {hasDraft && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl text-xs">
+              <div className="flex items-center gap-2.5 text-blue-400 text-left">
+                <Info size={16} className="shrink-0" />
+                <span>We found an unsaved draft from your last session. Would you like to restore it?</span>
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-end">
+                <button
+                  type="button"
+                  onClick={restoreDraft}
+                  className="w-1/2 sm:w-auto px-4 py-2 font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all cursor-pointer text-center text-[11px] uppercase tracking-wider"
+                >
+                  Restore Draft
+                </button>
+                <button
+                  type="button"
+                  onClick={discardDraft}
+                  className="w-1/2 sm:w-auto px-4 py-2 font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl transition-all cursor-pointer text-center text-[11px] uppercase tracking-wider"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleSave} className="space-y-6">
             {/* Card 1: Basic Details */}
@@ -994,6 +1385,28 @@ export default function AgreementsPage() {
                     placeholder="Owner's full name"
                     value={ownerName}
                     onChange={(e) => setOwnerName(e.target.value)}
+                    className="w-full h-11 px-3 text-xs font-semibold outline-none focus:border-blue-500/50 transition-all"
+                    style={INPUT_ST}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Owner Mobile Number</label>
+                  <input
+                    type="text"
+                    placeholder="Owner's mobile number"
+                    value={ownerPhone}
+                    onChange={(e) => setOwnerPhone(e.target.value)}
+                    className="w-full h-11 px-3 text-xs font-semibold outline-none focus:border-blue-500/50 transition-all"
+                    style={INPUT_ST}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Son of (S/o)</label>
+                  <input
+                    type="text"
+                    placeholder="Father's name"
+                    value={ownerFatherName}
+                    onChange={(e) => setOwnerFatherName(e.target.value)}
                     className="w-full h-11 px-3 text-xs font-semibold outline-none focus:border-blue-500/50 transition-all"
                     style={INPUT_ST}
                   />
@@ -1071,6 +1484,7 @@ export default function AgreementsPage() {
                       </span>
                       <input
                         type="text"
+                        list="item-suggestions"
                         placeholder="Item Name (e.g. Cement)"
                         value={item.name}
                         onChange={(e) => updateWorkItemName(item.id, e.target.value)}
@@ -1080,6 +1494,7 @@ export default function AgreementsPage() {
 
                     <input
                       type="text"
+                      list="material-suggestions"
                       placeholder="Value / Material description (e.g. Ultratech PPC / 10 Feet)"
                       value={item.description}
                       onChange={(e) => updateWorkItemValue(item.id, e.target.value)}
@@ -1161,24 +1576,78 @@ export default function AgreementsPage() {
             </div>
 
             {/* Form actions */}
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setShowForm(false)}
-                className="h-11 px-5 rounded-xl border border-zinc-800 bg-zinc-950/60 text-zinc-400 hover:text-white text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+                className="w-full sm:w-auto h-11 px-5 rounded-xl border border-zinc-800 bg-zinc-950/60 text-zinc-400 hover:text-white text-xs font-black uppercase tracking-wider flex items-center justify-center transition-all cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-blue-500/15"
+                className="w-full sm:w-auto h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-blue-500/15"
               >
                 {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText size={14} />}
                 Generate PDF
               </button>
             </div>
           </form>
+
+          <datalist id="item-suggestions">
+            <option value="Cement" />
+            <option value="Steel" />
+            <option value="Sand" />
+            <option value="Bricks" />
+            <option value="Aggregate (20mm)" />
+            <option value="Plumbing Pipes" />
+            <option value="Electrical Wires" />
+            <option value="Flooring Marble" />
+            <option value="Flooring Tiles" />
+            <option value="Staircase Granite" />
+            <option value="Kitchen Granite" />
+            <option value="Painting & Putty" />
+            <option value="Doors & Frames" />
+            <option value="Windows & Grills" />
+            <option value="Water Tank" />
+            <option value="Water Taps" />
+            <option value="False Ceiling" />
+            <option value="Sanitaryware" />
+            <option value="Basement Height" />
+            <option value="Slab Thickness" />
+          </datalist>
+
+          <datalist id="material-suggestions">
+            <option value="Ultratech Cement" />
+            <option value="Priya Cement" />
+            <option value="Maha Cement" />
+            <option value="Birla Gold Cement" />
+            <option value="Vizag Steel (TMT)" />
+            <option value="Tata Tiscon Steel" />
+            <option value="Ashirvad CPVC Pipes" />
+            <option value="Sudhakar PVC Pipes" />
+            <option value="Supreme Water Tank" />
+            <option value="Sintex Water Tank" />
+            <option value="Finolex Wires" />
+            <option value="Polycab Wires" />
+            <option value="Asian Paints (Apex)" />
+            <option value="Birla Wall Care Putty" />
+            <option value="Granite '60" />
+            <option value="Granite '80" />
+            <option value="Vitrified Tiles 2x2" />
+            <option value="Ceramic Tiles 18x12" />
+            <option value="Cera Sanitaryware" />
+            <option value="Parryware Fittings" />
+            <option value="10 Feet" />
+            <option value="12 Feet" />
+            <option value="Ashirvad 1st Quality" />
+            <option value="True Flow Pipes" />
+            <option value="Red Bricks" />
+            <option value="Fly Ash Bricks" />
+            <option value="River Sand" />
+            <option value="Robo Sand" />
+          </datalist>
         </div>
       )}
     </div>

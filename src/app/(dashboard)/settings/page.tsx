@@ -542,7 +542,7 @@ export default function SettingsPage() {
 
         <div className="space-y-4">
           <p className="text-xs leading-relaxed" style={{ color: DIM }}>
-            Configure the standard list of 19 material/work details (like Cement, Steel, Sand) that are prefilled by default when generating a new construction agreement. You can add new items, delete them, or reorder the rows.
+            Configure the standard list of 23 material/work details (like Cement, Steel, Sand) that are prefilled by default when generating a new construction agreement. You can add new items, delete them, or reorder the rows.
           </p>
           <div>
             <Link
