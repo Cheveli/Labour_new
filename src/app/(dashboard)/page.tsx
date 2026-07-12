@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Users, CalendarCheck, Wallet, Package, TrendingUp, Briefcase, Zap, Loader2, Sparkles, Send, Search, Bot, DollarSign } from 'lucide-react'
+import { Users, CalendarCheck, Wallet, Package, TrendingUp, Briefcase, Zap, Loader2, Sparkles, Send, Search, Bot, DollarSign, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import {
@@ -14,6 +14,30 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 export default function DashboardPage() {
+  const [visibleAmounts, setVisibleAmounts] = useState<Record<string, boolean>>({
+    REVENUE: true,
+    LABOUR: false,
+    MATERIAL: false,
+    EXTRA_WORK: false,
+    PERSONAL_EXPENSE: false,
+    NET_CASH: false
+  })
+
+  const toggleVisibility = (type: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setVisibleAmounts(prev => ({
+      ...prev,
+      [type]: !prev[type]
+    }))
+  }
+
+  const renderAmountValue = (type: string, rawValue: number) => {
+    if (visibleAmounts[type]) {
+      const prefix = rawValue < 0 ? '-' : ''
+      return `${prefix}₹${Math.abs(rawValue).toLocaleString('en-IN')}`
+    }
+    return '••••••'
+  }
   const [stats, setStats] = useState({ totalProjects: 0, totalRevenue: 0, totalLabourCost: 0, totalMaterialCost: 0, totalExtraWork: 0, totalPersonalExpenses: 0, netCash: 0 })
   const [recentActivities, setRecentActivities] = useState<any[]>([])
   const [detailsModalOpen, setDetailsModalOpen] = useState(false)
@@ -446,12 +470,12 @@ export default function DashboardPage() {
   const tooltipStyle = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '8px', color: '#f0f0f0', fontSize: 12 }
 
   const topCards = [
-    { type: 'REVENUE', label: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString('en-IN')}`, icon: <TrendingUp size={18} color="#10b981" />, bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981', clickable: true },
-    { type: 'LABOUR', label: 'Labour Cost', value: `₹${stats.totalLabourCost.toLocaleString('en-IN')}`, icon: <Wallet size={18} color="#3b82f6" />, bg: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', clickable: true },
-    { type: 'MATERIAL', label: 'Material Cost', value: `₹${stats.totalMaterialCost.toLocaleString('en-IN')}`, icon: <Package size={18} color="#06b6d4" />, bg: 'rgba(6, 182, 212, 0.1)', color: '#06b6d4', clickable: true },
-    { type: 'EXTRA_WORK', label: 'Subcontracts', value: `₹${stats.totalExtraWork.toLocaleString('en-IN')}`, icon: <Zap size={18} color="#f97316" />, bg: 'rgba(249, 115, 22, 0.1)', color: '#f97316', clickable: true },
-    { type: 'PERSONAL_EXPENSE', label: 'Personal Expenses', value: `₹${stats.totalPersonalExpenses.toLocaleString('en-IN')}`, icon: <DollarSign size={18} color="#f43f5e" />, bg: 'rgba(244, 63, 94, 0.1)', color: '#f43f5e', clickable: true },
-    { type: 'NET_CASH', label: 'Net Cash', value: `₹${stats.netCash.toLocaleString('en-IN')}`, icon: <TrendingUp size={18} color={stats.netCash >= 0 ? '#10b981' : '#ef4444'} />, bg: stats.netCash >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: stats.netCash >= 0 ? '#10b981' : '#ef4444', clickable: false },
+    { type: 'REVENUE', label: 'Total Revenue', raw: stats.totalRevenue, icon: <TrendingUp size={18} color="#10b981" />, bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981', clickable: true },
+    { type: 'LABOUR', label: 'Labour Cost', raw: stats.totalLabourCost, icon: <Wallet size={18} color="#3b82f6" />, bg: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', clickable: true },
+    { type: 'MATERIAL', label: 'Material Cost', raw: stats.totalMaterialCost, icon: <Package size={18} color="#06b6d4" />, bg: 'rgba(6, 182, 212, 0.1)', color: '#06b6d4', clickable: true },
+    { type: 'EXTRA_WORK', label: 'Subcontracts', raw: stats.totalExtraWork, icon: <Zap size={18} color="#f97316" />, bg: 'rgba(249, 115, 22, 0.1)', color: '#f97316', clickable: true },
+    { type: 'PERSONAL_EXPENSE', label: 'Personal Expenses', raw: stats.totalPersonalExpenses, icon: <DollarSign size={18} color="#f43f5e" />, bg: 'rgba(244, 63, 94, 0.1)', color: '#f43f5e', clickable: true },
+    { type: 'NET_CASH', label: 'Net Cash', raw: stats.netCash, icon: <TrendingUp size={18} color={stats.netCash >= 0 ? '#10b981' : '#ef4444'} />, bg: stats.netCash >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: stats.netCash >= 0 ? '#10b981' : '#ef4444', clickable: false },
   ]
 
   const fetchDetailsData = async (type: string, filterStart?: string, filterEnd?: string) => {
@@ -573,6 +597,7 @@ export default function DashboardPage() {
 
   const handleCardClick = async (type: string) => {
     if (!['REVENUE', 'LABOUR', 'MATERIAL', 'EXTRA_WORK', 'PERSONAL_EXPENSE'].includes(type)) return
+    setVisibleAmounts(prev => ({ ...prev, [type]: true }))
     setDetailsModalType(type)
     setDetailsModalOpen(true)
     setDetailsModalData([])
@@ -689,7 +714,17 @@ export default function DashboardPage() {
                 <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: DIM }}>{c.label}</p>
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.bg }}>{c.icon}</div>
               </div>
-              <p className="text-xl font-black" style={{ color: c.color }}>{loading ? '—' : c.value}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xl font-black" style={{ color: c.color }}>{loading ? '—' : renderAmountValue(c.type, c.raw)}</p>
+                {c.type !== 'REVENUE' && (
+                  <button
+                    onClick={(e) => toggleVisibility(c.type, e)}
+                    className="p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-white transition-colors cursor-pointer shrink-0"
+                  >
+                    {visibleAmounts[c.type] ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                )}
+              </div>
               {c.clickable && <p className="text-[7px] font-bold uppercase tracking-widest mt-1" style={{ color: DIM }}>Click for full history</p>}
             </div>
           ))}
@@ -703,7 +738,15 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: DIM }}>{topCards[5].label}</p>
-                <p className="text-3xl font-black" style={{ color: topCards[5].color }}>{loading ? '—' : topCards[5].value}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-3xl font-black" style={{ color: topCards[5].color }}>{loading ? '—' : renderAmountValue(topCards[5].type, topCards[5].raw)}</p>
+                  <button
+                    onClick={(e) => toggleVisibility(topCards[5].type, e)}
+                    className="p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-white transition-colors cursor-pointer shrink-0"
+                  >
+                    {visibleAmounts[topCards[5].type] ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
               </div>
               <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: topCards[5].bg }}>{topCards[5].icon}</div>
             </div>
@@ -724,7 +767,17 @@ export default function DashboardPage() {
               <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: DIM }}>{c.label}</p>
               <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.bg }}>{c.icon}</div>
             </div>
-            <p className="text-2xl font-black" style={{ color: c.color }}>{loading ? '—' : c.value}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-2xl font-black" style={{ color: c.color }}>{loading ? '—' : renderAmountValue(c.type, c.raw)}</p>
+              {c.type !== 'REVENUE' && (
+                <button
+                  onClick={(e) => toggleVisibility(c.type, e)}
+                  className="p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-white transition-colors cursor-pointer shrink-0"
+                >
+                  {visibleAmounts[c.type] ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              )}
+            </div>
             {c.clickable && <p className="text-[8px] font-bold uppercase tracking-widest mt-2" style={{ color: DIM }}>Click for full history</p>}
           </div>
         ))}
@@ -738,7 +791,15 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: DIM }}>{topCards[5].label}</p>
-                <p className="text-3xl font-black" style={{ color: topCards[5].color }}>{loading ? '—' : topCards[5].value}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-3xl font-black" style={{ color: topCards[5].color }}>{loading ? '—' : renderAmountValue(topCards[5].type, topCards[5].raw)}</p>
+                  <button
+                    onClick={(e) => toggleVisibility(topCards[5].type, e)}
+                    className="p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-white transition-colors cursor-pointer shrink-0"
+                  >
+                    {visibleAmounts[topCards[5].type] ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
               </div>
               <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: topCards[5].bg }}>{topCards[5].icon}</div>
             </div>
@@ -934,13 +995,13 @@ export default function DashboardPage() {
                 {projectBreakdown.map((p, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid #1e2435' }} className="hover:bg-white/[0.02] transition-colors">
                     <td className="px-5 py-3 font-bold text-white">{p.name}</td>
-                    <td className="px-5 py-3 font-bold" style={{ color: '#22c55e' }}>₹{p.revenue.toLocaleString('en-IN')}</td>
-                    <td className="px-5 py-3 font-bold" style={{ color: '#3b82f6' }}>₹{p.labour.toLocaleString('en-IN')}</td>
-                    <td className="px-5 py-3 font-bold" style={{ color: '#60a5fa' }}>₹{p.material.toLocaleString('en-IN')}</td>
-                    <td className="px-5 py-3 font-bold" style={{ color: '#f59e0b' }}>₹{p.extraWork.toLocaleString('en-IN')}</td>
-                    <td className="px-5 py-3 font-bold" style={{ color: '#f43f5e' }}>₹{p.personal.toLocaleString('en-IN')}</td>
+                    <td className="px-5 py-3 font-bold" style={{ color: '#22c55e' }}>{renderAmountValue('REVENUE', p.revenue)}</td>
+                    <td className="px-5 py-3 font-bold" style={{ color: '#3b82f6' }}>{renderAmountValue('LABOUR', p.labour)}</td>
+                    <td className="px-5 py-3 font-bold" style={{ color: '#60a5fa' }}>{renderAmountValue('MATERIAL', p.material)}</td>
+                    <td className="px-5 py-3 font-bold" style={{ color: '#f59e0b' }}>{renderAmountValue('EXTRA_WORK', p.extraWork)}</td>
+                    <td className="px-5 py-3 font-bold" style={{ color: '#f43f5e' }}>{renderAmountValue('PERSONAL_EXPENSE', p.personal)}</td>
                     <td className="px-5 py-3 font-black" style={{ color: p.net >= 0 ? '#22c55e' : '#ef4444' }}>
-                      {p.net < 0 ? `-₹${Math.abs(p.net).toLocaleString('en-IN')}` : `₹${p.net.toLocaleString('en-IN')}`}
+                      {renderAmountValue('NET_CASH', p.net)}
                     </td>
                   </tr>
                 ))}
@@ -955,29 +1016,29 @@ export default function DashboardPage() {
                 <div className="flex justify-between items-center">
                   <p className="font-bold text-white">{p.name}</p>
                   <p className="text-sm font-black" style={{ color: p.net >= 0 ? '#22c55e' : '#ef4444' }}>
-                    {p.net < 0 ? `-₹${Math.abs(p.net).toLocaleString('en-IN')}` : `₹${p.net.toLocaleString('en-IN')}`}
+                    {renderAmountValue('NET_CASH', p.net)}
                   </p>
                 </div>
                 <div className="grid grid-cols-5 gap-1 text-center">
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Revenue</p>
-                    <p className="text-[10px] font-bold text-[#22c55e]">₹{p.revenue.toLocaleString('en-IN')}</p>
+                    <p className="text-[10px] font-bold text-[#22c55e]">{renderAmountValue('REVENUE', p.revenue)}</p>
                   </div>
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Labour</p>
-                    <p className="text-[10px] font-bold text-[#3b82f6]">₹{p.labour.toLocaleString('en-IN')}</p>
+                    <p className="text-[10px] font-bold text-[#3b82f6]">{renderAmountValue('LABOUR', p.labour)}</p>
                   </div>
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Material</p>
-                    <p className="text-[10px] font-bold text-[#60a5fa]">₹{p.material.toLocaleString('en-IN')}</p>
+                    <p className="text-[10px] font-bold text-[#60a5fa]">{renderAmountValue('MATERIAL', p.material)}</p>
                   </div>
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Subcontracts</p>
-                    <p className="text-[10px] font-bold text-[#f59e0b]">₹{p.extraWork.toLocaleString('en-IN')}</p>
+                    <p className="text-[10px] font-bold text-[#f59e0b]">{renderAmountValue('EXTRA_WORK', p.extraWork)}</p>
                   </div>
                   <div>
                     <p className="text-[8px] font-black uppercase text-zinc-500 mb-1">Personal</p>
-                    <p className="text-[10px] font-bold text-[#f43f5e]">₹{p.personal.toLocaleString('en-IN')}</p>
+                    <p className="text-[10px] font-bold text-[#f43f5e]">{renderAmountValue('PERSONAL_EXPENSE', p.personal)}</p>
                   </div>
                 </div>
               </div>
