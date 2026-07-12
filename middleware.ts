@@ -25,7 +25,7 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // --- Auth Check ---
+  // --- Auth & Paths Check ---
   const { data: { user } } = await supabase.auth.getUser()
   const { pathname } = request.nextUrl
   
@@ -35,26 +35,36 @@ export async function middleware(request: NextRequest) {
   const isAuthPage = pathname.startsWith('/auth')
   const isApiRoute = pathname.startsWith('/api')
 
-  // If not logged in, only allow login, register, auth callback, or API endpoints
+  const isClientPath = pathname.startsWith('/client')
+  const isClientLoginPage = pathname === '/client/login'
+
+  // 1. If not logged in, redirect based on path segment
   if (!user) {
-    if (!isLoginPage && !isRegisterPage && !isAuthPage && !isApiRoute && !isPendingPage) {
-      const url = new URL('/login', request.url)
-      return NextResponse.redirect(url)
+    if (isClientPath) {
+      if (!isClientLoginPage && !isAuthPage && !isApiRoute) {
+        return NextResponse.redirect(new URL('/client/login', request.url))
+      }
+    } else {
+      if (!isLoginPage && !isRegisterPage && !isAuthPage && !isApiRoute && !isPendingPage) {
+        return NextResponse.redirect(new URL('/login', request.url))
+      }
     }
     return supabaseResponse
   }
 
-  // If logged in, handle roles and subscription access
+  // 2. If logged in, handle roles and subscriptions access
   if (user) {
-    // 1. Super Admin Hardcoded Exception Rules
+    // Super Admin Hardcoded Exception Rules
     if (user.email === 'saichevelly@gmail.com') {
-      if (isLoginPage || isRegisterPage || isPendingPage) {
+      if (isLoginPage || isRegisterPage || isPendingPage || isClientLoginPage) {
+        return NextResponse.redirect(new URL('/', request.url))
+      }
+      if (isClientPath) {
         return NextResponse.redirect(new URL('/', request.url))
       }
       return supabaseResponse
     }
 
-    // 2. Regular User Verification
     try {
       const { data: profile } = await supabase
         .from('users')
@@ -62,25 +72,41 @@ export async function middleware(request: NextRequest) {
         .eq('id', user.id)
         .single()
 
+      if (!profile) {
+        return supabaseResponse
+      }
+
+      // Check client portal access first
+      if (profile.role === 'client') {
+        if (!isClientPath && !isAuthPage && !isApiRoute) {
+          return NextResponse.redirect(new URL('/client/dashboard', request.url))
+        }
+        if (isClientLoginPage) {
+          return NextResponse.redirect(new URL('/client/dashboard', request.url))
+        }
+        return supabaseResponse
+      }
+
+      // Contractor/Supervisor/Admin access controls
+      if (isClientPath) {
+        return NextResponse.redirect(new URL('/', request.url))
+      }
+
       const isApproved = 
-        profile && 
         profile.account_status === 'approved' && 
         profile.subscription_status === 'active'
 
       if (!isApproved) {
-        // Redirection to pending verification page if not approved
         if (!isPendingPage && !isLoginPage && !isRegisterPage && !isAuthPage && !isApiRoute) {
           return NextResponse.redirect(new URL('/pending-verification', request.url))
         }
       } else {
-        // If approved and on auth/pending pages, redirect to dashboard
         if (isLoginPage || isRegisterPage || isPendingPage) {
           return NextResponse.redirect(new URL('/', request.url))
         }
       }
     } catch (err) {
       console.error('Middleware database check failed:', err)
-      // Fallback: block on error to be safe, except on login/auth routes
       if (!isPendingPage && !isLoginPage && !isRegisterPage && !isAuthPage && !isApiRoute) {
         return NextResponse.redirect(new URL('/pending-verification', request.url))
       }
@@ -96,4 +122,3 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 }
-

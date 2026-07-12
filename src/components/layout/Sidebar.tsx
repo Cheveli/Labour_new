@@ -29,8 +29,13 @@ import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { useEffect } from 'react'
 
+import { MessageCircle } from 'lucide-react'
+
 const menuItems = [
   { label: 'Overview', href: '/', icon: LayoutDashboard },
+  { label: 'Projects', href: '/projects', icon: Briefcase },
+  { label: 'Progress Updates', href: '/progress', icon: TrendingUp },
+  { label: 'Client Chat', href: '/chat', icon: MessageCircle },
   { label: 'Workforce', href: '/labour', icon: Users },
   { label: 'Attendance', href: '/attendance', icon: CalendarCheck },
   { label: 'Materials', href: '/materials', icon: Package },
@@ -41,7 +46,6 @@ const menuItems = [
   { label: 'Export Calculation', href: '/export-calculation', icon: Calculator },
   { label: 'Revenue', href: '/income', icon: TrendingUp },
   { label: 'Subcontracts', href: '/contractor-payments', icon: HardHat },
-  { label: 'Projects', href: '/projects', icon: Briefcase },
   { label: 'Contacts', href: '/contacts', icon: Phone },
   { label: 'Personal Expenses', href: '/personal-expenses', icon: Wallet },
   { label: 'Settings', href: '/settings', icon: Settings },
@@ -76,11 +80,54 @@ export default function Sidebar() {
     localStorage.setItem('sidebar-collapsed', isCollapsed.toString())
   }, [isCollapsed])
 
+  const [chatUnreadCount, setChatUnreadCount] = useState(0)
+
   // Listen for mobile hamburger trigger from MobileHeader
   useEffect(() => {
     const openSidebar = () => setIsOpen(true)
     window.addEventListener('ssc_open_sidebar', openSidebar)
     return () => window.removeEventListener('ssc_open_sidebar', openSidebar)
+  }, [])
+
+  useEffect(() => {
+    const updateUnreadCount = async () => {
+      const { data: projs } = await supabase.from('projects').select('id, description')
+      if (!projs) return
+      
+      let totalUnread = 0
+      for (const p of projs) {
+        if (p.description && p.description.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(p.description)
+            const chat = parsed.chat || []
+            const lastReadStr = localStorage.getItem(`ssc_chat_last_read_${p.id}`)
+            const lastRead = lastReadStr ? new Date(lastReadStr).getTime() : 0
+            
+            const unread = chat.filter((msg: any) => msg.sender === 'client' && new Date(msg.timestamp).getTime() > lastRead)
+            totalUnread += unread.length
+          } catch (e) {}
+        }
+      }
+      setChatUnreadCount(totalUnread)
+    }
+    
+    updateUnreadCount()
+
+    // Realtime channel
+    const channel = supabase
+      .channel('contractor-sidebar-chat-badge')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'projects' }, () => {
+        updateUnreadCount()
+      })
+      .subscribe()
+
+    // Custom local reset listener
+    window.addEventListener('ssc_chat_read_reset', updateUnreadCount)
+
+    return () => {
+      supabase.removeChannel(channel)
+      window.removeEventListener('ssc_chat_read_reset', updateUnreadCount)
+    }
   }, [])
 
   const showExpanded = !isCollapsed || isOpen
@@ -231,8 +278,22 @@ export default function Sidebar() {
                       boxShadow: '0 4px 16px rgba(59,130,246,0.25)',
                     } : undefined}
                   >
-                    <Icon size={18} className={cn(isActive ? 'text-[#0a0c12]' : 'text-zinc-500 group-hover:text-blue-400', "shrink-0")} />
-                    {showExpanded && <span>{item.label}</span>}
+                    <div className="relative flex items-center shrink-0">
+                      <Icon size={18} className={cn(isActive ? 'text-[#0a0c12]' : 'text-zinc-500 group-hover:text-blue-400')} />
+                      {!showExpanded && item.label === 'Client Chat' && chatUnreadCount > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-[#0d1018]" />
+                      )}
+                    </div>
+                    {showExpanded && (
+                      <div className="flex items-center justify-between w-full min-w-0">
+                        <span className="truncate">{item.label}</span>
+                        {item.label === 'Client Chat' && chatUnreadCount > 0 && (
+                          <span className="h-5 min-w-[20px] px-1.5 flex items-center justify-center text-[10px] font-black text-white bg-red-500 rounded-full animate-pulse select-none leading-none border border-red-400 shrink-0">
+                            {chatUnreadCount}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {!showExpanded && (
                       <div className="absolute left-20 hidden group-hover:block bg-[#111520] border border-[#1e2435] px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white z-50 pointer-events-none shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
                         {item.label}

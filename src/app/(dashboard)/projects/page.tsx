@@ -30,14 +30,78 @@ export default function ProjectsPage() {
   const [formData, setFormData] = useState({
     name: '',
     owner_name: '',
-    description: '',
+    description: '', // holds address in UI
+    project_type: 'Material Contract',
+    client_email: '',
+    client_mobile: '',
+    client_password: 'Client@123',
     status: 'ACTIVE'
   })
 
   const supabase = createClient()
 
+  // Helper parsing functions
+  const getProjectAddress = (desc: string | null) => {
+    if (!desc) return ''
+    if (desc.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(desc)
+        return parsed.address || ''
+      } catch (e) {
+        return desc
+      }
+    }
+    return desc
+  }
+
+  const getProjectType = (desc: string | null) => {
+    if (!desc) return 'Material Contract'
+    if (desc.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(desc)
+        return parsed.project_type || 'Material Contract'
+      } catch (e) {
+        return 'Material Contract'
+      }
+    }
+    return 'Material Contract'
+  }
+
+  const getProjectClient = (desc: string | null) => {
+    if (!desc) return null
+    if (desc.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(desc)
+        return {
+          client_email: parsed.client_email || '',
+          client_mobile: parsed.client_mobile || '',
+          client_password: parsed.client_password || 'Client@123',
+          client_id: parsed.client_id || null
+        }
+      } catch (e) {
+        return null
+      }
+    }
+    return null
+  }
+
   useEffect(() => {
-    fetchProjects()
+    fetchProjects().then((list) => {
+      // Find and auto-upgrade Chevelly project to Material Contract
+      const chevelly = list?.find(p => p.name.toLowerCase().includes('chevelly'))
+      if (chevelly && (!chevelly.description || !chevelly.description.startsWith('{'))) {
+        const upgradePayload = {
+          description: JSON.stringify({
+            address: chevelly.description || 'Uppal, Peerzadiguda, Ganesh nagar',
+            project_type: 'Material Contract',
+            client_name: chevelly.owner_name || 'Chevelly Srinivas'
+          })
+        }
+        supabase.from('projects').update(upgradePayload).eq('id', chevelly.id).then(() => {
+          fetchProjects()
+        })
+      }
+    })
   }, [])
 
   async function fetchProjects() {
@@ -45,6 +109,7 @@ export default function ProjectsPage() {
     const { data } = await supabase.from('projects').select('*').neq('status', 'SYSTEM').order('created_at', { ascending: false })
     setProjects(data || [])
     setLoading(false)
+    return data || []
   }
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -55,13 +120,64 @@ export default function ProjectsPage() {
     }
 
     setSaving(true)
-    const { error } = await supabase.from('projects').insert([formData])
+
+    let registeredClientId = null
+    if (formData.client_email && formData.client_mobile) {
+      try {
+        const res = await fetch('/api/auth/register-client', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fullName: formData.owner_name || 'Client',
+            email: formData.client_email,
+            mobileNumber: formData.client_mobile,
+            password: formData.client_password || 'Client@123'
+          })
+        })
+        const resData = await res.json()
+        if (!res.ok) {
+          throw new Error(resData.error || 'Failed to register client user')
+        }
+        registeredClientId = resData.userId
+      } catch (err: any) {
+        toast.error('Client account creation failed: ' + err.message)
+        setSaving(false)
+        return
+      }
+    }
+
+    const descriptionPayload = JSON.stringify({
+      address: formData.description,
+      project_type: formData.project_type,
+      client_email: formData.client_email,
+      client_mobile: formData.client_mobile,
+      client_password: formData.client_password,
+      client_id: registeredClientId
+    })
+
+    const payload = {
+      name: formData.name,
+      owner_name: formData.owner_name,
+      status: formData.status,
+      description: descriptionPayload
+    }
+
+    const { error } = await supabase.from('projects').insert([payload])
 
     if (error) {
       toast.error(error.message)
     } else {
       toast.success('Project created successfully')
-      setFormData({ name: '', owner_name: '', description: '', status: 'ACTIVE' })
+      setFormData({
+        name: '',
+        owner_name: '',
+        description: '',
+        project_type: 'Material Contract',
+        client_email: '',
+        client_mobile: '',
+        client_password: 'Client@123',
+        status: 'ACTIVE'
+      })
       setShowAddModal(false)
       fetchProjects()
     }
@@ -76,16 +192,72 @@ export default function ProjectsPage() {
     }
 
     setSaving(true)
+
+    let registeredClientId = null
+    if (formData.client_email && formData.client_mobile) {
+      try {
+        const res = await fetch('/api/auth/register-client', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fullName: formData.owner_name || 'Client',
+            email: formData.client_email,
+            mobileNumber: formData.client_mobile,
+            password: formData.client_password || 'Client@123'
+          })
+        })
+        const resData = await res.json()
+        if (!res.ok) {
+          throw new Error(resData.error || 'Failed to register client user')
+        }
+        registeredClientId = resData.userId
+      } catch (err: any) {
+        toast.error('Client account update failed: ' + err.message)
+        setSaving(false)
+        return
+      }
+    }
+
+    const currentClient = getProjectClient(editingProject.description)
+    const descriptionPayload = JSON.stringify({
+      address: formData.description,
+      project_type: formData.project_type,
+      client_email: formData.client_email,
+      client_mobile: formData.client_mobile,
+      client_password: formData.client_password,
+      client_id: registeredClientId || currentClient?.client_id || null,
+      progress_updates: editingProject.description?.startsWith('{') ? JSON.parse(editingProject.description).progress_updates || [] : [],
+      chat: editingProject.description?.startsWith('{') ? JSON.parse(editingProject.description).chat || [] : [],
+      money_requests: editingProject.description?.startsWith('{') ? JSON.parse(editingProject.description).money_requests || [] : [],
+      material_requests: editingProject.description?.startsWith('{') ? JSON.parse(editingProject.description).material_requests || [] : []
+    })
+
+    const payload = {
+      name: formData.name,
+      owner_name: formData.owner_name,
+      status: formData.status,
+      description: descriptionPayload
+    }
+
     const { error } = await supabase
       .from('projects')
-      .update(formData)
+      .update(payload)
       .eq('id', editingProject.id)
 
     if (error) {
       toast.error(error.message)
     } else {
       toast.success('Project updated successfully')
-      setFormData({ name: '', owner_name: '', description: '', status: 'ACTIVE' })
+      setFormData({
+        name: '',
+        owner_name: '',
+        description: '',
+        project_type: 'Material Contract',
+        client_email: '',
+        client_mobile: '',
+        client_password: 'Client@123',
+        status: 'ACTIVE'
+      })
       setEditingProject(null)
       setShowAddModal(false)
       fetchProjects()
@@ -95,10 +267,15 @@ export default function ProjectsPage() {
 
   const handleEdit = (project: any) => {
     setEditingProject(project)
+    const client = getProjectClient(project.description)
     setFormData({
       name: project.name,
       owner_name: project.owner_name || '',
-      description: project.description || '',
+      description: getProjectAddress(project.description),
+      project_type: getProjectType(project.description),
+      client_email: client?.client_email || '',
+      client_mobile: client?.client_mobile || '',
+      client_password: client?.client_password || 'Client@123',
       status: project.status || 'ACTIVE'
     })
     setShowAddModal(true)
@@ -106,7 +283,16 @@ export default function ProjectsPage() {
 
   const handleCancelEdit = () => {
     setEditingProject(null)
-    setFormData({ name: '', owner_name: '', description: '', status: 'ACTIVE' })
+    setFormData({
+      name: '',
+      owner_name: '',
+      description: '',
+      project_type: 'Material Contract',
+      client_email: '',
+      client_mobile: '',
+      client_password: 'Client@123',
+      status: 'ACTIVE'
+    })
     setShowAddModal(false)
   }
 
@@ -197,7 +383,16 @@ export default function ProjectsPage() {
         <button
           onClick={() => {
             setEditingProject(null);
-            setFormData({ name: '', owner_name: '', description: '', status: 'ACTIVE' });
+            setFormData({
+              name: '',
+              owner_name: '',
+              description: '',
+              project_type: 'Material Contract',
+              client_email: '',
+              client_mobile: '',
+              client_password: 'Client@123',
+              status: 'ACTIVE'
+            });
             setShowAddModal(true);
           }}
           className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-black uppercase text-[#0a0c12] cursor-pointer self-start sm:self-auto"
@@ -218,7 +413,7 @@ export default function ProjectsPage() {
               <Table>
                 <TableHeader style={{ backgroundColor: '#0d1018' }}>
                   <TableRow style={{ borderColor: '#1e2435' }}>
-                    {['Project Name', 'Owner', 'Address', 'Status', 'Actions'].map(h => (
+                    {['Project Name', 'Type', 'Owner', 'Address', 'Status', 'Actions'].map(h => (
                       <TableHead key={h} className="py-3 px-4 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>{h}</TableHead>
                     ))}
                   </TableRow>
@@ -227,19 +422,27 @@ export default function ProjectsPage() {
                   {loading ? (
                     Array(4).fill(0).map((_, i) => (
                       <TableRow key={i} style={{ borderColor: '#1e2435' }}>
-                        <TableCell colSpan={5} className="h-14 animate-pulse" style={{ backgroundColor: '#1a1f2e' }} />
+                        <TableCell colSpan={6} className="h-14 animate-pulse" style={{ backgroundColor: '#1a1f2e' }} />
                       </TableRow>
                     ))
                   ) : projects.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-16 text-center text-sm font-bold" style={{ color: DIM }}>No projects yet</TableCell>
+                      <TableCell colSpan={6} className="py-16 text-center text-sm font-bold" style={{ color: DIM }}>No projects yet</TableCell>
                     </TableRow>
                   ) : (
                     projects.map((project) => (
                       <TableRow key={project.id} style={{ borderColor: '#1e2435' }} className="hover:bg-white/[0.02] transition-colors">
                         <TableCell className="px-4 py-4 font-bold text-white text-sm">{project.name}</TableCell>
+                        <TableCell className="px-4 py-4 text-xs font-semibold">
+                          <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase"
+                            style={getProjectType(project.description) === 'Labour Contract'
+                              ? { backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }
+                              : { backgroundColor: 'rgba(59,130,246,0.15)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.3)' }}>
+                            {getProjectType(project.description)}
+                          </span>
+                        </TableCell>
                         <TableCell className="px-4 py-4 text-xs" style={{ color: DIM }}>{project.owner_name || '—'}</TableCell>
-                        <TableCell className="px-4 py-4 text-xs truncate max-w-[160px]" style={{ color: DIM }}>{project.description || '—'}</TableCell>
+                        <TableCell className="px-4 py-4 text-xs truncate max-w-[160px]" style={{ color: DIM }}>{getProjectAddress(project.description) || '—'}</TableCell>
                         <TableCell className="px-4 py-4">
                           <span className="px-2 py-1 rounded-lg text-[10px] font-black"
                             style={project.status === 'ACTIVE'
@@ -282,9 +485,15 @@ export default function ProjectsPage() {
                               : { backgroundColor: 'rgba(107,114,128,0.15)', color: '#9ca3af', border: '1px solid rgba(107,114,128,0.3)' }}>
                             {project.status}
                           </span>
+                          <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase"
+                            style={getProjectType(project.description) === 'Labour Contract'
+                              ? { backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }
+                              : { backgroundColor: 'rgba(59,130,246,0.15)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.3)' }}>
+                            {getProjectType(project.description)}
+                          </span>
                         </div>
                         <p className="text-[10px] font-bold mt-1" style={{ color: DIM }}>{project.owner_name || 'No Owner'}</p>
-                        {project.description && <p className="text-xs font-semibold mt-1" style={{ color: DIM }}>{project.description}</p>}
+                        {project.description && <p className="text-xs font-semibold mt-1" style={{ color: DIM }}>{getProjectAddress(project.description)}</p>}
                       </div>
                     </div>
                     <div className="flex gap-2 justify-end mt-2 pt-3 border-t" style={{ borderColor: '#1e2435' }}>
@@ -339,6 +548,56 @@ export default function ProjectsPage() {
                   className="w-full px-3 py-2.5 rounded-xl text-sm font-semibold outline-none resize-none"
                   style={INPUT_ST}
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Project Type</label>
+                <select value={formData.project_type} onChange={e => setFormData({ ...formData, project_type: e.target.value })}
+                  className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST}>
+                  <option value="Material Contract">Material Contract</option>
+                  <option value="Labour Contract">Labour Contract</option>
+                </select>
+              </div>
+
+              <div className="space-y-3 pt-2 border-t border-[#1e2435]">
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Owner (Client) Portal Credentials</p>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Client Email</label>
+                    <input
+                      type="email"
+                      placeholder="email@example.com"
+                      value={formData.client_email}
+                      onChange={e => setFormData({ ...formData, client_email: e.target.value })}
+                      className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none"
+                      style={INPUT_ST}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Client Mobile</label>
+                    <input
+                      type="tel"
+                      placeholder="e.g. 9999999999"
+                      value={formData.client_mobile}
+                      onChange={e => setFormData({ ...formData, client_mobile: e.target.value })}
+                      className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none"
+                      style={INPUT_ST}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Client Password</label>
+                  <input
+                    type="text"
+                    placeholder="Standard password"
+                    value={formData.client_password}
+                    onChange={e => setFormData({ ...formData, client_password: e.target.value })}
+                    className="w-full h-11 px-3 rounded-xl text-sm font-semibold outline-none"
+                    style={INPUT_ST}
+                  />
+                </div>
               </div>
 
               <div className="space-y-1.5">

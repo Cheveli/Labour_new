@@ -1,13 +1,20 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verifyUserRole } from '@/lib/auth-utils'
 
 // We use the admin/standard client for server-side read-only fetches
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 const supabase = createClient(supabaseUrl, supabaseKey)
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
+    // Role-based auth verification: only allow contractors/admins/superadmins
+    const { authorized } = await verifyUserRole(req, ['superadmin', 'admin', 'contractor'])
+    if (!authorized) {
+      return NextResponse.json({ error: 'Access denied. Unauthorized role.' }, { status: 403 })
+    }
+
     const { message } = await req.json()
 
     if (!message) {

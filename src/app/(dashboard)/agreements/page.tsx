@@ -104,6 +104,14 @@ export default function AgreementsPage() {
   const [remarks, setRemarks] = useState('')
   const [hasDraft, setHasDraft] = useState(false)
 
+  // Quick Project creation modal states
+  const [showQuickProjectModal, setShowQuickProjectModal] = useState(false)
+  const [quickProjName, setQuickProjName] = useState('')
+  const [quickProjType, setQuickProjType] = useState('Material Contract')
+  const [quickProjEmail, setQuickProjEmail] = useState('')
+  const [quickProjMobile, setQuickProjMobile] = useState('')
+  const [quickProjPassword, setQuickProjPassword] = useState('Client@123')
+
   // Company profile details for PDF
   const [companyDetails, setCompanyDetails] = useState({
     name: 'SRI SAI CONSTRUCTIONS',
@@ -234,7 +242,7 @@ export default function AgreementsPage() {
   }
 
   const fetchProjects = async () => {
-    const { data } = await supabase.from('projects').select('id, name, owner_name').neq('status', 'SYSTEM').order('name')
+    const { data } = await supabase.from('projects').select('id, name, owner_name, description').neq('status', 'SYSTEM').order('name')
     setProjects(data || [])
   }
 
@@ -285,6 +293,73 @@ export default function AgreementsPage() {
       }
     } else {
       setAgreements([])
+    }
+  }
+
+  const handleQuickProjectCreate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!quickProjName.trim()) return toast.error('Project Name is required')
+
+    setSaving(true)
+    try {
+      let registeredClientId = null
+      if (quickProjEmail && quickProjMobile) {
+        const res = await fetch('/api/auth/register-client', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fullName: ownerName.trim() || 'Client',
+            email: quickProjEmail,
+            mobileNumber: quickProjMobile,
+            password: quickProjPassword || 'Client@123'
+          })
+        })
+        const resData = await res.json()
+        if (!res.ok) {
+          throw new Error(resData.error || 'Failed to register client')
+        }
+        registeredClientId = resData.userId
+      }
+
+      const descriptionPayload = JSON.stringify({
+        address: siteAddress,
+        project_type: quickProjType,
+        client_email: quickProjEmail,
+        client_mobile: quickProjMobile,
+        client_password: quickProjPassword,
+        client_id: registeredClientId
+      })
+
+      const payload = {
+        name: quickProjName.trim(),
+        owner_name: ownerName.trim() || 'Client',
+        status: 'ACTIVE',
+        description: descriptionPayload
+      }
+
+      const { data: newProj, error: err } = await supabase
+        .from('projects')
+        .insert([payload])
+        .select('*')
+        .single()
+
+      if (err) throw err
+
+      toast.success('Project created and selected!')
+      
+      // Update local projects list state
+      setProjects(prev => [newProj, ...prev])
+      setProjectId(newProj.id)
+      
+      // Close modal and reset fields
+      setShowQuickProjectModal(false)
+      setQuickProjName('')
+      setQuickProjEmail('')
+      setQuickProjMobile('')
+    } catch (err: any) {
+      toast.error('Failed to create project: ' + err.message)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -396,6 +471,80 @@ export default function AgreementsPage() {
       toast.success('Agreement deleted successfully!')
       loadLocalAgreements()
     }
+  }
+
+  const togglePushAgreement = async (agreementId: string, projectId: string | undefined | null) => {
+    if (!projectId) {
+      toast.error('Agreement must be linked to a project first')
+      return
+    }
+
+    try {
+      const { data: proj } = await supabase
+        .from('projects')
+        .select('description')
+        .eq('id', projectId)
+        .single()
+
+      let meta = {
+        address: '',
+        project_type: 'Material Contract',
+        client_email: '',
+        client_mobile: '',
+        client_id: null,
+        progress_updates: [],
+        chat: [],
+        money_requests: [],
+        material_requests: [],
+        pushed_agreement_ids: []
+      }
+
+      if (proj?.description && proj.description.startsWith('{')) {
+        try {
+          meta = { ...meta, ...JSON.parse(proj.description) }
+        } catch (e) {}
+      } else {
+        meta.address = proj?.description || ''
+      }
+
+      let pushed: string[] = meta.pushed_agreement_ids || []
+      if (pushed.includes(agreementId)) {
+        pushed = pushed.filter(id => id !== agreementId)
+        toast.success('Agreement hidden from client portal')
+      } else {
+        pushed = [...pushed, agreementId]
+        toast.success('Agreement pushed to client portal!')
+      }
+
+      const updatedPayload = JSON.stringify({
+        ...meta,
+        pushed_agreement_ids: pushed
+      })
+
+      const { error } = await supabase
+        .from('projects')
+        .update({ description: updatedPayload })
+        .eq('id', projectId)
+
+      if (error) throw error
+
+      // Refresh projects state
+      fetchProjects()
+    } catch (err: any) {
+      toast.error('Failed to toggle push state: ' + err.message)
+    }
+  }
+
+  const isPushed = (agreementId: string, projId: string | undefined | null) => {
+    if (!projId) return false
+    const proj = projects.find(p => p.id === projId)
+    if (proj?.description && proj.description.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(proj.description)
+        return (parsed.pushed_agreement_ids || []).includes(agreementId)
+      } catch (e) {}
+    }
+    return false
   }
 
   const handleSave = async (e: React.FormEvent) => {
@@ -1214,6 +1363,7 @@ export default function AgreementsPage() {
                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Owner</TableHead>
                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Floors</TableHead>
                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-zinc-500 text-right">Rate / Sq.Ft.</TableHead>
+                    <TableHead className="text-[10px] font-black uppercase tracking-widest text-zinc-500 text-center">Client Portal</TableHead>
                     <TableHead className="text-[10px] font-black uppercase tracking-widest text-zinc-500 text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1231,6 +1381,22 @@ export default function AgreementsPage() {
                       <TableCell className="text-xs font-bold text-zinc-400">{agr.number_of_floors || '—'}</TableCell>
                       <TableCell className="text-xs font-black text-white text-right">
                         ₹ {Number(agr.rate_per_square_foot).toLocaleString('en-IN')}/-
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {agr.project_id ? (
+                          <button
+                            onClick={() => togglePushAgreement(agr.id, agr.project_id)}
+                            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all cursor-pointer ${
+                              isPushed(agr.id, agr.project_id)
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-700'
+                            }`}
+                          >
+                            {isPushed(agr.id, agr.project_id) ? 'Pushed ✓' : 'Push to Client'}
+                          </button>
+                        ) : (
+                          <span className="text-[9px] font-bold text-zinc-600 italic">No Project Linked</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1">
@@ -1349,17 +1515,26 @@ export default function AgreementsPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Project (Optional)</label>
-                  <select
-                    value={projectId}
-                    onChange={(e) => handleProjectChange(e.target.value)}
-                    className="w-full h-11 px-3 text-xs font-semibold outline-none focus:border-blue-500/50 transition-all"
-                    style={INPUT_ST}
-                  >
-                    <option value="">— Select Associated Project —</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
+                  <div className="flex gap-2">
+                    <select
+                      value={projectId}
+                      onChange={(e) => handleProjectChange(e.target.value)}
+                      className="flex-1 h-11 px-3 text-xs font-semibold outline-none focus:border-blue-500/50 transition-all"
+                      style={INPUT_ST}
+                    >
+                      <option value="">— Select Associated Project —</option>
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setShowQuickProjectModal(true)}
+                      className="px-3 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 text-xs font-black uppercase border border-blue-500/20 transition-all cursor-pointer shrink-0"
+                    >
+                      + Quick Project
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1648,6 +1823,101 @@ export default function AgreementsPage() {
             <option value="River Sand" />
             <option value="Robo Sand" />
           </datalist>
+        </div>
+      )}
+
+      {/* Quick Project Creation Modal */}
+      {showQuickProjectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in-50" onClick={() => setShowQuickProjectModal(false)}>
+          <div className="rounded-2xl p-6 w-full max-w-md max-h-[85vh] overflow-y-auto custom-scrollbar flex flex-col space-y-6 shadow-2xl animate-in zoom-in-95" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }} onClick={e => e.stopPropagation()}>
+            
+            <div className="flex justify-between items-center pb-4 border-b border-[#1e2435]">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Quick project configuration</p>
+                <p className="text-sm font-bold text-white uppercase tracking-wide">Create & Link Project</p>
+              </div>
+              <button onClick={() => setShowQuickProjectModal(false)} className="text-zinc-500 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-all">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickProjectCreate} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Project Name *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Uppal Villa"
+                  required
+                  value={quickProjName}
+                  onChange={e => setQuickProjName(e.target.value)}
+                  className="w-full h-11 px-3 rounded-xl text-xs font-semibold outline-none focus:border-blue-500/50"
+                  style={INPUT_ST}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Project Type</label>
+                <select
+                  value={quickProjType}
+                  onChange={e => setQuickProjType(e.target.value)}
+                  className="w-full h-11 px-3 rounded-xl text-xs font-semibold outline-none focus:border-blue-500/50"
+                  style={INPUT_ST}
+                >
+                  <option value="Material Contract">Material Contract</option>
+                  <option value="Labour Contract">Labour Contract</option>
+                </select>
+              </div>
+
+              <div className="space-y-3 pt-2 border-t border-[#1e2435]">
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Owner Credentials</p>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Client Email</label>
+                    <input
+                      type="email"
+                      placeholder="client@example.com"
+                      value={quickProjEmail}
+                      onChange={e => setQuickProjEmail(e.target.value)}
+                      className="w-full h-11 px-3 rounded-xl text-xs font-semibold outline-none focus:border-blue-500/50"
+                      style={INPUT_ST}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Client Mobile</label>
+                    <input
+                      type="tel"
+                      placeholder="e.g. 9999999999"
+                      value={quickProjMobile}
+                      onChange={e => setQuickProjMobile(e.target.value)}
+                      className="w-full h-11 px-3 rounded-xl text-xs font-semibold outline-none focus:border-blue-500/50"
+                      style={INPUT_ST}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Login Password</label>
+                  <input
+                    type="text"
+                    placeholder="Standard password"
+                    value={quickProjPassword}
+                    onChange={e => setQuickProjPassword(e.target.value)}
+                    className="w-full h-11 px-3 rounded-xl text-xs font-semibold outline-none focus:border-blue-500/50"
+                    style={INPUT_ST}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowQuickProjectModal(false)} className="flex-1 h-11 rounded-xl text-xs font-bold bg-[#1a1f2e] text-[#f0f0f0] border border-[#1e2435]">Cancel</button>
+                <button type="submit" disabled={saving} className="flex-1 h-11 rounded-xl text-xs font-black text-white bg-blue-600 hover:bg-blue-500 flex items-center justify-center gap-1.5 shadow-lg shadow-blue-500/15">
+                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                  Create Project
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay } from 'date-fns'
-import { CalendarDays, Plus, X as XIcon } from 'lucide-react'
+import { CalendarDays, Plus, X as XIcon, Edit3, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function ImportantDatesPage() {
@@ -19,6 +19,7 @@ export default function ImportantDatesPage() {
     const [adding, setAdding] = useState(false)
 
     const [items, setItems] = useState<any[]>([])
+    const [editingItem, setEditingItem] = useState<any | null>(null)
 
     const [modalOpen, setModalOpen] = useState(false)
     const [form, setForm] = useState({
@@ -68,12 +69,28 @@ export default function ImportantDatesPage() {
     }
 
     const openAddModal = () => {
+        setEditingItem(null)
         setForm({
             date: format(new Date(), 'yyyy-MM-dd'),
             title: '',
             description: ''
         })
         setModalOpen(true)
+    }
+
+    const handleDelete = async (id: string) => {
+        if (!confirm('Are you sure you want to delete this date?')) return
+        try {
+            const { error } = await supabase
+                .from('important_dates')
+                .delete()
+                .eq('id', id)
+            if (error) throw error
+            toast.success('Important date removed')
+            fetchItems()
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to delete')
+        }
     }
 
     const handleAdd = async (e: React.FormEvent) => {
@@ -86,23 +103,36 @@ export default function ImportantDatesPage() {
 
         setAdding(true)
         try {
-            // user_id is handled by RLS if auth.uid() matches; still we must include it for insert.
-            const {
-                data: { user }
-            } = await supabase.auth.getUser()
+            if (editingItem) {
+                const { error } = await supabase
+                    .from('important_dates')
+                    .update({
+                        date: form.date,
+                        title: form.title.trim(),
+                        description: form.description?.trim() || null
+                    })
+                    .eq('id', editingItem.id)
+                if (error) throw error
+                toast.success('Important date updated')
+            } else {
+                const {
+                    data: { user }
+                } = await supabase.auth.getUser()
 
-            const payload = {
-                user_id: user?.id,
-                date: form.date,
-                title: form.title.trim(),
-                description: form.description?.trim() || null
+                const payload = {
+                    user_id: user?.id,
+                    date: form.date,
+                    title: form.title.trim(),
+                    description: form.description?.trim() || null
+                }
+
+                const { error } = await supabase.from('important_dates').insert(payload)
+                if (error) throw error
+
+                toast.success('Important date saved')
             }
-
-            const { error } = await supabase.from('important_dates').insert(payload)
-            if (error) throw error
-
-            toast.success('Important date saved')
             setModalOpen(false)
+            setEditingItem(null)
             await fetchItems()
         } catch (err: any) {
             toast.error(err?.message || 'Failed to save')
@@ -228,18 +258,40 @@ export default function ImportantDatesPage() {
                                 .map((it: any) => (
                                     <div
                                         key={it.id}
-                                        className="rounded-2xl border border-zinc-800 bg-[#0d1018] p-4"
+                                        className="rounded-2xl border border-zinc-800 bg-[#0d1018] p-4 flex items-center justify-between gap-4"
                                     >
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div className="min-w-0">
-                                                <div className="text-xs font-black uppercase tracking-widest text-blue-400">
-                                                    {format(new Date(it.date), 'dd MMM yyyy')}
-                                                </div>
-                                                <div className="text-base font-black text-white truncate">{it.title}</div>
-                                                {it.description ? (
-                                                    <div className="text-sm text-zinc-400 mt-1 leading-relaxed">{it.description}</div>
-                                                ) : null}
+                                        <div className="min-w-0">
+                                            <div className="text-xs font-black uppercase tracking-widest text-blue-400">
+                                                {format(new Date(it.date.replace(/-/g, '/')), 'dd MMM yyyy')}
                                             </div>
+                                            <div className="text-base font-black text-white truncate">{it.title}</div>
+                                            {it.description ? (
+                                                <div className="text-sm text-zinc-400 mt-1 leading-relaxed">{it.description}</div>
+                                            ) : null}
+                                        </div>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <button
+                                                onClick={() => {
+                                                    setEditingItem(it)
+                                                    setForm({
+                                                        date: it.date,
+                                                        title: it.title,
+                                                        description: it.description || ''
+                                                    })
+                                                    setModalOpen(true)
+                                                }}
+                                                className="p-2 rounded-xl bg-[#1a1f2e] border border-[#1e2435] text-zinc-400 hover:text-white transition-all cursor-pointer text-xs flex items-center justify-center"
+                                                title="Edit Date"
+                                            >
+                                                <Edit3 size={14} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(it.id)}
+                                                className="p-2 rounded-xl bg-red-950/20 border border-red-900/30 text-red-400 hover:text-red-300 transition-all cursor-pointer text-xs flex items-center justify-center"
+                                                title="Delete Date"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
                                         </div>
                                     </div>
                                 ))}
@@ -255,7 +307,9 @@ export default function ImportantDatesPage() {
                 >
                     <div className="px-6 py-5 border-b border-[#1e2435] bg-[#0d1018]">
                         <DialogHeader>
-                            <DialogTitle className="text-white text-base font-black uppercase tracking-wide">Add Important Date</DialogTitle>
+                            <DialogTitle className="text-white text-base font-black uppercase tracking-wide">
+                                {editingItem ? 'Edit Important Date' : 'Add Important Date'}
+                            </DialogTitle>
                         </DialogHeader>
                     </div>
 
