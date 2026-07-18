@@ -46,6 +46,7 @@ export default function DashboardPage() {
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [detailsPage, setDetailsPage] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [totalBudget, setTotalBudget] = useState(0)
   const [monthlyData, setMonthlyData] = useState<any[]>([])
   const [projectCosts, setProjectCosts] = useState<any[]>([])
   const [projectBreakdown, setProjectBreakdown] = useState<any[]>([])
@@ -156,20 +157,26 @@ export default function DashboardPage() {
       let matQ = supabase.from('materials').select('total_amount, date, project_id, payment_status, payment_system_v2')
       let subQ = supabase.from('contractor_payments').select('*')
       let peQ = supabase.from('personal_expenses').select('amount, date')
+      let agrQ = supabase.from('agreements').select('total_amount')
 
       if (currentProjectId) {
         incomeQ = incomeQ.eq('project_id', currentProjectId)
         attQ = attQ.eq('project_id', currentProjectId)
         matQ = matQ.eq('project_id', currentProjectId)
+        agrQ = agrQ.eq('project_id', currentProjectId)
       }
 
-      const [incomeRes, attRes, matRes, subRes, peRes] = await Promise.all([
+      const [incomeRes, attRes, matRes, subRes, peRes, agrRes] = await Promise.all([
         incomeQ,
         attQ,
         matQ,
         subQ,
-        peQ
+        peQ,
+        agrQ
       ])
+
+      const computedBudget = agrRes.data?.reduce((a, c) => a + Number(c.total_amount || 0), 0) || 0
+      setTotalBudget(computedBudget)
 
       const incomeData = incomeRes.data
       const attAllData = attRes.data
@@ -615,6 +622,9 @@ export default function DashboardPage() {
       toast.success('Project set as default')
     }
   }
+  
+  const totalExpenses = stats.totalLabourCost + stats.totalMaterialCost + stats.totalExtraWork
+  const remainingBudget = totalBudget - totalExpenses
 
   return (
     <div className="space-y-5 pb-6" suppressHydrationWarning>
@@ -696,6 +706,71 @@ export default function DashboardPage() {
               <Send className="w-3.5 h-3.5" /><span className="hidden sm:inline">Search</span>
             </button>
           </form>
+        </div>
+      </div>
+
+      {/* Financial Balance Gauge */}
+      <div
+        className="p-5 rounded-2xl border flex flex-col md:flex-row items-center gap-6 relative overflow-hidden"
+        style={{
+          backgroundColor: '#111520',
+          borderColor: '#1e2435',
+          background: 'linear-gradient(135deg, #111520 0%, #0d1018 100%)'
+        }}
+      >
+        {/* Gauge representation */}
+        <div className="w-40 flex flex-col items-center justify-center shrink-0 mx-auto">
+          <svg className="w-full h-24" viewBox="0 0 100 50">
+            <path d="M 10,45 A 35,35 0 0,1 90,45" fill="none" stroke="#1e2435" strokeWidth="8" strokeLinecap="round" />
+            <path 
+              d="M 10,45 A 35,35 0 0,1 90,45" 
+              fill="none" 
+              stroke="url(#gauge-gradient)" 
+              strokeDasharray="125.6" 
+              strokeDashoffset={125.6 - (125.6 * Math.min(100, totalBudget > 0 ? (totalExpenses / totalBudget) * 100 : 0)) / 100} 
+              strokeWidth="8" 
+              strokeLinecap="round" 
+              style={{ transition: 'stroke-dashoffset 0.8s ease-in-out' }} 
+            />
+            <defs>
+              <linearGradient id="gauge-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#10b981" />
+                <stop offset="60%" stopColor="#f59e0b" />
+                <stop offset="100%" stopColor="#ef4444" />
+              </linearGradient>
+            </defs>
+            <text x="50" y="42" textAnchor="middle" fill="#ffffff" className="text-[12px] font-black uppercase tracking-wider">
+              {totalBudget > 0 ? Math.round(Math.min(100, (totalExpenses / totalBudget) * 100)) : 0}%
+            </text>
+          </svg>
+          <span className="text-[8px] font-black uppercase tracking-widest text-zinc-500 mt-1">Budget Spent</span>
+        </div>
+
+        {/* Financial summary numbers */}
+        <div className="flex-1 w-full flex flex-col gap-2">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 rounded-xl bg-black/20 border border-zinc-800/40 text-center">
+              <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Total Budget</p>
+              <p className="text-sm sm:text-base font-black text-white mt-1">
+                {totalBudget > 0 ? `₹${totalBudget.toLocaleString('en-IN')}` : 'Not Set'}
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-black/20 border border-zinc-800/40 text-center">
+              <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Expenses Logged</p>
+              <p className="text-sm sm:text-base font-black text-amber-500 mt-1">₹{totalExpenses.toLocaleString('en-IN')}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-black/20 border border-zinc-800/40 text-center">
+              <p className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Remaining Balance</p>
+              <p className={`text-sm sm:text-base font-black mt-1 ${remainingBudget < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                ₹{remainingBudget.toLocaleString('en-IN')}
+              </p>
+            </div>
+          </div>
+          {totalBudget === 0 && (
+            <p className="text-[9px] text-zinc-500 font-medium italic mt-1 text-center">
+              * Note: Please create/register an agreement to link budget limits to this project.
+            </p>
+          )}
         </div>
       </div>
 

@@ -47,6 +47,20 @@ export default function IncomePage() {
     fetchData()
   }, [selectedProjectId])
 
+  useEffect(() => {
+    const handleTrigger = () => {
+      setFormData({
+        project_id: selectedProjectId || (projects[0]?.id || ''),
+        amount: '',
+        date: format(new Date(), 'yyyy-MM-dd'),
+        notes: ''
+      })
+      setShowAddModal(true)
+    }
+    window.addEventListener('ssc_trigger_add_income', handleTrigger)
+    return () => window.removeEventListener('ssc_trigger_add_income', handleTrigger)
+  }, [selectedProjectId, projects])
+
   async function fetchData() {
     const { data: projData } = await supabase.from('projects').select('*').order('name')
     setProjects(projData || [])

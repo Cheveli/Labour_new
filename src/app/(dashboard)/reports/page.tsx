@@ -32,6 +32,22 @@ export default function ReportsPage() {
     setData([])
   }, [reportType, projectId, startDate, endDate])
 
+  useEffect(() => {
+    const onGenerate = () => fetchReport()
+    const onPDF = () => exportPDF()
+    const onExcel = () => exportExcel()
+
+    window.addEventListener('ssc_reports_generate', onGenerate)
+    window.addEventListener('ssc_reports_pdf', onPDF)
+    window.addEventListener('ssc_reports_excel', onExcel)
+
+    return () => {
+      window.removeEventListener('ssc_reports_generate', onGenerate)
+      window.removeEventListener('ssc_reports_pdf', onPDF)
+      window.removeEventListener('ssc_reports_excel', onExcel)
+    }
+  }, [data, reportType, projectId, startDate, endDate])
+
   useEffect(() => { supabase.from('projects').select('*').order('name').then(({ data }) => setProjects(data || [])) }, [])
 
   // Auto-set dates

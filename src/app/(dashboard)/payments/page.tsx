@@ -50,6 +50,19 @@ export default function PaymentsPage() {
     fetchProjects()
   }, [])
 
+  useEffect(() => {
+    const handleDownload = () => generatePDF('download')
+    const handleToggleMode = () => setViewMode(prev => prev === 'individual' ? 'summary' : 'individual')
+    
+    window.addEventListener('ssc_payments_download_pdf', handleDownload)
+    window.addEventListener('ssc_payments_toggle_mode', handleToggleMode)
+    
+    return () => {
+      window.removeEventListener('ssc_payments_download_pdf', handleDownload)
+      window.removeEventListener('ssc_payments_toggle_mode', handleToggleMode)
+    }
+  }, [selectedWorkerId, selectedProjectId, currentWeekStart])
+
   async function fetchProjects() {
     const { data } = await supabase.from('projects').select('*').order('name')
     setProjects(data || [])

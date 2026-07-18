@@ -20,6 +20,9 @@ export default function ImportantDatesPage() {
 
     const [items, setItems] = useState<any[]>([])
     const [editingItem, setEditingItem] = useState<any | null>(null)
+    const [projects, setProjects] = useState<any[]>([])
+    const [selectedProjectId, setSelectedProjectId] = useState<string>('all')
+    const [selectedProjectField, setSelectedProjectField] = useState<string>('')
 
     const [modalOpen, setModalOpen] = useState(false)
     const [form, setForm] = useState({
@@ -30,6 +33,32 @@ export default function ImportantDatesPage() {
 
     const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()))
 
+    const getProjId = (desc: string | null) => {
+        if (desc && desc.startsWith('{')) {
+            try {
+                return JSON.parse(desc).project_id || ''
+            } catch (e) {}
+        }
+        return ''
+    }
+
+    const getDescText = (desc: string | null) => {
+        if (desc && desc.startsWith('{')) {
+            try {
+                return JSON.parse(desc).description || ''
+            } catch (e) {}
+        }
+        return desc || ''
+    }
+
+    const filteredItems = useMemo(() => {
+        if (selectedProjectId === 'all') return items
+        return items.filter(it => {
+            const pId = getProjId(it.description)
+            return pId === selectedProjectId || !pId
+        })
+    }, [items, selectedProjectId])
+
     const monthDays = useMemo(() => {
         const start = startOfMonth(monthCursor)
         const end = endOfMonth(monthCursor)
@@ -38,33 +67,58 @@ export default function ImportantDatesPage() {
 
     const groupedByDay = useMemo(() => {
         const map = new Map<string, any[]>()
-        for (const it of items) {
+        for (const it of filteredItems) {
             const key = it.date
             if (!map.has(key)) map.set(key, [])
             map.get(key)!.push(it)
         }
         return map
-    }, [items])
+    }, [filteredItems])
 
     useEffect(() => {
-        fetchItems()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        fetchInitialData()
+
+        const handleProjectChanged = () => {
+            const activeId = localStorage.getItem('ssc_active_project_id')
+            if (activeId) {
+                setSelectedProjectId(activeId)
+            }
+        }
+        window.addEventListener('ssc_project_changed', handleProjectChanged)
+        return () => window.removeEventListener('ssc_project_changed', handleProjectChanged)
     }, [])
 
-    async function fetchItems() {
+    async function fetchInitialData() {
         try {
             setLoading(true)
-            const { data, error } = await supabase
-                .from('important_dates')
-                .select('*')
-                .order('date', { ascending: true })
+            const { data: projData } = await supabase.from('projects').select('*').order('name')
+            setProjects(projData || [])
 
-            if (error) throw error
-            setItems(data || [])
+            const savedActive = localStorage.getItem('ssc_active_project_id')
+            if (savedActive && projData?.some(p => p.id === savedActive)) {
+                setSelectedProjectId(savedActive)
+            } else {
+                setSelectedProjectId('all')
+            }
+
+            await fetchItems()
         } catch (e: any) {
-            toast.error(e?.message || 'Failed to load important dates')
+            toast.error(e?.message || 'Failed to load initial data')
         } finally {
             setLoading(false)
+        }
+    }
+
+    async function fetchItems() {
+        const { data, error } = await supabase
+            .from('important_dates')
+            .select('*')
+            .order('date', { ascending: true })
+
+        if (error) {
+            toast.error(error.message)
+        } else {
+            setItems(data || [])
         }
     }
 
@@ -75,8 +129,15 @@ export default function ImportantDatesPage() {
             title: '',
             description: ''
         })
+        setSelectedProjectField(selectedProjectId === 'all' ? (projects[0]?.id || '') : selectedProjectId)
         setModalOpen(true)
     }
+
+    useEffect(() => {
+        const handleTrigger = () => openAddModal()
+        window.addEventListener('ssc_trigger_add_date', handleTrigger)
+        return () => window.removeEventListener('ssc_trigger_add_date', handleTrigger)
+    }, [projects, selectedProjectId])
 
     const handleDelete = async (id: string) => {
         if (!confirm('Are you sure you want to delete this date?')) return
@@ -101,6 +162,11 @@ export default function ImportantDatesPage() {
             return
         }
 
+        const metaDescription = JSON.stringify({
+            description: form.description?.trim() || '',
+            project_id: selectedProjectField
+        })
+
         setAdding(true)
         try {
             if (editingItem) {
@@ -109,7 +175,7 @@ export default function ImportantDatesPage() {
                     .update({
                         date: form.date,
                         title: form.title.trim(),
-                        description: form.description?.trim() || null
+                        description: metaDescription
                     })
                     .eq('id', editingItem.id)
                 if (error) throw error
@@ -123,7 +189,7 @@ export default function ImportantDatesPage() {
                     user_id: user?.id,
                     date: form.date,
                     title: form.title.trim(),
-                    description: form.description?.trim() || null
+                    description: metaDescription
                 }
 
                 const { error } = await supabase.from('important_dates').insert(payload)
@@ -148,13 +214,25 @@ export default function ImportantDatesPage() {
                     <h1 className="text-2xl font-black text-white tracking-tight">Important Dates</h1>
                     <p className="mt-1 text-sm text-zinc-500">Construction milestones & personal reminders</p>
                 </div>
-                <Button
-                    onClick={openAddModal}
-                    className="btn-construction rounded-xl font-black uppercase"
-                    style={{ backgroundColor: '#3b82f6' }}
-                >
-                    <Plus size={16} className="mr-2" /> Add
-                </Button>
+                <div className="flex items-center gap-3">
+                    <select
+                        value={selectedProjectId}
+                        onChange={e => setSelectedProjectId(e.target.value)}
+                        className="h-10 px-3 rounded-xl text-xs font-black uppercase bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500/50"
+                    >
+                        <option value="all">All Projects</option>
+                        {projects.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                    </select>
+                    <Button
+                        onClick={openAddModal}
+                        className="btn-construction rounded-xl font-black uppercase h-10 px-4"
+                        style={{ backgroundColor: '#3b82f6' }}
+                    >
+                        <Plus size={16} className="mr-2" /> Add
+                    </Button>
+                </div>
             </div>
 
             <Card className="panel-elevated text-white rounded-2xl overflow-hidden">
@@ -248,11 +326,11 @@ export default function ImportantDatesPage() {
                     <CardTitle className="text-[10px] font-black uppercase tracking-widest text-zinc-500 italic">All saved entries</CardTitle>
                 </CardHeader>
                 <CardContent className="p-5">
-                    {items.length === 0 ? (
+                    {filteredItems.length === 0 ? (
                         <div className="text-zinc-600 text-sm font-bold">No entries yet. Add your first milestone or reminder.</div>
                     ) : (
                         <div className="space-y-3">
-                            {items
+                            {filteredItems
                                 .slice()
                                 .sort((a, b) => (a.date > b.date ? -1 : 1))
                                 .map((it: any) => (
@@ -265,8 +343,8 @@ export default function ImportantDatesPage() {
                                                 {format(new Date(it.date.replace(/-/g, '/')), 'dd MMM yyyy')}
                                             </div>
                                             <div className="text-base font-black text-white truncate">{it.title}</div>
-                                            {it.description ? (
-                                                <div className="text-sm text-zinc-400 mt-1 leading-relaxed">{it.description}</div>
+                                            {getDescText(it.description) ? (
+                                                <div className="text-sm text-zinc-400 mt-1 leading-relaxed">{getDescText(it.description)}</div>
                                             ) : null}
                                         </div>
                                         <div className="flex items-center gap-1.5 shrink-0">
@@ -276,8 +354,9 @@ export default function ImportantDatesPage() {
                                                     setForm({
                                                         date: it.date,
                                                         title: it.title,
-                                                        description: it.description || ''
+                                                        description: getDescText(it.description)
                                                     })
+                                                    setSelectedProjectField(getProjId(it.description) || (projects[0]?.id || ''))
                                                     setModalOpen(true)
                                                 }}
                                                 className="p-2 rounded-xl bg-[#1a1f2e] border border-[#1e2435] text-zinc-400 hover:text-white transition-all cursor-pointer text-xs flex items-center justify-center"
@@ -317,6 +396,19 @@ export default function ImportantDatesPage() {
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Date</label>
                             <Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white" />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Link to Project</label>
+                            <select
+                                value={selectedProjectField}
+                                onChange={e => setSelectedProjectField(e.target.value)}
+                                className="w-full h-12 px-3 rounded-xl text-sm font-bold bg-zinc-900 border border-zinc-800 text-white outline-none focus:border-blue-500/50"
+                            >
+                                {projects.map(p => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                            </select>
                         </div>
 
                         <div className="space-y-2">

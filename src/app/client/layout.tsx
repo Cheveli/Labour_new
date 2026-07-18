@@ -38,15 +38,12 @@ export default function ClientLayout({
         className="flex-1 lg:pl-64 overflow-y-auto relative"
         style={{ backgroundColor: '#0a0c12' }}
       >
-        <div className="pt-4 pb-20 lg:pt-8 lg:pb-8 p-3 sm:p-4 lg:p-7 max-w-[1400px] mx-auto w-full flex flex-col min-h-full">
+        <div className="pt-4 pb-4 lg:pt-8 lg:pb-8 p-3 sm:p-4 lg:p-7 max-w-[1400px] mx-auto w-full flex flex-col min-h-full">
           <div className="flex-1 text-white">
             {children}
           </div>
         </div>
       </main>
-
-      {/* Mobile bottom nav */}
-      <ClientMobileBottomNav />
     </div>
   )
 }

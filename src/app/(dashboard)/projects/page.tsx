@@ -40,6 +40,25 @@ export default function ProjectsPage() {
 
   const supabase = createClient()
 
+  useEffect(() => {
+    const handleTrigger = () => {
+      setFormData({
+        name: '',
+        owner_name: '',
+        description: '',
+        project_type: 'Material Contract',
+        client_email: '',
+        client_mobile: '',
+        client_password: 'Client@123',
+        status: 'ACTIVE'
+      })
+      setEditingProject(null)
+      setShowAddModal(true)
+    }
+    window.addEventListener('ssc_trigger_add_project', handleTrigger)
+    return () => window.removeEventListener('ssc_trigger_add_project', handleTrigger)
+  }, [])
+
   // Helper parsing functions
   const getProjectAddress = (desc: string | null) => {
     if (!desc) return ''

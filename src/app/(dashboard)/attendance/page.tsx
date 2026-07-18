@@ -49,6 +49,61 @@ export default function AttendancePage() {
   const [saving, setSaving] = useState(false)
   const [selectedWorkers, setSelectedWorkers] = useState<string[]>([])
   
+  const [viewMode, setViewMode] = useState<'grid' | 'heatmap'>('grid')
+  const [heatmapCursor, setHeatmapCursor] = useState<Date>(new Date())
+  const [heatmapCounts, setHeatmapCounts] = useState<Record<string, number>>({})
+  const [heatmapLoading, setHeatmapLoading] = useState(false)
+
+  const fetchMonthHeatmap = async (projId: string, monthDate: Date) => {
+    try {
+      setHeatmapLoading(true)
+      const startOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1)
+      const endOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0)
+      
+      const startStr = format(startOfMonth(monthDate), 'yyyy-MM-dd')
+      const endStr = format(endOfMonth(monthDate), 'yyyy-MM-dd')
+      
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('date, days_worked')
+        .eq('project_id', projId)
+        .gte('date', startStr)
+        .lte('date', endStr)
+        
+      if (error) throw error
+      
+      const counts: Record<string, number> = {}
+      data?.forEach((r: any) => {
+        if (r.days_worked > 0) {
+          counts[r.date] = (counts[r.date] || 0) + 1
+        }
+      })
+      setHeatmapCounts(counts)
+    } catch (e: any) {
+      console.error('Failed to load heatmap:', e)
+    } finally {
+      setHeatmapLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (viewMode === 'heatmap' && selectedProject) {
+      fetchMonthHeatmap(selectedProject, heatmapCursor)
+    }
+  }, [viewMode, selectedProject, heatmapCursor])
+  
+  const heatmapDays = useMemo(() => {
+    const startOfHeatmapMonth = new Date(heatmapCursor.getFullYear(), heatmapCursor.getMonth(), 1)
+    const endOfHeatmapMonth = new Date(heatmapCursor.getFullYear(), heatmapCursor.getMonth() + 1, 0)
+    const startDayOfWeek = startOfHeatmapMonth.getDay()
+    const padding = Array(startDayOfWeek).fill(null)
+    const days = []
+    for (let i = 1; i <= endOfHeatmapMonth.getDate(); i++) {
+      days.push(new Date(heatmapCursor.getFullYear(), heatmapCursor.getMonth(), i))
+    }
+    return [...padding, ...days]
+  }, [heatmapCursor])
+
   // Modals & Panels
   const [showAddWorker, setShowAddWorker] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -119,6 +174,25 @@ export default function AttendancePage() {
       window.removeEventListener('ssc_project_changed', handleProjectChanged)
     }
   }, [selectedProject, currentWeekStart])
+
+  useEffect(() => {
+    const onSave = () => handleSave()
+    const onCopyPrev = () => copyPreviousWeek()
+    const onAddWorker = () => setShowAddWorker(true)
+    const onToggleOt = () => setOtMode(prev => !prev)
+
+    window.addEventListener('ssc_attendance_save', onSave)
+    window.addEventListener('ssc_attendance_copy_prev', onCopyPrev)
+    window.addEventListener('ssc_attendance_add_worker', onAddWorker)
+    window.addEventListener('ssc_attendance_toggle_ot', onToggleOt)
+
+    return () => {
+      window.removeEventListener('ssc_attendance_save', onSave)
+      window.removeEventListener('ssc_attendance_copy_prev', onCopyPrev)
+      window.removeEventListener('ssc_attendance_add_worker', onAddWorker)
+      window.removeEventListener('ssc_attendance_toggle_ot', onToggleOt)
+    }
+  }, [gridData, selectedProject, currentWeekStart, dailyNotes])
 
   async function loadWeekData(projectId: string, weekStart: Date) {
     setLoading(true)
@@ -487,17 +561,52 @@ export default function AttendancePage() {
             {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
 
-          <div className="flex items-center gap-2 bg-[#0d1018] rounded-xl border border-[#1e2435] p-1 h-11">
-            <button onClick={() => setCurrentWeekStart(subWeeks(currentWeekStart, 1))} className="p-2 hover:bg-white/5 rounded-lg text-zinc-400 transition-colors">
-              <ChevronLeft size={18} />
+          <div className="flex bg-[#0d1018] rounded-xl border border-[#1e2435] p-0.5 h-11 shrink-0">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={cn("px-4 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all", viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-white')}
+            >
+              Grid
             </button>
-            <div className="px-3 text-xs font-black uppercase tracking-widest text-white whitespace-nowrap">
-              {format(currentWeekStart, 'dd MMM')} - {format(endOfWeek(currentWeekStart, { weekStartsOn: 0 }), 'dd MMM yyyy')}
-            </div>
-            <button onClick={() => setCurrentWeekStart(addWeeks(currentWeekStart, 1))} className="p-2 hover:bg-white/5 rounded-lg text-zinc-400 transition-colors">
-              <ChevronRight size={18} />
+            <button
+              onClick={() => setViewMode('heatmap')}
+              className={cn("px-4 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all", viewMode === 'heatmap' ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-white')}
+            >
+              Heatmap
             </button>
           </div>
+
+          {viewMode === 'grid' ? (
+            <div className="flex items-center gap-2 bg-[#0d1018] rounded-xl border border-[#1e2435] p-1 h-11">
+              <button onClick={() => setCurrentWeekStart(subWeeks(currentWeekStart, 1))} className="p-2 hover:bg-white/5 rounded-lg text-zinc-400 transition-colors">
+                <ChevronLeft size={18} />
+              </button>
+              <div className="px-3 text-xs font-black uppercase tracking-widest text-white whitespace-nowrap">
+                {format(currentWeekStart, 'dd MMM')} - {format(endOfWeek(currentWeekStart, { weekStartsOn: 0 }), 'dd MMM yyyy')}
+              </div>
+              <button onClick={() => setCurrentWeekStart(addWeeks(currentWeekStart, 1))} className="p-2 hover:bg-white/5 rounded-lg text-zinc-400 transition-colors">
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 bg-[#0d1018] rounded-xl border border-[#1e2435] p-1 h-11">
+              <button 
+                onClick={() => setHeatmapCursor(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))} 
+                className="p-2 hover:bg-white/5 rounded-lg text-zinc-400 transition-colors"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <div className="px-3 text-xs font-black uppercase tracking-widest text-white whitespace-nowrap">
+                {format(heatmapCursor, 'MMMM yyyy')}
+              </div>
+              <button 
+                onClick={() => setHeatmapCursor(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))} 
+                className="p-2 hover:bg-white/5 rounded-lg text-zinc-400 transition-colors"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
@@ -510,8 +619,10 @@ export default function AttendancePage() {
         </div>
       </div>
 
-      {/* Week Summary Panel */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      {viewMode === 'grid' ? (
+        <>
+          {/* Week Summary Panel */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[
           { label: 'Active Workers', value: totals.wCount },
           { label: 'Man-Days (M,L,P)', value: `M-${totals.mDays}, L-${totals.lDays}, P-${totals.pDays}` },
@@ -825,6 +936,88 @@ export default function AttendancePage() {
       </>
     )}
   </div>
+  </>
+) : (
+  <div style={PANEL} className="p-6 shadow-2xl space-y-6">
+    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-[#1e2435]">
+      <div>
+        <h3 className="text-sm font-black text-white uppercase tracking-wider">Attendance Heatmap</h3>
+        <p className="text-[10px] font-bold text-zinc-500 uppercase mt-0.5">Workforce strength color scale per day</p>
+      </div>
+      
+      {/* Color Legend key */}
+      <div className="flex items-center gap-3 bg-[#0d1018] p-2 rounded-xl border border-[#1e2435] self-start sm:self-auto">
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded bg-[#161a26]" />
+          <span className="text-[8px] font-black uppercase text-zinc-500">0</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded bg-blue-950/40 border border-blue-900/30" />
+          <span className="text-[8px] font-black uppercase text-zinc-500">1-4</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded bg-blue-600/20 border border-blue-500/40" />
+          <span className="text-[8px] font-black uppercase text-zinc-500">5-9</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded bg-emerald-500/20 border border-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.2)]" />
+          <span className="text-[8px] font-black uppercase text-zinc-500">10+</span>
+        </div>
+      </div>
+    </div>
+
+    {heatmapLoading ? (
+      <div className="py-24 flex justify-center"><Loader2 className="animate-spin text-blue-500" size={32} /></div>
+    ) : (
+      <div className="space-y-4">
+        {/* Day names row */}
+        <div className="grid grid-cols-7 gap-2 text-center text-zinc-600 text-[10px] font-black uppercase tracking-wider">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+            <div key={d}>{d}</div>
+          ))}
+        </div>
+
+        {/* Day cells grid */}
+        <div className="grid grid-cols-7 gap-2.5">
+          {heatmapDays.map((day, idx) => {
+            if (!day) {
+              return <div key={`empty-${idx}`} className="aspect-square bg-transparent" />
+            }
+            
+            const dateStr = format(day, 'yyyy-MM-dd')
+            const count = heatmapCounts[dateStr] || 0
+            
+            // Color scale computation
+            let cellStyle = "bg-[#111520] border-[#1e2435] text-zinc-500"
+            if (count > 0 && count <= 4) {
+              cellStyle = "bg-blue-950/30 border-blue-900/30 text-blue-400"
+            } else if (count > 4 && count <= 9) {
+              cellStyle = "bg-blue-600/20 border-blue-500/40 text-blue-300"
+            } else if (count > 9) {
+              cellStyle = "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.15)]"
+            }
+            
+            return (
+              <div 
+                key={dateStr}
+                className={cn(
+                  "aspect-square rounded-xl border flex flex-col items-center justify-between p-2 transition-all hover:scale-[1.03] active:scale-95",
+                  cellStyle
+                )}
+              >
+                <span className="text-[10px] font-black self-start">{day.getDate()}</span>
+                <div className="flex flex-col items-center justify-center w-full flex-1">
+                  <span className="text-xs font-black">{count > 0 ? count : ''}</span>
+                  {count > 0 && <span className="text-[6px] font-black uppercase tracking-widest text-zinc-500">crew</span>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )}
+  </div>
+)}
 
       {/* Add Worker Modal */}
       {showAddWorker && (

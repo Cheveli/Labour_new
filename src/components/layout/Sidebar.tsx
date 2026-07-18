@@ -18,18 +18,18 @@ import {
   LogOut,
   LayoutDashboard,
   HardHat,
+  ShieldCheck,
+  Settings,
   Calculator,
   BarChart3,
   Phone,
-  Settings,
-  ShieldCheck,
   FileText,
+  MessageCircle
 } from 'lucide-react'
+import NotificationCenter from '@/components/layout/NotificationCenter'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { useEffect } from 'react'
-
-import { MessageCircle } from 'lucide-react'
 
 const menuItems = [
   { label: 'Overview', href: '/', icon: LayoutDashboard },
@@ -93,7 +93,7 @@ export default function Sidebar() {
     const updateUnreadCount = async () => {
       const { data: projs } = await supabase.from('projects').select('id, description')
       if (!projs) return
-      
+
       let totalUnread = 0
       for (const p of projs) {
         if (p.description && p.description.startsWith('{')) {
@@ -102,15 +102,15 @@ export default function Sidebar() {
             const chat = parsed.chat || []
             const lastReadStr = localStorage.getItem(`ssc_chat_last_read_${p.id}`)
             const lastRead = lastReadStr ? new Date(lastReadStr).getTime() : 0
-            
+
             const unread = chat.filter((msg: any) => msg.sender === 'client' && new Date(msg.timestamp).getTime() > lastRead)
             totalUnread += unread.length
-          } catch (e) {}
+          } catch (e) { }
         }
       }
       setChatUnreadCount(totalUnread)
     }
-    
+
     updateUnreadCount()
 
     // Realtime channel
@@ -308,24 +308,27 @@ export default function Sidebar() {
           {/* Admin Profile & Logout */}
           <div className="px-3 py-4 border-t border-[#1e2435] space-y-3">
             {/* Admin Profile */}
-            <div className={cn("flex items-center gap-3", !showExpanded ? "justify-center" : "px-2")}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black text-[#0a0c12] shrink-0"
-                style={{ background: 'linear-gradient(135deg,#3b82f6,#2563eb)' }}>
-                A
-              </div>
-              {showExpanded && (
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-white truncate">Admin</p>
-                  <p className="text-[10px] text-zinc-500 truncate">Site Administrator</p>
+            <div className={cn("flex items-center justify-between gap-3", !showExpanded ? "flex-col justify-center" : "px-2")}>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black text-[#0a0c12] shrink-0"
+                  style={{ background: 'linear-gradient(135deg,#3b82f6,#2563eb)' }}>
+                  A
                 </div>
-              )}
+                {showExpanded && (
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white truncate">Admin</p>
+                    <p className="text-[10px] text-zinc-500 truncate">Site Administrator</p>
+                  </div>
+                )}
+              </div>
+              <div className="shrink-0">
+                <NotificationCenter />
+              </div>
             </div>
-
-            {/* Logout button removed as per user request */}
           </div>
         </div>
       </div>
     </>
   )
-}
 
+}

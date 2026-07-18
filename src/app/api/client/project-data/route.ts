@@ -98,7 +98,34 @@ export async function GET(request: NextRequest) {
     if (contractorId) {
       datesQuery = datesQuery.eq('user_id', contractorId)
     }
-    const { data: importantDates } = await datesQuery
+    const { data: allDates } = await datesQuery
+
+    // Filter in-memory to ensure client only sees dates associated with this specific project (or legacy dates)
+    const importantDates = (allDates || []).filter(d => {
+      if (d.description && d.description.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(d.description)
+          return parsed.project_id === project.id
+        } catch (e) {
+          return true
+        }
+      }
+      return true
+    }).map(d => {
+      // Map it to return clean description text to the client
+      if (d.description && d.description.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(d.description)
+          return {
+            ...d,
+            description: parsed.description || null
+          }
+        } catch (e) {
+          return d
+        }
+      }
+      return d
+    })
 
     // 7. Get contractor company settings (from company_settings table)
     const { data: settings } = await supabase
