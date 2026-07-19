@@ -118,30 +118,6 @@ const parseMaterialNotes = (notesStr: string | null | undefined): ParsedMaterial
 }
 
 const getPaidAmountForMaterial = (item: any): number => {
-  if (item.payment_system_v2 && item.payment_status !== 'paid') {
-    return 0
-  }
-  
-  if (item.notes && item.notes.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(item.notes)
-      if (parsed.is_erp_v3 && typeof parsed.calculated_total === 'number' && parsed.calculated_total > 0 && typeof parsed.final_paid_amount === 'number') {
-        if (Math.abs(parsed.final_paid_amount - parsed.calculated_total) < 1) {
-          return item.total_amount || 0
-        }
-        
-        const ratio = parsed.final_paid_amount / parsed.calculated_total
-        const computed = (item.total_amount || 0) * ratio
-        
-        if (Math.abs(computed - (item.total_amount || 0)) <= 2) {
-          return item.total_amount || 0
-        }
-        
-        return Math.round(computed)
-      }
-    } catch (e) {}
-  }
-  
   return item.total_amount || item.total_cost || 0
 }
 
@@ -919,12 +895,14 @@ export default function MaterialsPage() {
       const cost = q * r
 
       let updatedNotes = ''
+      let finalItemPaid = cost
       if (editNotesParsed) {
         const trans = parseFloat(commonTransport) || 0
         const load = parseFloat(commonLoading) || 0
         const calcTotal = cost + trans + load
         const finalPaid = parseFloat(commonPaidAmount) || calcTotal
         const disc = calcTotal - finalPaid
+        finalItemPaid = finalPaid
 
         updatedNotes = JSON.stringify({
           ...editNotesParsed,
@@ -952,7 +930,7 @@ export default function MaterialsPage() {
         quantity: q,
         unit: editMatData.unit,
         cost_per_unit: r,
-        total_amount: cost,
+        total_amount: finalItemPaid,
         notes: updatedNotes,
         date: editMatData.date
       }).eq('id', editingMat.id)
@@ -1326,11 +1304,29 @@ export default function MaterialsPage() {
       // Generate unique purchase ID
       const purchaseId = 'PUR-' + Date.now()
 
-      // Map rows
-      const dbPayloads = purchaseItems.map(item => {
+      // Map rows with distributed final paid amounts to avoid floating-point/rounding errors
+      const totalPaidBill = purchaseStats.paid
+      const matTotalCost = purchaseItems.reduce((acc, item) => {
+        const qty = parseFloat(item.quantity) || 0
+        const rate = parseFloat(item.cost_per_unit) || 0
+        return acc + (qty * rate)
+      }, 0)
+
+      let allocatedSum = 0
+      const dbPayloads = purchaseItems.map((item, idx) => {
         const qty = parseFloat(item.quantity) || 0
         const rate = parseFloat(item.cost_per_unit) || 0
         const cost = qty * rate
+
+        let finalItemPaid = 0
+        if (idx === purchaseItems.length - 1) {
+          // Last item absorbs any remainder to match totalPaidBill exactly
+          finalItemPaid = totalPaidBill - allocatedSum
+        } else {
+          const proportion = matTotalCost > 0 ? (cost / matTotalCost) : 0
+          finalItemPaid = Math.round(totalPaidBill * proportion)
+          allocatedSum += finalItemPaid
+        }
 
         const notesJson = JSON.stringify({
           purchase_id: purchaseId,
@@ -1352,7 +1348,7 @@ export default function MaterialsPage() {
           quantity: qty,
           unit: item.unit,
           cost_per_unit: rate,
-          total_amount: cost,
+          total_amount: finalItemPaid,
           date: commonDate,
           notes: notesJson,
           receipt_url: uploadedUrl,
@@ -1671,7 +1667,7 @@ export default function MaterialsPage() {
                             <TableHead className="px-4 py-2 uppercase text-[10px] font-black tracking-widest text-zinc-400">Date</TableHead>
                             <TableHead className="py-2 uppercase text-[10px] font-black tracking-widest text-zinc-400">Material</TableHead>
                             <TableHead className="py-2 uppercase text-[10px] font-black tracking-widest text-zinc-400">Quantity</TableHead>
-                            <TableHead className="text-right px-4 py-2 uppercase text-[10px] font-black tracking-widest text-zinc-400">Total Amount</TableHead>
+                            <TableHead className="text-right px-4 py-2 uppercase text-[10px] font-black tracking-widest text-zinc-400">Final Paid Amount</TableHead>
                             <TableHead className="px-4 py-2 uppercase text-[10px] font-black tracking-widest text-zinc-400 text-center">Payment Status</TableHead>
                             <TableHead className="py-2 w-14 text-center">Action</TableHead>
                           </TableRow>
@@ -2773,7 +2769,7 @@ export default function MaterialsPage() {
       {/* Add Material Modal (Purchase Builder) */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in-50">
-          <div className="rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col space-y-6 shadow-2xl animate-in zoom-in-95" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }} onClick={e => e.stopPropagation()}>
+          <div className="p-6 w-full max-w-5xl h-full md:h-[95vh] max-h-[95vh] rounded-none md:rounded-2xl overflow-y-auto custom-scrollbar flex flex-col space-y-6 shadow-2xl animate-in zoom-in-95" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }} onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center pb-4 border-b border-[#1e2435]">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Sri Sai Constructions</p>
@@ -2874,7 +2870,7 @@ export default function MaterialsPage() {
                   <span className="text-[9px] font-bold text-zinc-500 uppercase">{purchaseItems.length} lines configured</span>
                 </div>
 
-                <div className="space-y-3 max-h-[30vh] overflow-y-auto pr-1 custom-scrollbar">
+                <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1 custom-scrollbar">
                   {purchaseItems.map((item, idx) => (
                     <div key={idx} className="grid grid-cols-2 md:grid-cols-12 gap-3 md:gap-2 bg-black/20 p-4 md:p-3 rounded-xl border border-zinc-900 items-end relative">
                       <div className="col-span-2 md:col-span-3 space-y-1">
