@@ -738,15 +738,28 @@ export default function MaterialsPage() {
           if (!ctx) return resolve(file)
           ctx.drawImage(img, 0, 0, width, height)
           
-          let quality = 0.9
+          let quality = 0.8
+          let scale = 1.0
           const attemptCompress = () => {
             canvas.toBlob((blob) => {
               if (!blob) return resolve(file)
-              if (blob.size > 100 * 1024 && quality > 0.1) {
-                quality -= 0.1
-                attemptCompress()
-              } else {
+              if (blob.size <= 100 * 1024 || (quality <= 0.2 && scale <= 0.3)) {
                 resolve(new File([blob], file.name, { type: 'image/jpeg' }))
+              } else {
+                if (quality > 0.2) {
+                  quality -= 0.15
+                  attemptCompress()
+                } else {
+                  scale -= 0.15
+                  const newWidth = Math.max(100, width * scale)
+                  const newHeight = Math.max(100, height * scale)
+                  canvas.width = newWidth
+                  canvas.height = newHeight
+                  ctx.clearRect(0, 0, newWidth, newHeight)
+                  ctx.drawImage(img, 0, 0, newWidth, newHeight)
+                  quality = 0.5
+                  attemptCompress()
+                }
               }
             }, 'image/jpeg', quality)
           }
@@ -770,6 +783,14 @@ export default function MaterialsPage() {
           setReceiptFile(finalFile)
         } catch {
           toast.error('Failed to compress image')
+          setReceiptFile(file)
+        }
+      } else if (file.type === 'application/pdf') {
+        if (file.size > 100 * 1024) {
+          toast.error('PDF exceeds 100KB. For larger receipts, please take a screenshot or photo and upload as JPG/PNG to auto-compress under 100KB.')
+          e.target.value = ''
+          setReceiptFile(null)
+        } else {
           setReceiptFile(file)
         }
       } else {
