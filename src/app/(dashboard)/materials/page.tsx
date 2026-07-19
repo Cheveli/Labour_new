@@ -117,6 +117,34 @@ const parseMaterialNotes = (notesStr: string | null | undefined): ParsedMaterial
   }
 }
 
+const getPaidAmountForMaterial = (item: any): number => {
+  if (item.payment_system_v2 && item.payment_status !== 'paid') {
+    return 0
+  }
+  
+  if (item.notes && item.notes.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(item.notes)
+      if (parsed.is_erp_v3 && typeof parsed.calculated_total === 'number' && parsed.calculated_total > 0 && typeof parsed.final_paid_amount === 'number') {
+        if (Math.abs(parsed.final_paid_amount - parsed.calculated_total) < 1) {
+          return item.total_amount || 0
+        }
+        
+        const ratio = parsed.final_paid_amount / parsed.calculated_total
+        const computed = (item.total_amount || 0) * ratio
+        
+        if (Math.abs(computed - (item.total_amount || 0)) <= 2) {
+          return item.total_amount || 0
+        }
+        
+        return Math.round(computed)
+      }
+    } catch (e) {}
+  }
+  
+  return item.total_amount || item.total_cost || 0
+}
+
 interface Project {
   id: string
   name: string
@@ -199,7 +227,18 @@ function MaterialCard({ item, cleanNotesVal, onDelete, onEdit, onView, onToggleP
           </div>
         </div>
         <div className="text-right shrink-0">
-          <p className="font-black text-white text-sm">₹ {(item.total_amount || item.total_cost || 0).toLocaleString('en-IN')}</p>
+          <p className="font-black text-white text-sm">₹ {getPaidAmountForMaterial(item).toLocaleString('en-IN')}</p>
+          {(() => {
+            const paid = getPaidAmountForMaterial(item)
+            const saved = (item.total_amount || 0) - paid
+            if (saved > 0) {
+              return <p className="text-[8px] font-black text-emerald-400 mt-0.5">Saved ₹{saved.toLocaleString('en-IN')}</p>
+            }
+            if (item.payment_status !== 'paid' && item.payment_system_v2) {
+              return <p className="text-[8px] font-black text-red-400 mt-0.5">Unpaid</p>
+            }
+            return null
+          })()}
           {item.cost_per_unit > 0 && (
             <p className="text-[9px] font-bold text-zinc-500 mt-0.5">@ ₹{item.cost_per_unit}</p>
           )}
@@ -1681,7 +1720,18 @@ export default function MaterialsPage() {
                                     )}
                                   </TableCell>
                                   <TableCell className="py-1.5 text-right px-4">
-                                    <p className="font-black text-white text-sm whitespace-nowrap">₹ {(item.total_amount || 0).toLocaleString('en-IN')}</p>
+                                    <p className="font-black text-white text-sm whitespace-nowrap">₹ {getPaidAmountForMaterial(item).toLocaleString('en-IN')}</p>
+                                    {(() => {
+                                      const paid = getPaidAmountForMaterial(item)
+                                      const saved = (item.total_amount || 0) - paid
+                                      if (saved > 0) {
+                                        return <p className="text-[8px] font-black text-emerald-400 mt-0.5">Saved ₹{saved.toLocaleString('en-IN')}</p>
+                                      }
+                                      if (item.payment_status !== 'paid' && item.payment_system_v2) {
+                                        return <p className="text-[8px] font-black text-red-400 mt-0.5">Unpaid</p>
+                                      }
+                                      return null
+                                    })()}
                                   </TableCell>
                                   <TableCell className="py-1.5 text-center px-4">
                                     {item.payment_system_v2 ? (
@@ -2722,7 +2772,7 @@ export default function MaterialsPage() {
 
       {/* Add Material Modal (Purchase Builder) */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in-50" onClick={() => setShowAddModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in-50">
           <div className="rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col space-y-6 shadow-2xl animate-in zoom-in-95" style={{ backgroundColor: '#111520', border: '1px solid #1e2435' }} onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center pb-4 border-b border-[#1e2435]">
               <div>
