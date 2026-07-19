@@ -17,13 +17,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { 
   Boxes, Loader2, Trash2, Edit2, FileText, Upload, Folder, FolderOpen, 
   ChevronRight, X, Calendar, ChevronDown, Eye, Plus, Check, Settings, 
-  AlertTriangle, DollarSign, TrendingUp, TrendingDown, ArrowUpRight 
+  AlertTriangle, DollarSign, TrendingUp, TrendingDown, ArrowUpRight, Filter 
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 
 const MATERIAL_MASTER = [
+  { name: 'Other / Miscellaneous', unit: 'No Unit' },
   { name: 'Cement', unit: 'Bags' },
   { name: 'White Cement', unit: 'Bags' },
   { name: 'Steel', unit: 'Kg' },
@@ -256,8 +257,9 @@ export default function MaterialsPage() {
     unit: string
     cost_per_unit: string
     unitLocked: boolean
+    customName?: string
   }>>([
-    { name: 'Cement', brand: '', quantity: '', unit: 'Bags', cost_per_unit: '', unitLocked: true }
+    { name: 'Cement', brand: '', quantity: '', unit: 'Bags', cost_per_unit: '', unitLocked: true, customName: '' }
   ])
 
   // Common purchase details
@@ -269,6 +271,9 @@ export default function MaterialsPage() {
   const [commonRemarks, setCommonRemarks] = useState('')
   const [commonPaidAmount, setCommonPaidAmount] = useState('')
   const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] = useState(false)
+  const [creationPaymentStatus, setCreationPaymentStatus] = useState<'paid' | 'unpaid'>('unpaid')
+  const [creationPaymentMode, setCreationPaymentMode] = useState<'cash' | 'online'>('cash')
+  const [creationAccountName, setCreationAccountName] = useState('')
 
   // Active material for price history modal
   const [activeHistoryMaterial, setActiveHistoryMaterial] = useState<string | null>(null)
@@ -516,8 +521,13 @@ export default function MaterialsPage() {
       const updated = { ...item, [field]: value }
       if (field === 'name') {
         const defaultUnit = getUnitForMaterial(value)
-        if (item.unitLocked) {
+        if (value === 'Other / Miscellaneous') {
+          updated.unit = 'No Unit'
+          updated.unitLocked = false
+        } else {
           updated.unit = defaultUnit
+          updated.unitLocked = true
+          updated.customName = ''
         }
       }
       return updated
@@ -560,6 +570,7 @@ export default function MaterialsPage() {
     const purchasedCounts: Record<string, number> = {}
     
     allMaterials.forEach(item => {
+      if (item.payment_system_v2 && item.payment_status !== 'paid') return
       totalCost += item.total_amount || 0
       purchasedCounts[item.name] = (purchasedCounts[item.name] || 0) + (item.total_amount || 0)
     })
@@ -685,12 +696,18 @@ export default function MaterialsPage() {
   // Payment system V2 modal states
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentItem, setPaymentItem] = useState<Material | null>(null)
+  const [paymentStatus, setPaymentStatus] = useState<'paid' | 'unpaid'>('unpaid')
   const [paymentData, setPaymentData] = useState({
     payment_mode: 'cash',
     account_name: '',
-    payment_date: format(new Date(), 'yyyy-MM-dd')
+    payment_date: format(new Date(), 'yyyy-MM-dd'),
+    remarks: ''
   })
   const [paymentSaving, setPaymentSaving] = useState(false)
+
+  // Consolidated filter modal states
+  const [showFilterModal, setShowFilterModal] = useState(false)
+  const [activeFilterTab, setActiveFilterTab] = useState<'category' | 'supplier' | 'brand' | 'project' | 'date'>('category')
 
   const supabase = createClient()
 
@@ -897,16 +914,41 @@ export default function MaterialsPage() {
     if (!paymentItem) return
     setPaymentSaving(true)
 
+    let updatedNotes = paymentItem.notes
+    const parsedNotes = parseMaterialNotes(paymentItem.notes)
+    parsedNotes.remarks = paymentData.remarks
+
+    if (paymentItem.notes && paymentItem.notes.startsWith('{')) {
+      try {
+        const jsonNotes = JSON.parse(paymentItem.notes)
+        jsonNotes.remarks = paymentData.remarks
+        updatedNotes = JSON.stringify(jsonNotes)
+      } catch (e) {
+        updatedNotes = JSON.stringify({
+          ...parsedNotes,
+          is_erp_v3: true
+        })
+      }
+    } else {
+      updatedNotes = JSON.stringify({
+        ...parsedNotes,
+        remarks: paymentData.remarks,
+        is_erp_v3: true
+      })
+    }
+
     const payload = status === 'paid' ? {
       payment_status: 'paid',
       payment_mode: paymentData.payment_mode,
       account_name: paymentData.payment_mode === 'online' ? paymentData.account_name : null,
-      payment_date: paymentData.payment_date
+      payment_date: paymentData.payment_date,
+      notes: updatedNotes
     } : {
       payment_status: 'unpaid',
       payment_mode: null,
       account_name: null,
-      payment_date: null
+      payment_date: null,
+      notes: updatedNotes
     }
 
     const { error } = await supabase
@@ -1246,7 +1288,7 @@ export default function MaterialsPage() {
 
         return {
           project_id: formData.project_id,
-          name: item.name,
+          name: item.name === 'Other / Miscellaneous' ? (item.customName?.trim() || 'Other') : item.name,
           quantity: qty,
           unit: item.unit,
           cost_per_unit: rate,
@@ -1255,9 +1297,10 @@ export default function MaterialsPage() {
           notes: notesJson,
           receipt_url: uploadedUrl,
           payment_system_v2: true,
-          payment_status: 'paid' as const,
-          payment_mode: 'cash',
-          account_name: null
+          payment_status: creationPaymentStatus,
+          payment_mode: creationPaymentStatus === 'paid' ? creationPaymentMode : null,
+          account_name: creationPaymentStatus === 'paid' && creationPaymentMode === 'online' ? (creationAccountName.trim() || null) : null,
+          payment_date: creationPaymentStatus === 'paid' ? commonDate : null
         }
       })
 
@@ -1277,6 +1320,9 @@ export default function MaterialsPage() {
       setCommonPaidAmount('')
       setIsPaidAmountManuallyEdited(false)
       setReceiptFile(null)
+      setCreationPaymentStatus('unpaid')
+      setCreationPaymentMode('cash')
+      setCreationAccountName('')
       setShowAddModal(false)
       fetchData()
     } catch (err: any) {
@@ -1286,6 +1332,14 @@ export default function MaterialsPage() {
     }
   }
 
+  const activeFiltersCount = [
+    !!filterFrom || !!filterTo,
+    !!filterCategory,
+    !!filterSupplier,
+    !!filterBrand,
+    !!selectedProjectId
+  ].filter(Boolean).length
+
   return (
     <div className="space-y-2">
       {/* Main Container */}
@@ -1293,16 +1347,16 @@ export default function MaterialsPage() {
         {/* Material List */}
         <div className="w-full">
           <Card className="panel-elevated text-white rounded-2xl overflow-hidden h-[calc(100vh-90px)] flex flex-col">
-            {/* Extremely Compact Header: Moved Title and Add Button inside here */}
-            <CardHeader className="p-4 border-b border-zinc-800 flex flex-col md:flex-row items-center justify-between gap-4 shrink-0 bg-[#0c0f17]">
-              <div className="flex flex-wrap items-center gap-3">
+            <CardHeader className="p-4 border-b border-zinc-800 flex flex-col gap-4 shrink-0 bg-[#0c0f17]">
+              {/* Row 1: ERP Title & Tabs */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 w-full">
                 <h2 className="text-sm font-black text-white uppercase tracking-wider hidden lg:block">Nirmana ERP</h2>
-                <div className="flex bg-[#0d1018] p-0.5 rounded-lg border border-zinc-800">
+                <div className="flex bg-[#0d1018] p-0.5 rounded-lg border border-zinc-800 w-full md:w-auto overflow-x-auto no-scrollbar">
                   <button
                     type="button"
                     onClick={() => { setActiveTab('purchases'); }}
                     className={cn(
-                      "px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                      "flex-1 md:flex-none px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer text-center",
                       activeTab === 'purchases'
                         ? "bg-blue-600 text-white shadow-md font-bold"
                         : "text-zinc-400 hover:text-white"
@@ -1314,7 +1368,7 @@ export default function MaterialsPage() {
                     type="button"
                     onClick={() => { setActiveTab('dashboard'); }}
                     className={cn(
-                      "px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                      "flex-1 md:flex-none px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer text-center",
                       activeTab === 'dashboard'
                         ? "bg-blue-600 text-white shadow-md font-bold"
                         : "text-zinc-400 hover:text-white"
@@ -1326,7 +1380,7 @@ export default function MaterialsPage() {
                     type="button"
                     onClick={() => { setActiveTab('analytics'); }}
                     className={cn(
-                      "px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                      "flex-1 md:flex-none px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer text-center",
                       activeTab === 'analytics'
                         ? "bg-blue-600 text-white shadow-md font-bold"
                         : "text-zinc-400 hover:text-white"
@@ -1338,7 +1392,7 @@ export default function MaterialsPage() {
                     type="button"
                     onClick={() => { setActiveTab('estimations'); }}
                     className={cn(
-                      "px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                      "flex-1 md:flex-none px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer text-center",
                       activeTab === 'estimations'
                         ? "bg-blue-600 text-white shadow-md font-bold"
                         : "text-zinc-400 hover:text-white"
@@ -1347,141 +1401,98 @@ export default function MaterialsPage() {
                     Estimations
                   </button>
                 </div>
-
-                {activeTab === 'purchases' && (
-                  <div className="flex bg-[#0d1018] p-0.5 rounded-lg border border-zinc-800 ml-0 md:ml-2">
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('all')}
-                      className={cn(
-                        "px-2.5 py-0.5 rounded text-[8px] font-black uppercase transition-all",
-                        viewMode === 'all' ? "bg-zinc-800 text-white font-bold" : "text-zinc-500 hover:text-zinc-300"
-                      )}
-                    >
-                      List
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('folders')}
-                      className={cn(
-                        "px-2.5 py-0.5 rounded text-[8px] font-black uppercase transition-all",
-                        viewMode === 'folders' ? "bg-zinc-800 text-white font-bold" : "text-zinc-500 hover:text-zinc-300"
-                      )}
-                    >
-                      Folders
-                    </button>
-                  </div>
-                )}
               </div>
 
-              <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-                {activeTab === 'purchases' && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTransferSourceProj(selectedProjectId !== 'all' ? selectedProjectId : (projects[0]?.id || ''));
-                        setTransferDestProj('');
-                        setTransferMaterialId('');
-                        setTransferQty('');
-                        setShowTransferModal(true);
-                      }}
-                      className="whitespace-nowrap h-8 px-3 rounded-xl text-[10px] font-black uppercase bg-[#1a1f2e] text-zinc-300 border border-[#1e2435] flex items-center gap-1 hover:bg-[#23293b] hover:text-white transition-all cursor-pointer"
-                    >
-                      Transfer
-                    </button>
+              {/* Row 2: Sub-tabs & Action Buttons aligned nicely */}
+              <div className="flex items-center justify-between w-full gap-3 border-t border-zinc-800/45 pt-3 md:pt-0 md:border-none">
+                {/* Left side: sub tabs (List / Folders) */}
+                <div className="flex items-center">
+                  {activeTab === 'purchases' && (
+                    <div className="flex bg-[#0d1018] p-0.5 rounded-lg border border-zinc-800">
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('all')}
+                        className={cn(
+                          "px-2.5 py-0.5 rounded text-[8px] font-black uppercase transition-all",
+                          viewMode === 'all' ? "bg-zinc-800 text-white font-bold" : "text-zinc-500 hover:text-zinc-300"
+                        )}
+                      >
+                        List
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('folders')}
+                        className={cn(
+                          "px-2.5 py-0.5 rounded text-[8px] font-black uppercase transition-all",
+                          viewMode === 'folders' ? "bg-zinc-800 text-white font-bold" : "text-zinc-500 hover:text-zinc-300"
+                        )}
+                      >
+                        Folders
+                      </button>
+                    </div>
+                  )}
+                </div>
 
+                {/* Right side: Action Buttons */}
+                <div className="flex items-center gap-2">
+                  {activeTab === 'purchases' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTransferSourceProj(selectedProjectId !== 'all' ? selectedProjectId : (projects[0]?.id || ''));
+                          setTransferDestProj('');
+                          setTransferMaterialId('');
+                          setTransferQty('');
+                          setShowTransferModal(true);
+                        }}
+                        className="whitespace-nowrap h-8 px-3 rounded-xl text-[10px] font-black uppercase bg-[#1a1f2e] text-zinc-300 border border-[#1e2435] flex items-center gap-1 hover:bg-[#23293b] hover:text-white transition-all cursor-pointer"
+                      >
+                        Transfer
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPurchaseItems([{ name: 'Cement', brand: '', quantity: '', unit: 'Bags', cost_per_unit: '', unitLocked: true }]);
+                          setCommonSupplier('');
+                          setCommonInvoice('');
+                          setCommonTransport('');
+                          setCommonLoading('');
+                          setCommonRemarks('');
+                          setCommonPaidAmount('');
+                          setIsPaidAmountManuallyEdited(false);
+                          setReceiptFile(null);
+                          setShowAddModal(true);
+                        }}
+                        className="whitespace-nowrap h-8 px-4 rounded-xl text-[10px] font-black uppercase bg-blue-500 text-white flex items-center gap-1.5 hover:bg-blue-600 shadow-[0_4px_14px_rgba(59,130,246,0.3)] transition-all cursor-pointer"
+                      >
+                        + Log Purchase
+                      </button>
+                    </>
+                  )}
+
+                  {activeTab === 'estimations' && selectedProjectId !== 'all' && (
                     <button
                       type="button"
                       onClick={() => {
-                        setPurchaseItems([{ name: 'Cement', brand: '', quantity: '', unit: 'Bags', cost_per_unit: '', unitLocked: true }]);
-                        setCommonSupplier('');
-                        setCommonInvoice('');
-                        setCommonTransport('');
-                        setCommonLoading('');
-                        setCommonRemarks('');
-                        setCommonPaidAmount('');
-                        setIsPaidAmountManuallyEdited(false);
-                        setReceiptFile(null);
-                        setFormData({ project_id: selectedProjectId !== 'all' ? selectedProjectId : '', name: '', quantity: '', unit: 'bags', cost_per_unit: '', base_amount: '', total_amount: '', date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
-                        setShowAddModal(true);
+                        setEditingEstimations(projectEstimations);
+                        setShowEstimationModal(true);
                       }}
                       className="whitespace-nowrap h-8 px-4 rounded-xl text-[10px] font-black uppercase bg-blue-500 text-white flex items-center gap-1.5 hover:bg-blue-600 shadow-[0_4px_14px_rgba(59,130,246,0.3)] transition-all cursor-pointer"
                     >
-                      + Log Purchase
+                      <Settings size={12} /> Configure Estimations
                     </button>
-                  </>
-                )}
-
-                {activeTab === 'estimations' && selectedProjectId !== 'all' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingEstimations(projectEstimations);
-                      setShowEstimationModal(true);
-                    }}
-                    className="whitespace-nowrap h-8 px-4 rounded-xl text-[10px] font-black uppercase bg-blue-500 text-white flex items-center gap-1.5 hover:bg-blue-600 shadow-[0_4px_14px_rgba(59,130,246,0.3)] transition-all cursor-pointer"
-                  >
-                    <Settings size={12} /> Configure Estimations
-                  </button>
-                )}
+                  )}
+                </div>
               </div>
             </CardHeader>
 
             {/* ── Sub Navigation & Filtering Bar ── */}
             {activeTab === 'purchases' && viewMode === 'all' && (
-              <div className="px-4 py-2 border-b border-zinc-800 bg-[#08090f] flex flex-wrap items-center gap-2 shrink-0">
-                {/* Date Range Picker Dropdown Toggle */}
-                <div className="relative" ref={dateFilterRef}>
-                  <button
-                    type="button"
-                    onClick={() => setShowDateFilter(!showDateFilter)}
-                    className="h-8 px-3 rounded-lg text-xs font-bold bg-[#111520] border border-[#1e2435] text-white flex items-center gap-1.5 hover:bg-zinc-800 transition-all select-none cursor-pointer"
-                  >
-                    <Calendar size={13} className="text-zinc-400" />
-                    <span>
-                      {filterFrom || filterTo
-                        ? `${filterFrom ? format(new Date(filterFrom), 'dd-MM-yyyy') : 'Start'} - ${filterTo ? format(new Date(filterTo), 'dd-MM-yyyy') : 'End'}`
-                        : 'Date Range'}
-                    </span>
-                    <ChevronDown size={11} className="text-zinc-400" />
-                  </button>
-
-                  {showDateFilter && (
-                    <div className="absolute top-10 left-0 z-30 p-4 rounded-xl bg-[#111520] border border-[#1e2435] flex flex-col gap-2.5 shadow-2xl min-w-[200px] animate-in fade-in-50 zoom-in-95">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Filter by Date</span>
-                      <input
-                        type="date"
-                        value={filterFrom}
-                        onChange={e => { setFilterFrom(e.target.value); setMatPage(0); }}
-                        className="h-9 px-3 rounded-lg text-xs font-bold outline-none focus:border-blue-500 transition-all"
-                        style={{ backgroundColor: '#1d2333', border: '1px solid #1e2435', color: '#ffffff', colorScheme: 'dark' }}
-                        title="From date"
-                      />
-                      <span className="text-zinc-600 text-xs font-bold text-center">→</span>
-                      <input
-                        type="date"
-                        value={filterTo}
-                        min={filterFrom}
-                        onChange={e => { setFilterTo(e.target.value); setMatPage(0); }}
-                        className="h-9 px-3 rounded-lg text-xs font-bold outline-none focus:border-blue-500 transition-all"
-                        style={{ backgroundColor: '#1d2333', border: '1px solid #1e2435', color: '#ffffff', colorScheme: 'dark' }}
-                        title="To date"
-                      />
-                      {(filterFrom || filterTo) && (
-                        <button
-                          onClick={() => { setFilterFrom(''); setFilterTo(''); setMatPage(0); setShowDateFilter(false); }}
-                          className="h-8 px-3 rounded-lg text-[9px] font-black uppercase tracking-wide flex items-center justify-center gap-1 transition-all bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/25"
-                        >
-                          Clear Dates
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-
+              <div className="px-4 py-2 border-b border-zinc-800 bg-[#08090f] flex items-center gap-2 shrink-0">
                 {/* Search Bar */}
-                <div className="flex-1 min-w-[180px]">
+                <div className="flex-1">
                   <Input
                     placeholder="Search by supplier, brand, invoice, material..."
                     value={searchQuery}
@@ -1492,87 +1503,40 @@ export default function MaterialsPage() {
                   />
                 </div>
 
-                {/* Dropdown filters */}
-                <select
-                  value={filterCategory}
-                  onChange={e => { setFilterCategory(e.target.value); setMatPage(0); }}
-                  className="h-8 px-2 rounded-lg text-[10px] font-black uppercase bg-[#111520] border border-[#1e2435] text-zinc-400 focus:border-blue-500 outline-none"
-                >
-                  <option value="">All Categories</option>
-                  <option value="Cement">Cement</option>
-                  <option value="Steel">Steel</option>
-                  <option value="Sand">Sand</option>
-                  <option value="Aggregate">Aggregate</option>
-                  <option value="Bricks">Bricks</option>
-                  <option value="Others">Others</option>
-                </select>
-
-                <select
-                  value={filterSupplier}
-                  onChange={e => { setFilterSupplier(e.target.value); setMatPage(0); }}
-                  className="h-8 px-2 rounded-lg text-[10px] font-black uppercase bg-[#111520] border border-[#1e2435] text-zinc-400 focus:border-blue-500 outline-none"
-                >
-                  <option value="">All Suppliers</option>
-                  {dynamicSuppliers.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-
-                <select
-                  value={filterBrand}
-                  onChange={e => { setFilterBrand(e.target.value); setMatPage(0); }}
-                  className="h-8 px-2 rounded-lg text-[10px] font-black uppercase bg-[#111520] border border-[#1e2435] text-zinc-400 focus:border-blue-500 outline-none"
-                >
-                  <option value="">All Brands</option>
-                  {dynamicBrands.map(b => <option key={b} value={b}>{b}</option>)}
-                </select>
-
-                {/* Filters Toggle Button */}
+                {/* Consolidated Filters Button */}
                 <button
                   type="button"
-                  onClick={() => setShowExtraFilters(!showExtraFilters)}
+                  onClick={() => setShowFilterModal(true)}
                   className={cn(
                     "h-8 px-3 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 select-none cursor-pointer",
-                    showExtraFilters
-                      ? "bg-blue-600/10 border-blue-500 text-blue-400"
+                    activeFiltersCount > 0
+                      ? "bg-blue-600/10 border-blue-500 text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.15)]"
                       : "bg-[#111520] border-[#1e2435] text-zinc-400 hover:text-white"
                   )}
                 >
-                  <span>Project Filters</span>
-                  <ChevronDown size={11} className={cn("transition-transform", showExtraFilters && "rotate-180")} />
+                  <Filter size={12} className={activeFiltersCount > 0 ? "text-blue-400" : "text-zinc-450"} />
+                  <span>Filter {activeFiltersCount > 0 && `(${activeFiltersCount})`}</span>
                 </button>
 
-                <button
-                  onClick={() => {
-                    setFilterFrom('')
-                    setFilterTo('')
-                    setSearchQuery('')
-                    setFilterCategory('')
-                    setFilterSupplier('')
-                    setFilterBrand('')
-                    setFilterInvoice('')
-                    setSelectedProjectId('')
-                    setMatPage(0)
-                  }}
-                  className="h-8 px-3 rounded-lg text-xs font-bold bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition-all flex items-center gap-1 select-none cursor-pointer"
-                >
-                  Reset
-                </button>
-              </div>
-            )}
-
-            {/* Extra Project filters tray */}
-            {activeTab === 'purchases' && viewMode === 'all' && showExtraFilters && (
-              <div className="px-4 py-2 border-b border-zinc-800 bg-[#0c0e14] flex flex-wrap items-center gap-4 animate-in slide-in-from-top-2 duration-200 shrink-0">
-                <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Filter by Project</span>
-                  <select
-                    value={selectedProjectId}
-                    onChange={e => { setSelectedProjectId(e.target.value); setMatPage(0); }}
-                    className="h-8 px-3 rounded-lg text-xs font-bold bg-[#111520] border border-[#1e2435] text-white outline-none focus:border-blue-500"
+                {/* Reset Button */}
+                {(activeFiltersCount > 0 || searchQuery) && (
+                  <button
+                    onClick={() => {
+                      setFilterFrom('')
+                      setFilterTo('')
+                      setSearchQuery('')
+                      setFilterCategory('')
+                      setFilterSupplier('')
+                      setFilterBrand('')
+                      setFilterInvoice('')
+                      setSelectedProjectId('')
+                      setMatPage(0)
+                    }}
+                    className="h-8 px-3 rounded-lg text-xs font-bold bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white transition-all flex items-center gap-1 select-none cursor-pointer"
                   >
-                    <option value="">All Projects / Sites</option>
-                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
+                    Reset
+                  </button>
+                )}
               </div>
             )}
 
@@ -1704,10 +1668,13 @@ export default function MaterialsPage() {
                                         onClick={(e) => {
                                           e.stopPropagation()
                                           setPaymentItem(item)
+                                          setPaymentStatus(item.payment_status || 'unpaid')
+                                          const parsedNotes = parseMaterialNotes(item.notes)
                                           setPaymentData({
                                             payment_mode: item.payment_mode || 'cash',
                                             account_name: item.account_name || '',
-                                            payment_date: item.payment_date || item.date || format(new Date(), 'yyyy-MM-dd')
+                                            payment_date: item.payment_date || item.date || format(new Date(), 'yyyy-MM-dd'),
+                                            remarks: parsedNotes.remarks || ''
                                           })
                                           setShowPaymentModal(true)
                                         }}
@@ -1839,7 +1806,18 @@ export default function MaterialsPage() {
                               onDelete={handleDeleteMat}
                               onEdit={handleOpenEditMat}
                               onView={setSelectedDetailItem}
-                              onTogglePayment={handleTogglePayment}
+                              onTogglePayment={(item) => {
+                                setPaymentItem(item)
+                                setPaymentStatus(item.payment_status || 'unpaid')
+                                const parsedNotes = parseMaterialNotes(item.notes)
+                                setPaymentData({
+                                  payment_mode: item.payment_mode || 'cash',
+                                  account_name: item.account_name || '',
+                                  payment_date: item.payment_date || item.date || format(new Date(), 'yyyy-MM-dd'),
+                                  remarks: parsedNotes.remarks || ''
+                                })
+                                setShowPaymentModal(true)
+                              }}
                             />
                           )
                         })
@@ -2328,57 +2306,393 @@ export default function MaterialsPage() {
               <p className="text-sm font-black text-emerald-400 mt-1">₹ {paymentItem.total_amount?.toLocaleString('en-IN')}</p>
             </div>
 
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Payment Mode</label>
-                <select
-                  value={paymentData.payment_mode}
-                  onChange={e => setPaymentData({ ...paymentData, payment_mode: e.target.value })}
-                  className="styled-select w-full h-10 text-xs"
+            {/* Paid / Unpaid Selection */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Payment Status</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentStatus('unpaid')}
+                  className={cn(
+                    "h-10 rounded-xl text-xs font-black uppercase border transition-all cursor-pointer",
+                    paymentStatus === 'unpaid'
+                      ? "bg-red-500/10 border-red-500 text-red-400 shadow-[0_0_8px_rgba(239,68,68,0.15)]"
+                      : "bg-[#0d1018] border-zinc-800 text-zinc-500 hover:text-zinc-300"
+                  )}
                 >
-                  <option value="cash">💵 Cash Payment</option>
-                  <option value="online">💳 Online Bank Transfer</option>
-                </select>
-              </div>
-
-              {paymentData.payment_mode === 'online' && (
-                <div className="space-y-1 animate-in slide-in-from-top-1 duration-150">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Paid from Account Name</label>
-                  <Input
-                    placeholder="e.g. SBI Main, HDFC Construction"
-                    value={paymentData.account_name}
-                    onChange={e => setPaymentData({ ...paymentData, account_name: e.target.value })}
-                    className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white text-xs"
-                  />
-                </div>
-              )}
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Payment Date</label>
-                <Input
-                  type="date"
-                  value={paymentData.payment_date}
-                  onChange={e => setPaymentData({ ...paymentData, payment_date: e.target.value })}
-                  className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white text-xs px-3"
-                />
+                  Unpaid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentStatus('paid')}
+                  className={cn(
+                    "h-10 rounded-xl text-xs font-black uppercase border transition-all cursor-pointer",
+                    paymentStatus === 'paid'
+                      ? "bg-emerald-500/10 border-emerald-500 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
+                      : "bg-[#0d1018] border-zinc-800 text-zinc-500 hover:text-zinc-300"
+                  )}
+                >
+                  Paid
+                </button>
               </div>
             </div>
 
+            {paymentStatus === 'unpaid' ? (
+              <div className="bg-red-500/5 p-3 rounded-xl border border-red-500/10 text-[10px] font-bold text-red-400 leading-normal">
+                ⚠️ Marking this entry as unpaid will clear any payment mode, online account names, and dates.
+              </div>
+            ) : (
+              <div className="space-y-3 animate-in fade-in-50 duration-200">
+                {/* Payment Mode Selection */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Payment Mode</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentData({ ...paymentData, payment_mode: 'cash' })}
+                      className={cn(
+                        "h-9 rounded-lg text-[10px] font-black uppercase border transition-all cursor-pointer",
+                        paymentData.payment_mode === 'cash'
+                          ? "bg-blue-600/10 border-blue-500 text-blue-400"
+                          : "bg-[#0d1018] border-zinc-900 text-zinc-500 hover:text-zinc-300"
+                      )}
+                    >
+                      💵 Cash
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentData({ ...paymentData, payment_mode: 'online' })}
+                      className={cn(
+                        "h-9 rounded-lg text-[10px] font-black uppercase border transition-all cursor-pointer",
+                        paymentData.payment_mode === 'online'
+                          ? "bg-blue-600/10 border-blue-500 text-blue-400"
+                          : "bg-[#0d1018] border-zinc-900 text-zinc-500 hover:text-zinc-300"
+                      )}
+                    >
+                      💳 Online
+                    </button>
+                  </div>
+                </div>
+
+                {/* Account Name for Online Mode */}
+                {paymentData.payment_mode === 'online' && (
+                  <div className="space-y-1.5 animate-in slide-in-from-top-1 duration-150">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Paid from Account Name</label>
+                    <Input
+                      placeholder="e.g. SBI Main, HDFC Construction"
+                      value={paymentData.account_name}
+                      onChange={e => setPaymentData({ ...paymentData, account_name: e.target.value })}
+                      className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white text-xs"
+                    />
+                  </div>
+                )}
+
+                {/* Payment Date */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Payment Date</label>
+                  <Input
+                    type="date"
+                    value={paymentData.payment_date}
+                    onChange={e => setPaymentData({ ...paymentData, payment_date: e.target.value })}
+                    className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white text-xs px-3"
+                    style={{ colorScheme: 'dark' }}
+                  />
+                </div>
+
+                {/* Remarks Input Box */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Remarks</label>
+                  <Input
+                    placeholder="Enter payment remarks/notes..."
+                    value={paymentData.remarks}
+                    onChange={e => setPaymentData({ ...paymentData, remarks: e.target.value })}
+                    className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-semibold text-white text-xs"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
             <div className="flex gap-2.5 pt-2">
               <button
-                disabled={paymentSaving}
-                onClick={() => handleSavePayment('unpaid')}
-                className="flex-1 h-10 rounded-xl text-xs font-black uppercase border border-red-500/30 text-red-400 hover:bg-red-500/5 transition-colors disabled:opacity-50"
+                type="button"
+                onClick={() => setShowPaymentModal(false)}
+                className="flex-1 h-10 rounded-xl text-xs font-black uppercase border border-zinc-800 text-zinc-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
               >
-                Mark Unpaid
+                Cancel
               </button>
               <button
                 disabled={paymentSaving}
-                onClick={() => handleSavePayment('paid')}
-                className="flex-1 h-10 rounded-xl text-xs font-black uppercase bg-emerald-500 text-zinc-950 hover:bg-emerald-600 transition-colors disabled:opacity-50 flex items-center justify-center"
+                onClick={() => handleSavePayment(paymentStatus)}
+                className={cn(
+                  "flex-1 h-10 rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center cursor-pointer disabled:opacity-50",
+                  paymentStatus === 'paid' ? "bg-emerald-500 text-zinc-950 hover:bg-emerald-600" : "bg-red-500 text-white hover:bg-red-650"
+                )}
               >
                 {paymentSaving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />}
-                Mark Paid
+                Save Details
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Consolidated Filter Modal */}
+      {showFilterModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in-50" onClick={() => setShowFilterModal(false)}>
+          <div 
+            className="rounded-2xl w-full max-w-lg flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95" 
+            style={{ backgroundColor: '#111520', border: '1px solid #1e2435', height: '450px' }} 
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 border-b border-[#1e2435] bg-[#0d1018]">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Sri Sai Constructions</p>
+                <h3 className="text-sm font-black text-white uppercase tracking-wider">Filters</h3>
+              </div>
+              <button 
+                onClick={() => setShowFilterModal(false)} 
+                className="text-zinc-500 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-all"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Content: side-by-side tabs */}
+            <div className="flex flex-1 overflow-hidden">
+              {/* Left Side: Filter Options List */}
+              <div className="w-1/3 bg-[#0c0e14] border-r border-[#1e2435] flex flex-col overflow-y-auto">
+                {[
+                  { id: 'category', label: 'Category', active: !!filterCategory },
+                  { id: 'supplier', label: 'Supplier', active: !!filterSupplier },
+                  { id: 'brand', label: 'Brand', active: !!filterBrand },
+                  { id: 'project', label: 'Site / Project', active: !!selectedProjectId },
+                  { id: 'date', label: 'Date Range', active: !!filterFrom || !!filterTo },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveFilterTab(tab.id as any)}
+                    className={cn(
+                      "w-full text-left px-4 py-3 text-[10px] font-black uppercase tracking-wider relative transition-colors border-b border-zinc-900/50 flex items-center justify-between",
+                      activeFilterTab === tab.id
+                        ? "bg-[#111520] text-blue-400 font-bold"
+                        : "text-zinc-400 hover:bg-[#111520]/40"
+                    )}
+                  >
+                    <span>{tab.label}</span>
+                    {tab.active && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                    )}
+                    {activeFilterTab === tab.id && (
+                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500" />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Right Side: Options Value Selector */}
+              <div className="w-2/3 p-4 overflow-y-auto bg-[#111520] custom-scrollbar flex flex-col gap-2">
+                {activeFilterTab === 'category' && (
+                  <div className="space-y-1">
+                    {[
+                      { value: '', label: 'All Categories' },
+                      { value: 'Cement', label: 'Cement' },
+                      { value: 'White Cement', label: 'White Cement' },
+                      { value: 'Steel', label: 'Steel' },
+                      { value: 'Binding Wire', label: 'Binding Wire' },
+                      { value: 'Sand', label: 'Sand' },
+                      { value: 'Coarse Aggregate', label: 'Coarse Aggregate' },
+                      { value: 'Dust Powder', label: 'Dust Powder' },
+                      { value: 'Bricks', label: 'Bricks' },
+                      { value: 'Fly Ash Bricks', label: 'Fly Ash Bricks' },
+                      { value: 'Tiles', label: 'Tiles' },
+                      { value: 'Marble', label: 'Marble' },
+                      { value: 'Granite', label: 'Granite' },
+                      { value: 'Grout', label: 'Grout' },
+                      { value: 'Plumbing Materials', label: 'Plumbing Materials' },
+                      { value: 'Electrical Materials', label: 'Electrical Materials' },
+                      { value: 'Door', label: 'Door' },
+                      { value: 'Door Frame', label: 'Door Frame' },
+                      { value: 'Window', label: 'Window' },
+                      { value: 'Plywood', label: 'Plywood' },
+                      { value: 'False Ceiling', label: 'False Ceiling' },
+                      { value: 'Painting', label: 'Painting' },
+                      { value: 'Water Tank', label: 'Water Tank' },
+                      { value: 'Others', label: 'Others' }
+                    ].map(cat => (
+                      <button
+                        key={cat.value}
+                        onClick={() => { setFilterCategory(cat.value); setMatPage(0); }}
+                        className={cn(
+                          "w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between border",
+                          filterCategory === cat.value
+                            ? "bg-blue-600/10 border-blue-500/30 text-blue-400"
+                            : "bg-[#0d1018] border-zinc-900 text-zinc-400 hover:text-white"
+                        )}
+                      >
+                        <span>{cat.label}</span>
+                        {filterCategory === cat.value && <Check size={14} className="text-blue-400" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {activeFilterTab === 'supplier' && (
+                  <div className="space-y-1">
+                    <button
+                      onClick={() => { setFilterSupplier(''); setMatPage(0); }}
+                      className={cn(
+                        "w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between border",
+                        filterSupplier === ''
+                          ? "bg-blue-600/10 border-blue-500/30 text-blue-400"
+                          : "bg-[#0d1018] border-zinc-900 text-zinc-400 hover:text-white"
+                      )}
+                    >
+                      <span>All Suppliers</span>
+                      {filterSupplier === '' && <Check size={14} className="text-blue-400" />}
+                    </button>
+                    {dynamicSuppliers.map(sup => (
+                      <button
+                        key={sup}
+                        onClick={() => { setFilterSupplier(sup); setMatPage(0); }}
+                        className={cn(
+                          "w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between border",
+                          filterSupplier === sup
+                            ? "bg-blue-600/10 border-blue-500/30 text-blue-400"
+                            : "bg-[#0d1018] border-zinc-900 text-zinc-400 hover:text-white"
+                        )}
+                      >
+                        <span>{sup}</span>
+                        {filterSupplier === sup && <Check size={14} className="text-blue-400" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {activeFilterTab === 'brand' && (
+                  <div className="space-y-1">
+                    <button
+                      onClick={() => { setFilterBrand(''); setMatPage(0); }}
+                      className={cn(
+                        "w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between border",
+                        filterBrand === ''
+                          ? "bg-blue-600/10 border-blue-500/30 text-blue-400"
+                          : "bg-[#0d1018] border-zinc-900 text-zinc-400 hover:text-white"
+                      )}
+                    >
+                      <span>All Brands</span>
+                      {filterBrand === '' && <Check size={14} className="text-blue-400" />}
+                    </button>
+                    {dynamicBrands.map(brnd => (
+                      <button
+                        key={brnd}
+                        onClick={() => { setFilterBrand(brnd); setMatPage(0); }}
+                        className={cn(
+                          "w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between border",
+                          filterBrand === brnd
+                            ? "bg-blue-600/10 border-blue-500/30 text-blue-400"
+                            : "bg-[#0d1018] border-zinc-900 text-zinc-400 hover:text-white"
+                        )}
+                      >
+                        <span>{brnd}</span>
+                        {filterBrand === brnd && <Check size={14} className="text-blue-400" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {activeFilterTab === 'project' && (
+                  <div className="space-y-1">
+                    <button
+                      onClick={() => { setSelectedProjectId(''); setMatPage(0); }}
+                      className={cn(
+                        "w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between border",
+                        selectedProjectId === ''
+                          ? "bg-blue-600/10 border-blue-500/30 text-blue-400"
+                          : "bg-[#0d1018] border-zinc-900 text-zinc-400 hover:text-white"
+                      )}
+                    >
+                      <span>All Projects / Sites</span>
+                      {selectedProjectId === '' && <Check size={14} className="text-blue-400" />}
+                    </button>
+                    {projects.map(proj => (
+                      <button
+                        key={proj.id}
+                        onClick={() => { setSelectedProjectId(proj.id); setMatPage(0); }}
+                        className={cn(
+                          "w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between border",
+                          selectedProjectId === proj.id
+                            ? "bg-blue-600/10 border-blue-500/30 text-blue-400"
+                            : "bg-[#0d1018] border-zinc-900 text-zinc-400 hover:text-white"
+                        )}
+                      >
+                        <span>{proj.name}</span>
+                        {selectedProjectId === proj.id && <Check size={14} className="text-blue-400" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {activeFilterTab === 'date' && (
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">From Date</label>
+                      <input
+                        type="date"
+                        value={filterFrom}
+                        onChange={e => { setFilterFrom(e.target.value); setMatPage(0); }}
+                        className="h-10 w-full px-3 rounded-xl text-xs font-bold bg-[#0d1018] border border-zinc-800 text-white outline-none focus:border-blue-500"
+                        style={{ colorScheme: 'dark' }}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">To Date</label>
+                      <input
+                        type="date"
+                        value={filterTo}
+                        min={filterFrom}
+                        onChange={e => { setFilterTo(e.target.value); setMatPage(0); }}
+                        className="h-10 w-full px-3 rounded-xl text-xs font-bold bg-[#0d1018] border border-zinc-800 text-white outline-none focus:border-blue-500"
+                        style={{ colorScheme: 'dark' }}
+                      />
+                    </div>
+                    {(filterFrom || filterTo) && (
+                      <button
+                        onClick={() => { setFilterFrom(''); setFilterTo(''); setMatPage(0); }}
+                        className="w-full h-10 rounded-xl text-xs font-black uppercase bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all flex items-center justify-center gap-1"
+                      >
+                        Clear Dates
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-between items-center p-4 border-t border-[#1e2435] bg-[#0d1018]">
+              <button
+                onClick={() => {
+                  setFilterFrom('')
+                  setFilterTo('')
+                  setSearchQuery('')
+                  setFilterCategory('')
+                  setFilterSupplier('')
+                  setFilterBrand('')
+                  setFilterInvoice('')
+                  setSelectedProjectId('')
+                  setMatPage(0)
+                }}
+                className="h-10 px-4 rounded-xl text-xs font-black uppercase border border-[#1e2435] text-zinc-400 hover:text-white transition-colors cursor-pointer"
+              >
+                Clear All
+              </button>
+              <button
+                onClick={() => setShowFilterModal(false)}
+                className="h-10 px-5 rounded-xl text-xs font-black uppercase bg-blue-500 hover:bg-blue-600 text-white transition-colors cursor-pointer"
+              >
+                Apply Filters
               </button>
             </div>
           </div>
@@ -2491,8 +2805,8 @@ export default function MaterialsPage() {
 
                 <div className="space-y-3 max-h-[30vh] overflow-y-auto pr-1 custom-scrollbar">
                   {purchaseItems.map((item, idx) => (
-                    <div key={idx} className="grid grid-cols-12 gap-2 bg-black/20 p-3 rounded-xl border border-zinc-900 items-end">
-                      <div className="col-span-4 space-y-1">
+                    <div key={idx} className="grid grid-cols-2 md:grid-cols-12 gap-3 md:gap-2 bg-black/20 p-4 md:p-3 rounded-xl border border-zinc-900 items-end relative">
+                      <div className="col-span-2 md:col-span-3 space-y-1">
                         <label className="text-[8px] font-black uppercase text-zinc-500">Material Type</label>
                         <select
                           value={item.name}
@@ -2502,9 +2816,17 @@ export default function MaterialsPage() {
                           <option value="">Select Material...</option>
                           {MATERIAL_MASTER.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
                         </select>
+                        {item.name === 'Other / Miscellaneous' && (
+                          <Input
+                            placeholder="Type custom material name..."
+                            value={item.customName || ''}
+                            onChange={e => handleUpdateItem(idx, 'customName', e.target.value)}
+                            className="h-8 bg-zinc-950 border-zinc-800 rounded-lg text-xs text-white mt-1 animate-in slide-in-from-top-1 duration-150"
+                          />
+                        )}
                       </div>
 
-                      <div className="col-span-2 space-y-1">
+                      <div className="col-span-1 md:col-span-2 space-y-1">
                         <label className="text-[8px] font-black uppercase text-zinc-500">Brand Name</label>
                         <Input
                           placeholder="Brand"
@@ -2514,7 +2836,7 @@ export default function MaterialsPage() {
                         />
                       </div>
 
-                      <div className="col-span-2 space-y-1">
+                      <div className="col-span-1 md:col-span-2 space-y-1">
                         <label className="text-[8px] font-black uppercase text-zinc-500">Quantity</label>
                         <Input
                           type="number"
@@ -2525,7 +2847,7 @@ export default function MaterialsPage() {
                         />
                       </div>
 
-                      <div className="col-span-2 space-y-1">
+                      <div className="col-span-1 md:col-span-2 space-y-1">
                         <label className="text-[8px] font-black uppercase text-zinc-500 flex justify-between items-center">
                           <span>Unit</span>
                           <button 
@@ -2550,7 +2872,7 @@ export default function MaterialsPage() {
                         )}
                       </div>
 
-                      <div className="col-span-1.5 space-y-1">
+                      <div className="col-span-1 md:col-span-2 space-y-1">
                         <label className="text-[8px] font-black uppercase text-zinc-500">Unit Price</label>
                         <Input
                           type="number"
@@ -2561,11 +2883,11 @@ export default function MaterialsPage() {
                         />
                       </div>
 
-                      <div className="col-span-0.5 pb-2 text-center">
+                      <div className="absolute top-2.5 right-2.5 md:relative md:top-auto md:right-auto md:col-span-1 md:pb-1 md:text-center flex items-center justify-end">
                         <button
                           type="button"
                           onClick={() => setPurchaseItems(prev => prev.filter((_, i) => i !== idx))}
-                          className="p-1 rounded bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-colors"
+                          className="p-2 md:p-1.5 rounded bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-colors cursor-pointer"
                           title="Discard Row"
                         >
                           <Trash2 size={12} />
@@ -2663,6 +2985,85 @@ export default function MaterialsPage() {
                     )}
                   </div>
                 </div>
+              </div>
+
+              {/* Payment Details Selector */}
+              <div className="p-4 bg-zinc-950/40 border border-zinc-900 rounded-xl space-y-4 pt-3 border-t">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Payment Status</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCreationPaymentStatus('unpaid')}
+                      className={cn(
+                        "h-10 rounded-xl text-xs font-black uppercase border transition-all cursor-pointer",
+                        creationPaymentStatus === 'unpaid'
+                          ? "bg-red-500/10 border-red-500 text-red-400 shadow-[0_0_8px_rgba(239,68,68,0.15)]"
+                          : "bg-[#0d1018] border-zinc-800 text-zinc-500 hover:text-zinc-350"
+                      )}
+                    >
+                      Mark as Unpaid
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreationPaymentStatus('paid')}
+                      className={cn(
+                        "h-10 rounded-xl text-xs font-black uppercase border transition-all cursor-pointer",
+                        creationPaymentStatus === 'paid'
+                          ? "bg-emerald-500/10 border-emerald-500 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
+                          : "bg-[#0d1018] border-zinc-800 text-zinc-500 hover:text-zinc-355"
+                      )}
+                    >
+                      Mark as Paid
+                    </button>
+                  </div>
+                </div>
+
+                {creationPaymentStatus === 'paid' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in slide-in-from-top-1 duration-200">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Paid Via</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCreationPaymentMode('cash')}
+                          className={cn(
+                            "h-9 rounded-lg text-[10px] font-black uppercase border transition-all cursor-pointer",
+                            creationPaymentMode === 'cash'
+                              ? "bg-blue-600/10 border-blue-500 text-blue-400"
+                              : "bg-[#0d1018] border-zinc-900 text-zinc-550"
+                          )}
+                        >
+                          💵 Cash
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCreationPaymentMode('online')}
+                          className={cn(
+                            "h-9 rounded-lg text-[10px] font-black uppercase border transition-all cursor-pointer",
+                            creationPaymentMode === 'online'
+                              ? "bg-blue-600/10 border-blue-500 text-blue-400"
+                              : "bg-[#0d1018] border-zinc-900 text-zinc-555"
+                          )}
+                        >
+                          💳 Online
+                        </button>
+                      </div>
+                    </div>
+
+                    {creationPaymentMode === 'online' && (
+                      <div className="space-y-1.5 animate-in slide-in-from-top-1 duration-150">
+                        <label className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Paid from Account Name</label>
+                        <Input
+                          placeholder="e.g. SBI Main, HDFC Construction"
+                          value={creationAccountName}
+                          onChange={e => setCreationAccountName(e.target.value)}
+                          className="h-9 bg-zinc-900 border-zinc-800 rounded-lg font-bold text-white text-xs"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Grand Total Summary Card */}

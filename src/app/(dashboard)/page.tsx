@@ -141,7 +141,7 @@ export default function DashboardPage() {
     try {
       setLoading(true)
       // 1. Fetch Projects List (always needed for the filter)
-      const { data: projList } = await supabase.from('projects').select('id, name, status, created_at').order('name')
+      const { data: projList } = await supabase.from('projects').select('id, name, status, created_at, description').order('name')
       setProjects(projList || [])
 
       // Handle Default Project from localStorage
@@ -157,7 +157,7 @@ export default function DashboardPage() {
       let matQ = supabase.from('materials').select('total_amount, date, project_id, payment_status, payment_system_v2')
       let subQ = supabase.from('contractor_payments').select('*')
       let peQ = supabase.from('personal_expenses').select('amount, date')
-      let agrQ = supabase.from('agreements').select('total_amount')
+      let agrQ = supabase.from('agreements').select('total_amount, project_id')
 
       if (currentProjectId) {
         incomeQ = incomeQ.eq('project_id', currentProjectId)
@@ -175,7 +175,48 @@ export default function DashboardPage() {
         agrQ
       ])
 
-      const computedBudget = agrRes.data?.reduce((a, c) => a + Number(c.total_amount || 0), 0) || 0
+      let computedBudget = 0
+      if (currentProjectId) {
+        const activeProj = projList?.find(p => p.id === currentProjectId)
+        let overrideVal = 0
+        if (activeProj?.description) {
+          try {
+            const parsed = JSON.parse(activeProj.description)
+            if (typeof parsed.budget_limit === 'number' && parsed.budget_limit > 0) {
+              overrideVal = parsed.budget_limit
+            }
+          } catch (e) {}
+        }
+        if (overrideVal > 0) {
+          computedBudget = overrideVal
+        } else {
+          computedBudget = agrRes.data?.reduce((a, c) => a + Number(c.total_amount || 0), 0) || 0
+        }
+      } else {
+        const agreementSumsByProject: Record<string, number> = {}
+        agrRes.data?.forEach((agr: any) => {
+          const pid = agr.project_id || ''
+          agreementSumsByProject[pid] = (agreementSumsByProject[pid] || 0) + Number(agr.total_amount || 0)
+        })
+
+        projList?.forEach((proj: any) => {
+          if (proj.status === 'SYSTEM') return
+          let overrideVal = 0
+          if (proj.description) {
+            try {
+              const parsed = JSON.parse(proj.description)
+              if (typeof parsed.budget_limit === 'number' && parsed.budget_limit > 0) {
+                overrideVal = parsed.budget_limit
+              }
+            } catch (e) {}
+          }
+          if (overrideVal > 0) {
+            computedBudget += overrideVal
+          } else {
+            computedBudget += (agreementSumsByProject[proj.id] || 0)
+          }
+        })
+      }
       setTotalBudget(computedBudget)
 
       const incomeData = incomeRes.data

@@ -214,14 +214,75 @@ export default function SettingsPage() {
   interface SettingsProject {
     id: string
     name: string
+    description?: string | null
   }
 
   const [projects, setProjects] = useState<SettingsProject[]>([])
   const [defaultProjectId, setDefaultProjectId] = useState<string>('')
+  const [projectBudgets, setProjectBudgets] = useState<Record<string, string>>({})
+  const [budgetSavingId, setBudgetSavingId] = useState<string | null>(null)
 
   const fetchProjects = async () => {
-    const { data } = await supabase.from('projects').select('id, name').neq('status', 'SYSTEM').order('name')
+    const { data } = await supabase.from('projects').select('id, name, description').neq('status', 'SYSTEM').order('name')
     setProjects(data || [])
+  }
+
+  useEffect(() => {
+    if (projects.length > 0) {
+      const budgets: Record<string, string> = {}
+      projects.forEach(p => {
+        if (p.description) {
+          try {
+            const parsed = JSON.parse(p.description)
+            budgets[p.id] = parsed.budget_limit ? String(parsed.budget_limit) : ''
+          } catch (e) {
+            budgets[p.id] = ''
+          }
+        } else {
+          budgets[p.id] = ''
+        }
+      })
+      setProjectBudgets(budgets)
+    }
+  }, [projects])
+
+  const saveProjectBudget = async (projectId: string) => {
+    const budgetStr = projectBudgets[projectId] || ''
+    const budgetVal = parseFloat(budgetStr)
+    
+    setBudgetSavingId(projectId)
+    try {
+      const proj = projects.find(p => p.id === projectId)
+      if (!proj) throw new Error('Project not found')
+      
+      let parsedDesc: Record<string, any> = {}
+      if (proj.description) {
+        try {
+          parsedDesc = JSON.parse(proj.description)
+        } catch (e) {}
+      }
+      
+      if (isNaN(budgetVal) || budgetStr.trim() === '') {
+        delete parsedDesc.budget_limit
+      } else {
+        parsedDesc.budget_limit = budgetVal
+      }
+      
+      const { error } = await supabase
+        .from('projects')
+        .update({ description: JSON.stringify(parsedDesc) })
+        .eq('id', projectId)
+        
+      if (error) throw error
+      
+      setProjects(prev => prev.map(p => p.id === projectId ? { ...p, description: JSON.stringify(parsedDesc) } : p))
+      toast.success('Project budget rate updated successfully!')
+      window.dispatchEvent(new Event('ssc_settings_updated'))
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save budget rate')
+    } finally {
+      setBudgetSavingId(null)
+    }
   }
 
   const saveDefaultProject = async (id: string) => {
@@ -522,6 +583,68 @@ export default function SettingsPage() {
                 </div>
               )}
             </>
+          )}
+        </div>
+      </div>
+
+      {/* ── Section B.2: Project Budget Limits ────────────── */}
+      <div style={PANEL} className="p-6 space-y-5">
+        <div className="flex items-center gap-3 pb-4 border-b border-[#1e2435]">
+          <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center">
+            <Briefcase size={18} className="text-blue-400" />
+          </div>
+          <div>
+            <p className="text-sm font-black text-white uppercase tracking-wide">Project Budget Limits</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest mt-0.5" style={{ color: DIM }}>
+              Set custom budget limits/rates for active projects
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {projects.length === 0 ? (
+            <p className="text-xs text-zinc-500 font-bold">No active projects found.</p>
+          ) : (
+            <div className="divide-y divide-zinc-800/50">
+              {projects.map((proj) => (
+                <div key={proj.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 first:pt-0 last:pb-0">
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-black text-white uppercase">{proj.name}</p>
+                    <p className="text-[9px] text-zinc-500 font-bold uppercase">
+                      Current: {(() => {
+                        try {
+                          const parsed = JSON.parse(proj.description || '{}')
+                          return parsed.budget_limit ? `₹${parsed.budget_limit.toLocaleString('en-IN')}` : 'Not set (uses agreement fallback)'
+                        } catch (e) {
+                          return 'Not set (uses agreement fallback)'
+                        }
+                      })()}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-zinc-500 text-xs font-bold">₹</span>
+                      <input
+                        type="number"
+                        placeholder="Enter budget limit"
+                        value={projectBudgets[proj.id] || ''}
+                        onChange={(e) => setProjectBudgets({ ...projectBudgets, [proj.id]: e.target.value })}
+                        className="w-40 h-9 pl-6 pr-3 text-xs font-bold placeholder-zinc-700 outline-none focus:border-blue-500/50 transition-all rounded-lg"
+                        style={INPUT_ST}
+                      />
+                    </div>
+                    <button
+                      onClick={() => saveProjectBudget(proj.id)}
+                      disabled={budgetSavingId === proj.id}
+                      className="h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center shrink-0 cursor-pointer"
+                    >
+                      {budgetSavingId === proj.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>

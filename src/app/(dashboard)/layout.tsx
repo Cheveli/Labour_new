@@ -180,7 +180,7 @@ export default function DashboardLayout({
 
       {/* Mobile Top Category Selector (Level 1) */}
       <div 
-        className="lg:hidden fixed top-[52px] left-0 right-0 z-40 flex items-center gap-2 overflow-x-auto no-scrollbar px-3 h-[72px]"
+        className="lg:hidden fixed top-[52px] left-0 right-0 z-40 flex items-end justify-between px-3 h-[72px]"
         style={{
           backgroundColor: '#0d1018',
           borderBottom: '1px solid #1e2435',
@@ -193,17 +193,17 @@ export default function DashboardLayout({
             <Link
               key={c.href}
               href={c.href}
-              className={`active-chip shrink-0 flex flex-col items-center justify-center w-[84px] h-[56px] rounded-xl transition-all duration-300 border ${
+              className={`active-chip flex-1 flex flex-col items-center justify-center mx-0.5 transition-all duration-300 ${
                 isActive
-                  ? 'bg-blue-600/10 border-blue-500 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.2)]'
-                  : 'bg-[#111520] border-[#1e2435] text-zinc-500 hover:text-white'
+                  ? 'h-[56px] bg-[#0a0c12] border-t border-x border-[#1e2435] text-blue-400 rounded-t-xl rounded-b-none relative z-10 -mb-[1px] pb-1 shadow-[0_-4px_12px_rgba(59,130,246,0.05)]'
+                  : 'h-[46px] mb-[8px] bg-[#111520] border border-[#1e2435] text-zinc-500 hover:text-white rounded-xl'
               }`}
             >
               <Icon 
-                size={16} 
+                size={14} 
                 className={`transition-transform duration-300 ${isActive ? 'text-blue-400 scale-110' : 'text-zinc-500'}`} 
               />
-              <span className={`text-[8px] font-black uppercase tracking-wider mt-1 text-center truncate w-full px-1 ${isActive ? 'text-blue-400' : 'text-zinc-500'}`}>
+              <span className={`text-[8px] font-black uppercase tracking-wider mt-1 text-center truncate w-full px-0.5 ${isActive ? 'text-blue-400' : 'text-zinc-500'}`}>
                 {c.label}
               </span>
             </Link>

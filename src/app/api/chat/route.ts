@@ -240,35 +240,67 @@ Context:
 ${JSON.stringify(context)}
 `
 
-    // Call NVIDIA API
-    const response = await fetch(`${process.env.NVIDIA_BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.NVIDIA_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: process.env.NVIDIA_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: message }
-        ],
-        temperature: 0.1,
-        max_tokens: 2048,
+    let reply = ''
+    try {
+      if (!process.env.NVIDIA_API_KEY) {
+        throw new Error("NVIDIA API key not configured")
+      }
+      const response = await fetch(`${process.env.NVIDIA_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.NVIDIA_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: process.env.NVIDIA_MODEL || 'meta/llama-3.3-70b-instruct',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: message }
+          ],
+          temperature: 0.1,
+          max_tokens: 2048,
+        })
       })
-    })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`NVIDIA API Error: ${errorText}`)
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`NVIDIA API Error: ${errorText}`)
+      }
+
+      const data = await response.json()
+      const messageObj = data.choices?.[0]?.message
+      reply = messageObj?.content || messageObj?.reasoning || messageObj?.reasoning_content || ''
+    } catch (nvError: any) {
+      console.warn("NVIDIA API failed, attempting Hugging Face Llama-3.3 fallback...", nvError)
+      
+      const hfResponse = await fetch("https://api-inference.huggingface.co/models/meta-llama/Llama-3.3-70B-Instruct/v1/chat/completions", {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.HF_API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: message }
+          ],
+          temperature: 0.1,
+          max_tokens: 2048,
+        })
+      })
+
+      if (!hfResponse.ok) {
+        const hfErrorText = await hfResponse.text()
+        throw new Error(`AI Offline: NVIDIA and Hugging Face services both returned errors. Detail: ${hfErrorText}`)
+      }
+
+      const hfData = await hfResponse.json()
+      const hfMessageObj = hfData.choices?.[0]?.message
+      reply = hfMessageObj?.content || ''
     }
 
-    const data = await response.json()
-    const messageObj = data.choices?.[0]?.message
-    let reply = messageObj?.content || messageObj?.reasoning || messageObj?.reasoning_content || ''
-
-    if (!reply && messageObj) {
-      reply = "Sorry, I fetched the database records but was unable to formulate a text response. Please try rephrasing your question."
+    if (!reply) {
+      reply = "Sorry, I loaded the database records but was unable to formulate a text response. Please try rephrasing your question."
     }
 
     return NextResponse.json({ reply })
