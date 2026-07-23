@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { 
   Boxes, Loader2, Trash2, Edit2, FileText, Upload, Folder, FolderOpen, 
-  ChevronRight, X, Calendar, ChevronDown, Eye, Plus, Check, Settings, 
+  ChevronRight, X, Calendar, ChevronDown, ChevronUp, CornerDownRight, Eye, Plus, Check, Settings, 
   AlertTriangle, DollarSign, TrendingUp, TrendingDown, ArrowUpRight, Filter 
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -55,7 +55,6 @@ interface ParsedMaterialNotes {
   purchase_id: string
   supplier: string
   brand: string | null
-  invoice_number: string | null
   transportation_cost: number
   loading_cost: number
   discount: number
@@ -74,7 +73,6 @@ const parseMaterialNotes = (notesStr: string | null | undefined): ParsedMaterial
           purchase_id: parsed.purchase_id || '—',
           supplier: parsed.supplier || '—',
           brand: parsed.brand || null,
-          invoice_number: parsed.invoice_number || null,
           transportation_cost: parsed.transportation_cost || 0,
           loading_cost: parsed.loading_cost || 0,
           discount: parsed.discount || 0,
@@ -106,7 +104,6 @@ const parseMaterialNotes = (notesStr: string | null | undefined): ParsedMaterial
     purchase_id: '—',
     supplier: supMatch ? supMatch[1] : '—',
     brand: null,
-    invoice_number: null,
     transportation_cost: transMatch ? parseFloat(transMatch[1].replace(/,/g, '')) || 0 : 0,
     loading_cost: hamaliMatch ? parseFloat(hamaliMatch[1].replace(/,/g, '')) || 0 : 0,
     discount: 0,
@@ -144,9 +141,18 @@ interface Material {
   account_name?: string | null
   payment_date?: string | null
   created_at?: string
-  projects?: {
-    name: string
-  }
+  projects?: Project
+}
+
+export interface MaterialGroup {
+  id: string
+  isGroup: boolean
+  purchase_id: string
+  primaryItem: Material
+  items: Material[]
+  total_paid: number
+  date: string
+  supplier: string
 }
 
 import { haptic } from '@/lib/haptic'
@@ -158,9 +164,12 @@ interface MaterialCardProps {
   onEdit: (item: Material) => void
   onView: (item: Material) => void
   onTogglePayment: (item: Material) => void
+  isGroupExpanded?: boolean
+  onToggleExpand?: (e: React.MouseEvent) => void
+  groupItems?: Material[]
 }
 
-function MaterialCard({ item, cleanNotesVal, onDelete, onEdit, onView, onTogglePayment }: MaterialCardProps) {
+function MaterialCard({ item, cleanNotesVal, onDelete, onEdit, onView, onTogglePayment, groupItems, isGroupExpanded, onToggleExpand }: MaterialCardProps) {
   const parsed = parseMaterialNotes(item.notes)
   const supplierDisplay = parsed.supplier !== '—' ? parsed.supplier : ''
 
@@ -198,6 +207,15 @@ function MaterialCard({ item, cleanNotesVal, onDelete, onEdit, onView, onToggleP
                 onClick={() => onTogglePayment(item)}
               >
                 {item.payment_status === 'paid' ? 'Paid' : 'Unpaid'}
+              </span>
+            )}
+            {groupItems && groupItems.length > 1 && onToggleExpand && (
+              <span 
+                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white/5 text-[9px] font-black uppercase text-zinc-300 cursor-pointer hover:bg-white/10 transition-colors border border-white/10"
+                onClick={onToggleExpand}
+              >
+                {isGroupExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                {groupItems.length} Items
               </span>
             )}
           </div>
@@ -242,11 +260,31 @@ function MaterialCard({ item, cleanNotesVal, onDelete, onEdit, onView, onToggleP
         <button
           onClick={() => onDelete(item.id)}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer"
-          style={{ backgroundColor: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}
+          style={{ backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}
         >
           <Trash2 size={10} /> Delete
         </button>
       </div>
+
+      {groupItems && groupItems.length > 1 && isGroupExpanded && (
+        <div className="pt-2 border-t border-zinc-800/50 mt-1 space-y-2">
+          {groupItems.map(gItem => {
+            const gParsed = parseMaterialNotes(gItem.notes)
+            return (
+              <div key={gItem.id} className="flex justify-between items-center py-1 border-b border-zinc-800/30 last:border-0">
+                <div className="flex gap-2 items-center">
+                  <CornerDownRight size={10} className="text-zinc-600" />
+                  <div>
+                    <span className="text-white font-bold text-[10px] block">{gItem.name} {gParsed.brand ? `(${gParsed.brand})` : ''}</span>
+                    <span className="text-zinc-500 font-semibold text-[8px] block">{gItem.quantity} {gItem.unit} {gItem.cost_per_unit > 0 ? `@ ₹${gItem.cost_per_unit}` : ''}</span>
+                  </div>
+                </div>
+                <span className="text-white font-bold font-mono text-[10px]">₹ {(gItem.total_amount || 0).toLocaleString('en-IN')}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -280,7 +318,6 @@ export default function MaterialsPage() {
   // Common purchase details
   const [commonSupplier, setCommonSupplier] = useState('')
   const [commonDate, setCommonDate] = useState(format(new Date(), 'yyyy-MM-dd'))
-  const [commonInvoice, setCommonInvoice] = useState('')
   const [commonTransport, setCommonTransport] = useState('')
   const [commonLoading, setCommonLoading] = useState('')
   const [commonRemarks, setCommonRemarks] = useState('')
@@ -301,11 +338,17 @@ export default function MaterialsPage() {
   const [filterSupplier, setFilterSupplier] = useState('')
   const [filterBrand, setFilterBrand] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
-  const [filterInvoice, setFilterInvoice] = useState('')
+
 
   // ── Details panel & extra filter states ───────────────────
-  const [selectedDetailItem, setSelectedDetailItem] = useState<Material | null>(null)
+  const [selectedDetailItem, setSelectedDetailItem] = useState<MaterialGroup | Material | null>(null)
   const [showExtraFilters, setShowExtraFilters] = useState(false)
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+
+  const toggleGroup = (groupId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setExpandedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }))
+  }
 
   const dateFilterRef = React.useRef<HTMLDivElement>(null)
 
@@ -438,10 +481,7 @@ export default function MaterialsPage() {
     return [...new Set(list)].sort()
   }, [allMaterials])
 
-  const dynamicInvoices = React.useMemo(() => {
-    const list = allMaterials.map(m => parseMaterialNotes(m.notes).invoice_number).filter((i): i is string => !!i)
-    return [...new Set(list)].sort()
-  }, [allMaterials])
+
 
   // Estimations computed helper mapping
   const projectEstimations = React.useMemo(() => {
@@ -471,24 +511,62 @@ export default function MaterialsPage() {
     return costs
   }, [allMaterials])
 
+  const groupedMaterials = React.useMemo(() => {
+    const groups: Record<string, MaterialGroup> = {}
+    const ungrouped: MaterialGroup[] = []
+    
+    allMaterials.forEach(item => {
+      const parsed = parseMaterialNotes(item.notes)
+      if (parsed.purchase_id && parsed.purchase_id !== '—') {
+        if (!groups[parsed.purchase_id]) {
+          groups[parsed.purchase_id] = {
+            id: parsed.purchase_id,
+            isGroup: true,
+            purchase_id: parsed.purchase_id,
+            primaryItem: item,
+            items: [],
+            total_paid: 0,
+            date: item.date,
+            supplier: parsed.supplier
+          }
+        }
+        groups[parsed.purchase_id].items.push(item)
+        groups[parsed.purchase_id].total_paid += getPaidAmountForMaterial(item)
+      } else {
+        ungrouped.push({
+          id: item.id,
+          isGroup: false,
+          purchase_id: '—',
+          primaryItem: item,
+          items: [item],
+          total_paid: getPaidAmountForMaterial(item),
+          date: item.date,
+          supplier: parsed.supplier
+        })
+      }
+    })
+    
+    return [...Object.values(groups), ...ungrouped].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  }, [allMaterials])
+
   // In-memory searching & filtering
   const filteredMaterials = React.useMemo(() => {
-    return allMaterials.filter(item => {
+    return groupedMaterials.filter(group => {
+      const item = group.primaryItem
       const parsed = parseMaterialNotes(item.notes)
       
       // Date filter
       if (filterFrom && item.date < filterFrom) return false
       if (filterTo && item.date > filterTo) return false
 
-      // Search Query (Material, Supplier, Brand, Invoice Number, Date)
+      // Search Query (Material, Supplier, Brand, Date)
       if (debouncedSearchQuery.trim()) {
         const q = debouncedSearchQuery.toLowerCase().trim()
         const matchMat = item.name.toLowerCase().includes(q)
         const matchSup = parsed.supplier.toLowerCase().includes(q)
         const matchBrand = (parsed.brand || '').toLowerCase().includes(q)
-        const matchInvoice = (parsed.invoice_number || '').toLowerCase().includes(q)
         const matchDate = item.date.includes(q)
-        if (!matchMat && !matchSup && !matchBrand && !matchInvoice && !matchDate) return false
+        if (!matchMat && !matchSup && !matchBrand && !matchDate) return false
       }
 
       // Dropdown Filters
@@ -510,11 +588,11 @@ export default function MaterialsPage() {
       }
       if (filterSupplier && parsed.supplier !== filterSupplier) return false
       if (filterBrand && parsed.brand !== filterBrand) return false
-      if (filterInvoice && parsed.invoice_number !== filterInvoice) return false
+
 
       return true
     })
-  }, [allMaterials, debouncedSearchQuery, filterFrom, filterTo, filterCategory, filterSupplier, filterBrand, filterInvoice])
+  }, [groupedMaterials, debouncedSearchQuery, filterFrom, filterTo, filterCategory, filterSupplier, filterBrand])
 
   // Count calculations
   const totalFilteredCount = filteredMaterials.length
@@ -851,7 +929,6 @@ export default function MaterialsPage() {
         date: item.date
       })
       setSupplierName(parsed.supplier || '')
-      setCommonInvoice(parsed.invoice_number || '')
       setCommonTransport(String(parsed.transportation_cost || ''))
       setCommonLoading(String(parsed.loading_cost || ''))
       setCommonPaidAmount(String(parsed.final_paid_amount || ''))
@@ -879,7 +956,6 @@ export default function MaterialsPage() {
         date: item.date
       })
       setSupplierName(supMatch ? supMatch[1] : '')
-      setCommonInvoice('')
       setCommonTransport(transMatch ? transMatch[1] : '')
       setCommonLoading(hamaliMatch ? hamaliMatch[1] : '')
       setCommonPaidAmount(String(item.total_amount || ''))
@@ -907,7 +983,6 @@ export default function MaterialsPage() {
         updatedNotes = JSON.stringify({
           ...editNotesParsed,
           supplier: supplierName.trim(),
-          invoice_number: commonInvoice.trim() || null,
           transportation_cost: trans,
           loading_cost: load,
           discount: disc,
@@ -1332,7 +1407,6 @@ export default function MaterialsPage() {
           purchase_id: purchaseId,
           supplier: commonSupplier.trim(),
           brand: item.brand.trim() || null,
-          invoice_number: commonInvoice.trim() || null,
           transportation_cost: parseFloat(commonTransport) || 0,
           loading_cost: parseFloat(commonLoading) || 0,
           discount: purchaseStats.discount,
@@ -1369,7 +1443,6 @@ export default function MaterialsPage() {
       // Reset form
       setPurchaseItems([{ name: 'Cement', brand: '', quantity: '', unit: 'Bags', cost_per_unit: '', unitLocked: true }])
       setCommonSupplier('')
-      setCommonInvoice('')
       setCommonTransport('')
       setCommonLoading('')
       setCommonRemarks('')
@@ -1512,7 +1585,6 @@ export default function MaterialsPage() {
                         onClick={() => {
                           setPurchaseItems([{ name: 'Cement', brand: '', quantity: '', unit: 'Bags', cost_per_unit: '', unitLocked: true }]);
                           setCommonSupplier('');
-                          setCommonInvoice('');
                           setCommonTransport('');
                           setCommonLoading('');
                           setCommonRemarks('');
@@ -1550,7 +1622,7 @@ export default function MaterialsPage() {
                 {/* Search Bar */}
                 <div className="flex-1">
                   <Input
-                    placeholder="Search by supplier, brand, invoice, material..."
+                    placeholder="Search by supplier, brand, material..."
                     value={searchQuery}
                     onChange={(e) => {
                       setSearchQuery(e.target.value)
@@ -1584,7 +1656,7 @@ export default function MaterialsPage() {
                       setFilterCategory('')
                       setFilterSupplier('')
                       setFilterBrand('')
-                      setFilterInvoice('')
+
                       setSelectedProjectId('')
                       setMatPage(0)
                     }}
@@ -1659,7 +1731,7 @@ export default function MaterialsPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="flex-1 overflow-y-auto">
+                    <div className="hidden md:block flex-1 overflow-y-auto">
                       <Table>
                         <TableHeader className="bg-zinc-900/80">
                           <TableRow className="border-zinc-800 hover:bg-zinc-900/80">
@@ -1695,34 +1767,54 @@ export default function MaterialsPage() {
                               </TableCell>
                             </TableRow>
                           ) : (
-                            paginatedMaterials.map((item, idx) => {
+                            paginatedMaterials.map((group, idx) => {
+                              const item = group.primaryItem
                               const parsed = parseMaterialNotes(item.notes)
+                              const isMultiple = group.items.length > 1
+                              const displayName = isMultiple ? `${item.name} + ${group.items.length - 1} more` : `${item.name}${parsed.brand ? ` (${parsed.brand})` : ''}`
+                              const isExpanded = !!expandedGroups[group.id]
                               return (
-                                <TableRow key={item.id} className={cn("border-zinc-800 transition-colors hover:bg-white/5", selectedDetailItem?.id === item.id && "bg-white/5 border-l-2 border-l-blue-500")}>
-                                  <TableCell className="px-4 py-1.5 font-bold text-gray-400 text-xs text-center">{matPage * 10 + idx + 1}</TableCell>
-                                  <TableCell className="px-4 py-1.5 font-bold text-gray-400 text-xs whitespace-nowrap">
-                                    <p className="text-white font-bold">{format(new Date(item.date), 'dd-MM-yyyy')}</p>
-                                    <p className="text-zinc-500 text-[10px] font-bold mt-0.5">{format(new Date(item.date), 'EEE')}</p>
-                                  </TableCell>
-                                  <TableCell className="py-1.5 font-bold text-white text-sm whitespace-nowrap">
-                                    <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-[#1e2435] text-zinc-300">
-                                      {item.name}{parsed.brand ? ` (${parsed.brand})` : ''}
-                                    </span>
-                                  </TableCell>
+                                <React.Fragment key={group.id}>
+                                  <TableRow 
+                                    className={cn("border-zinc-800 transition-colors hover:bg-white/5", selectedDetailItem?.id === group.id && "bg-white/5 border-l-2 border-l-blue-500", isExpanded && "bg-white/[0.02]")}
+                                    onClick={(e) => {
+                                      if (isMultiple) {
+                                        toggleGroup(group.id, e)
+                                      }
+                                    }}
+                                  >
+                                    <TableCell className="px-4 py-1.5 font-bold text-gray-400 text-xs text-center">{matPage * 10 + idx + 1}</TableCell>
+                                    <TableCell className="px-4 py-1.5 font-bold text-gray-400 text-xs whitespace-nowrap">
+                                      <p className="text-white font-bold">{format(new Date(item.date), 'dd-MM-yyyy')}</p>
+                                      <p className="text-zinc-500 text-[10px] font-bold mt-0.5">{format(new Date(item.date), 'EEE')}</p>
+                                    </TableCell>
+                                    <TableCell className="py-1.5 font-bold text-white text-sm whitespace-nowrap">
+                                      <div className="flex items-center gap-2">
+                                        <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-[#1e2435] text-zinc-300">
+                                          {displayName}
+                                        </span>
+                                        {isMultiple && (
+                                          <div className="p-1 rounded-md bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white transition-colors cursor-pointer">
+                                            {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </TableCell>
                                   <TableCell className="py-1.5 text-zinc-400 text-xs whitespace-nowrap font-bold">
-                                    <span>{item.quantity} {item.unit}</span>
-                                    {item.cost_per_unit > 0 && (
-                                      <span className="text-zinc-500 font-semibold ml-1.5">@ ₹{item.cost_per_unit}</span>
+                                    {isMultiple ? (
+                                      <span className="text-[10px] font-black text-blue-400 uppercase tracking-wider">{group.items.length} Items</span>
+                                    ) : (
+                                      <>
+                                        <span>{item.quantity} {item.unit}</span>
+                                        {item.cost_per_unit > 0 && (
+                                          <span className="text-zinc-500 font-semibold ml-1.5">@ ₹{item.cost_per_unit}</span>
+                                        )}
+                                      </>
                                     )}
                                   </TableCell>
                                   <TableCell className="py-1.5 text-right px-4">
-                                    <p className="font-black text-white text-sm whitespace-nowrap">₹ {getPaidAmountForMaterial(item).toLocaleString('en-IN')}</p>
+                                    <p className="font-black text-white text-sm whitespace-nowrap">₹ {group.total_paid.toLocaleString('en-IN')}</p>
                                     {(() => {
-                                      const paid = getPaidAmountForMaterial(item)
-                                      const saved = (item.total_amount || 0) - paid
-                                      if (saved > 0) {
-                                        return <p className="text-[8px] font-black text-emerald-400 mt-0.5">Saved ₹{saved.toLocaleString('en-IN')}</p>
-                                      }
                                       if (item.payment_status !== 'paid' && item.payment_system_v2) {
                                         return <p className="text-[8px] font-black text-red-400 mt-0.5">Unpaid</p>
                                       }
@@ -1760,12 +1852,13 @@ export default function MaterialsPage() {
                                   </TableCell>
                                   <TableCell className="py-1.5 text-center">
                                     <button
-                                      onClick={() => {
-                                        setSelectedDetailItem(item)
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setSelectedDetailItem(group)
                                       }}
                                       className={cn(
-                                        "p-1 rounded-lg transition-all",
-                                        selectedDetailItem?.id === item.id
+                                        "p-1 rounded-lg transition-all cursor-pointer z-10 relative",
+                                        selectedDetailItem?.id === group.id
                                           ? "bg-blue-600 text-white"
                                           : "bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
                                       )}
@@ -1775,6 +1868,33 @@ export default function MaterialsPage() {
                                     </button>
                                   </TableCell>
                                 </TableRow>
+                                {isMultiple && isExpanded && group.items.map((subItem, sIdx) => {
+                                  const subParsed = parseMaterialNotes(subItem.notes)
+                                  return (
+                                    <TableRow key={subItem.id} className="bg-black/40 border-zinc-800/50">
+                                      <TableCell className="px-4 py-1.5 font-bold text-zinc-600 text-xs text-center"></TableCell>
+                                      <TableCell className="px-4 py-1.5 font-bold text-zinc-500 text-xs whitespace-nowrap">
+                                        <div className="pl-4 border-l-2 border-zinc-800 h-full flex flex-col justify-center">
+                                          <CornerDownRight size={12} className="text-zinc-600" />
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="py-1.5 font-bold text-zinc-400 text-sm whitespace-nowrap">
+                                        {subItem.name}{subParsed.brand ? ` (${subParsed.brand})` : ''}
+                                      </TableCell>
+                                      <TableCell className="py-1.5 text-zinc-500 text-xs whitespace-nowrap font-bold">
+                                        <span>{subItem.quantity} {subItem.unit}</span>
+                                        {subItem.cost_per_unit > 0 && (
+                                          <span className="text-zinc-600 font-semibold ml-1.5">@ ₹{subItem.cost_per_unit}</span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="py-1.5 text-right px-4">
+                                        <p className="font-bold text-zinc-400 text-xs whitespace-nowrap">₹ {(subItem.total_amount || 0).toLocaleString('en-IN')}</p>
+                                      </TableCell>
+                                      <TableCell colSpan={2} />
+                                    </TableRow>
+                                  )
+                                })}
+                              </React.Fragment>
                               )
                             })
                           )}
@@ -1784,7 +1904,7 @@ export default function MaterialsPage() {
 
                     {/* Desktop Pagination */}
                     {totalFilteredCount > 0 && (
-                      <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-800 flex-wrap gap-3 bg-[#0d1018] shrink-0 mt-auto">
+                      <div className="hidden md:flex items-center justify-between px-6 py-3 border-t border-zinc-800 flex-wrap gap-3 bg-[#0d1018] shrink-0 mt-auto">
                         <span className="text-xs text-zinc-500 font-medium">
                           Showing {totalFilteredCount > 0 ? matPage * 10 + 1 : 0} to {Math.min(totalFilteredCount, (matPage + 1) * 10)} of {totalFilteredCount} entries
                         </span>
@@ -1863,16 +1983,26 @@ export default function MaterialsPage() {
                           </p>
                         </div>
                       ) : (
-                        paginatedMaterials.map((item) => {
+                        paginatedMaterials.map((group) => {
+                          const item = group.primaryItem
                           const parsed = parseMaterialNotes(item.notes)
+                          const isMultiple = group.items.length > 1
+                          const fakeGroupItem = {
+                            ...item,
+                            name: isMultiple ? `${item.name} + ${group.items.length - 1} more` : item.name,
+                            quantity: isMultiple ? group.items.length : item.quantity,
+                            unit: isMultiple ? 'Items' : item.unit,
+                            cost_per_unit: isMultiple ? 0 : item.cost_per_unit,
+                            total_amount: group.total_paid
+                          }
                           return (
                             <MaterialCard
-                              key={item.id}
-                              item={item}
+                              key={group.id}
+                              item={fakeGroupItem}
                               cleanNotesVal={parsed.remarks || ''}
                               onDelete={handleDeleteMat}
                               onEdit={handleOpenEditMat}
-                              onView={setSelectedDetailItem}
+                              onView={(item) => setSelectedDetailItem(group)}
                               onTogglePayment={(item) => {
                                 setPaymentItem(item)
                                 setPaymentStatus(item.payment_status || 'unpaid')
@@ -1885,6 +2015,9 @@ export default function MaterialsPage() {
                                 })
                                 setShowPaymentModal(true)
                               }}
+                              isGroupExpanded={!!expandedGroups[group.id]}
+                              onToggleExpand={(e) => toggleGroup(group.id, e)}
+                              groupItems={group.items}
                             />
                           )
                         })
@@ -2203,11 +2336,16 @@ export default function MaterialsPage() {
 
       {/* DETAIL MODAL POPUP */}
       {selectedDetailItem && (() => {
-        const parsed = parseMaterialNotes(selectedDetailItem.notes)
+        const primaryItem = 'isGroup' in selectedDetailItem ? selectedDetailItem.primaryItem : selectedDetailItem
+        const groupItems = 'isGroup' in selectedDetailItem ? selectedDetailItem.items : [selectedDetailItem]
+        const isGroup = 'isGroup' in selectedDetailItem ? selectedDetailItem.isGroup : false
+        const totalAmountDisplay = 'total_paid' in selectedDetailItem ? selectedDetailItem.total_paid : (primaryItem.total_amount || 0)
+
+        const parsed = parseMaterialNotes(primaryItem.notes)
         const detailSupplierDisplay = parsed.supplier !== '—'
           ? (parsed.brand ? `${parsed.supplier} (${parsed.brand})` : parsed.supplier)
           : '—'
-        const detailReceiptUrl = selectedDetailItem.receipt_url
+        const detailReceiptUrl = primaryItem.receipt_url
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in-50" onClick={() => setSelectedDetailItem(null)}>
@@ -2229,27 +2367,27 @@ export default function MaterialsPage() {
                     <Boxes className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="font-bold text-white text-sm lowercase">{selectedDetailItem.projects?.name}</p>
+                    <p className="font-bold text-white text-sm lowercase">{primaryItem.projects?.name}</p>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-[#1e2435] text-zinc-400">
-                        {selectedDetailItem.name}
+                        {isGroup && groupItems.length > 1 ? `${primaryItem.name} + ${groupItems.length - 1} more` : primaryItem.name}
                       </span>
                       <span className="text-[10px] font-bold text-zinc-500">
-                        {format(new Date(selectedDetailItem.date), 'dd-MM-yyyy')} ({format(new Date(selectedDetailItem.date), 'EEE')})
+                        {format(new Date(primaryItem.date), 'dd-MM-yyyy')} ({format(new Date(primaryItem.date), 'EEE')})
                       </span>
                     </div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-black text-white text-base">₹ {(selectedDetailItem.total_amount || 0).toLocaleString('en-IN')}</p>
-                  {selectedDetailItem.payment_system_v2 && (
+                  <p className="font-black text-white text-base">₹ {totalAmountDisplay.toLocaleString('en-IN')}</p>
+                  {primaryItem.payment_system_v2 && (
                     <span className={cn(
                       "px-1.5 py-0.5 rounded text-[8px] font-black uppercase inline-block mt-1",
-                      selectedDetailItem.payment_status === 'paid'
+                      primaryItem.payment_status === 'paid'
                         ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
                         : "bg-red-500/10 border border-red-500/20 text-red-400"
                     )}>
-                      {selectedDetailItem.payment_status === 'paid' ? 'Paid' : 'Unpaid'}
+                      {primaryItem.payment_status === 'paid' ? 'Paid' : 'Unpaid'}
                     </span>
                   )}
                 </div>
@@ -2261,30 +2399,46 @@ export default function MaterialsPage() {
                   <span className="text-zinc-500 font-bold">Supplier</span>
                   <span className="text-white font-bold">{detailSupplierDisplay}</span>
                 </div>
-                {parsed.brand && (
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500 font-bold">Brand Name</span>
-                    <span className="text-white font-bold">{parsed.brand}</span>
+
+                {isGroup && groupItems.length > 1 ? (
+                  <div className="mt-4 border-t border-zinc-800/60 pt-3 space-y-2">
+                    <span className="text-[9px] font-black text-zinc-500 uppercase tracking-wider mb-2 block">Grouped Items ({groupItems.length})</span>
+                    {groupItems.map((gItem, idx) => {
+                      const gParsed = parseMaterialNotes(gItem.notes);
+                      return (
+                        <div key={gItem.id} className="flex justify-between items-center py-1.5 border-b border-zinc-800/30 last:border-0">
+                          <div>
+                            <span className="text-white font-bold text-[11px] block">{gItem.name} {gParsed.brand ? `(${gParsed.brand})` : ''}</span>
+                            <span className="text-zinc-500 font-semibold text-[9px] block">{gItem.quantity} {gItem.unit} {gItem.cost_per_unit > 0 ? `@ ₹${gItem.cost_per_unit}` : ''}</span>
+                          </div>
+                          <span className="text-white font-bold font-mono text-[11px]">₹ {(gItem.total_amount || 0).toLocaleString('en-IN')}</span>
+                        </div>
+                      )
+                    })}
                   </div>
+                ) : (
+                  <>
+                    {parsed.brand && (
+                      <div className="flex justify-between">
+                        <span className="text-zinc-500 font-bold">Brand Name</span>
+                        <span className="text-white font-bold">{parsed.brand}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500 font-bold">Quantity</span>
+                      <span className="text-white font-bold">{primaryItem.quantity} {primaryItem.unit}</span>
+                    </div>
+                    {primaryItem.cost_per_unit > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-zinc-500 font-bold">Rate</span>
+                        <span className="text-white font-bold font-mono">₹ {primaryItem.cost_per_unit}</span>
+                      </div>
+                    )}
+                  </>
                 )}
-                {parsed.invoice_number && (
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500 font-bold">Invoice Number</span>
-                    <span className="text-white font-bold">{parsed.invoice_number}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-zinc-500 font-bold">Quantity</span>
-                  <span className="text-white font-bold">{selectedDetailItem.quantity} {selectedDetailItem.unit}</span>
-                </div>
-                {selectedDetailItem.cost_per_unit > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500 font-bold">Rate</span>
-                    <span className="text-white font-bold font-mono">₹ {selectedDetailItem.cost_per_unit}</span>
-                  </div>
-                )}
+
                 {parsed.transportation_cost > 0 && (
-                  <div className="flex justify-between">
+                  <div className="flex justify-between border-t border-zinc-800/60 pt-2">
                     <span className="text-zinc-500 font-bold">Transportation Cost</span>
                     <span className="text-white font-bold font-mono">₹ {parsed.transportation_cost.toLocaleString('en-IN')}</span>
                   </div>
@@ -2316,7 +2470,7 @@ export default function MaterialsPage() {
                   </>
                 )}
                 {detailReceiptUrl && (
-                  <div className="flex justify-between items-center pt-1 border-t border-zinc-800/60">
+                  <div className="flex justify-between items-center pt-2 border-t border-zinc-800/60">
                     <span className="text-zinc-500 font-bold">Receipt Attachment</span>
                     <a
                       href={detailReceiptUrl}
@@ -2341,13 +2495,13 @@ export default function MaterialsPage() {
               {/* Footer Buttons */}
               <div className="flex gap-3 pt-4 border-t border-[#1e2435] shrink-0 mt-auto">
                 <button
-                  onClick={() => handleOpenEditMat(selectedDetailItem)}
+                  onClick={() => handleOpenEditMat(primaryItem)}
                   className="flex-1 h-11 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 transition-colors"
                 >
                   <Edit2 size={13} /> Edit
                 </button>
                 <button
-                  onClick={() => handleDeleteMat(selectedDetailItem.id)}
+                  onClick={() => handleDeleteMat(primaryItem.id)}
                   className="flex-1 h-11 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors"
                 >
                   <Trash2 size={13} /> Delete
@@ -2747,7 +2901,7 @@ export default function MaterialsPage() {
                   setFilterCategory('')
                   setFilterSupplier('')
                   setFilterBrand('')
-                  setFilterInvoice('')
+
                   setSelectedProjectId('')
                   setMatPage(0)
                 }}
@@ -2825,15 +2979,7 @@ export default function MaterialsPage() {
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-wider">Invoice Number</label>
-                  <Input 
-                    placeholder="e.g. INV-2026-904" 
-                    value={commonInvoice} 
-                    onChange={e => setCommonInvoice(e.target.value)} 
-                    className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white text-xs" 
-                  />
-                </div>
+
 
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-wider">Delivery Date</label>
@@ -3236,10 +3382,7 @@ export default function MaterialsPage() {
 
               {editNotesParsed && (
                 <>
-                  <div className="col-span-2 space-y-1.5">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Invoice Number</label>
-                    <Input value={commonInvoice} onChange={e => setCommonInvoice(e.target.value)} className="h-9 bg-zinc-900 border-zinc-800 rounded-lg text-white" />
-                  </div>
+
                   <div className="space-y-1.5">
                     <label className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Transportation Cost (₹)</label>
                     <Input type="number" value={commonTransport} onChange={e => setCommonTransport(e.target.value)} className="h-9 bg-zinc-900 border-zinc-800 rounded-lg text-white font-mono" />
