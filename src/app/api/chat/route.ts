@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import fs from 'fs'
+import path from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { verifyUserRole } from '@/lib/auth-utils'
 
@@ -242,17 +244,40 @@ ${JSON.stringify(context)}
 
     let reply = ''
     try {
-      if (!process.env.NVIDIA_API_KEY) {
+      let apiKey = process.env.NVIDIA_API_KEY
+      let baseUrl = process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1'
+      let model = process.env.NVIDIA_MODEL || 'meta/llama-3.3-70b-instruct'
+
+      // Dynamic fallback to fresh .env content to bypass process.env caching
+      try {
+        const envPath = path.join(process.cwd(), '.env')
+        if (fs.existsSync(envPath)) {
+          const envContent = fs.readFileSync(envPath, 'utf-8')
+          const keyMatch = envContent.match(/^NVIDIA_API_KEY\s*=\s*(.+)$/m)
+          if (keyMatch && keyMatch[1]) apiKey = keyMatch[1].trim()
+          
+          const urlMatch = envContent.match(/^NVIDIA_BASE_URL\s*=\s*(.+)$/m)
+          if (urlMatch && urlMatch[1]) baseUrl = urlMatch[1].trim()
+
+          const modelMatch = envContent.match(/^NVIDIA_MODEL\s*=\s*(.+)$/m)
+          if (modelMatch && modelMatch[1]) model = modelMatch[1].trim()
+        }
+      } catch (err) {
+        console.warn("Failed to dynamically read .env settings:", err)
+      }
+
+      if (!apiKey) {
         throw new Error("NVIDIA API key not configured")
       }
-      const response = await fetch(`${process.env.NVIDIA_BASE_URL}/chat/completions`, {
+
+      const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.NVIDIA_API_KEY}`,
+          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: process.env.NVIDIA_MODEL || 'meta/llama-3.3-70b-instruct',
+          model: model,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: message }

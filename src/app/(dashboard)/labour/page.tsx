@@ -78,7 +78,7 @@ export default function WorkersPage() {
   async function fetchData() {
     setLoading(true)
     const { data: labData } = await supabase.from('labour').select('*').order('name')
-    setLabourers(labData || [])
+    setLabourers(labData?.filter(l => l.phone !== 'TEMPORARY') || [])
     setLoading(false)
   }
 

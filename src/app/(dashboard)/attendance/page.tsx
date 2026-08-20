@@ -19,14 +19,13 @@ import {
   Zap
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { addWeeks, format, endOfWeek, startOfWeek, eachDayOfInterval, subWeeks, parseISO } from 'date-fns'
+import { addWeeks, format, endOfWeek, startOfWeek, eachDayOfInterval, subWeeks, parseISO, subDays } from 'date-fns'
 
 type AttendanceStatus = 'P' | 'H' | 'A' | ''
 
 type DayRecord = {
   status: AttendanceStatus
-  overtime_amount: number
-  advance_amount: number
+  paid_amount?: number
 }
 
 type WorkerRow = {
@@ -35,6 +34,7 @@ type WorkerRow = {
   type: string
   default_rate: number
   custom_rate: number
+  phone?: string
   days: Record<string, DayRecord> // Date strings as keys
 }
 
@@ -106,12 +106,26 @@ export default function AttendancePage() {
 
   // Modals & Panels
   const [showAddWorker, setShowAddWorker] = useState(false)
+  const [showAddTempWorker, setShowAddTempWorker] = useState(false)
+  const [tempWorkerName, setTempWorkerName] = useState('')
+  const [tempWorkerType, setTempWorkerType] = useState('Labour (Women)')
+  const [tempWorkerRate, setTempWorkerRate] = useState('800')
+  const [addingTemp, setAddingTemp] = useState(false)
+
+  // Promotion State
+  const [showPromoteModal, setShowPromoteModal] = useState(false)
+  const [promoteWorkerId, setPromoteWorkerId] = useState<string | null>(null)
+  const [promotePhone, setPromotePhone] = useState('')
+  const [promoteName, setPromoteName] = useState('')
+  const [promoteType, setPromoteType] = useState('')
+  const [promoting, setPromoting] = useState(false)
+
   const [searchQuery, setSearchQuery] = useState('')
   const [otMode, setOtMode] = useState(false)
   
   // Popup State
   const [activePopup, setActivePopup] = useState<{ worker_id: string, date: string } | null>(null)
-  const [popupData, setPopupData] = useState<DayRecord>({ status: '', overtime_amount: 0, advance_amount: 0 })
+  const [popupData, setPopupData] = useState<DayRecord>({ status: '', paid_amount: 0 })
 
   // Daily grouped notes: one note per date applies to ALL workers
   const [dailyNotes, setDailyNotes] = useState<Record<string, string>>({})
@@ -133,7 +147,7 @@ export default function AttendancePage() {
     const { data: projData } = await supabase.from('projects').select('*').order('name')
     const { data: labData } = await supabase.from('labour').select('*').order('name')
     setProjects(projData || [])
-    setLabourers(labData || [])
+    setLabourers(labData?.filter((l: any) => l.phone !== 'TEMPORARY') || [])
 
     const savedActive = localStorage.getItem('ssc_active_project_id')
     let currentId = selectedProject
@@ -177,7 +191,7 @@ export default function AttendancePage() {
 
   useEffect(() => {
     const onSave = () => handleSave()
-    const onCopyPrev = () => copyPreviousWeek()
+    const onCopyPrev = () => copyYesterdayAttendance()
     const onAddWorker = () => setShowAddWorker(true)
     const onToggleOt = () => setOtMode(prev => !prev)
 
@@ -201,7 +215,7 @@ export default function AttendancePage() {
 
     const { data } = await supabase
       .from('attendance')
-      .select('*, labour(name, type, daily_rate)')
+      .select('*, labour(name, type, daily_rate, phone)')
       .eq('project_id', projectId)
       .gte('date', startStr)
       .lte('date', endStr)
@@ -219,6 +233,7 @@ export default function AttendancePage() {
             type: r.labour?.type || 'Worker',
             default_rate: r.labour?.daily_rate || 0,
             custom_rate: r.custom_rate || r.labour?.daily_rate || 0,
+            phone: r.labour?.phone || '',
             days: {}
           }
         }
@@ -226,17 +241,34 @@ export default function AttendancePage() {
         let status: AttendanceStatus = ''
         if (r.days_worked === 1) status = 'P'
         else if (r.days_worked === 0.5) status = 'H'
-        else if (r.days_worked === 0 && r.overtime_amount === 0) status = 'A' // Pure absent
-        else if (r.days_worked === 0 && r.overtime_amount > 0) status = 'A' // Absent but has OT
+        else if (r.days_worked === 0) status = 'A' // Pure absent
 
         newGrid[wId].days[r.date] = {
           status,
-          overtime_amount: Number(r.overtime_amount) || 0,
-          advance_amount: Number(r.advance_amount) || 0
+          paid_amount: 0
         }
         // Extract per-date note (all workers on same date share same note)
         if (r.notes && r.notes.trim() && !notesByDate[r.date]) {
           notesByDate[r.date] = r.notes.trim()
+        }
+      })
+    }
+
+    // Load payments for this week
+    const { data: paymentsData } = await supabase
+      .from('payments')
+      .select('*')
+      .gte('date', startStr)
+      .lte('date', endStr)
+
+    if (paymentsData) {
+      paymentsData.forEach((p: any) => {
+        const wId = p.labour_id
+        if (newGrid[wId]) {
+          if (!newGrid[wId].days[p.date]) {
+            newGrid[wId].days[p.date] = { status: '', paid_amount: 0 }
+          }
+          newGrid[wId].days[p.date].paid_amount = Number(p.amount) || 0
         }
       })
     }
@@ -248,8 +280,11 @@ export default function AttendancePage() {
 
   // Interactions
   const handleCellClick = (workerId: string, dateStr: string) => {
-    const current = gridData[workerId]?.days[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0 }
-    setPopupData(current)
+    const current = gridData[workerId]?.days[dateStr] || { status: '', paid_amount: 0 }
+    setPopupData({
+      status: current.status,
+      paid_amount: current.paid_amount || 0
+    })
     setActivePopup({ worker_id: workerId, date: dateStr })
   }
 
@@ -287,6 +322,7 @@ export default function AttendancePage() {
             type: worker.type || 'Worker',
             default_rate: worker.daily_rate || 0,
             custom_rate: worker.daily_rate || 0,
+            phone: worker.phone || '',
             days: {}
           }
         }
@@ -296,6 +332,101 @@ export default function AttendancePage() {
     setShowAddWorker(false)
     setSearchQuery('')
     setSelectedWorkers([])
+  }
+
+  const handleAddTempWorker = async () => {
+    if (!tempWorkerName.trim()) {
+      toast.error('Name is required')
+      return
+    }
+    setAddingTemp(true)
+    try {
+      // Insert worker in database
+      const { data: newWorker, error } = await supabase
+        .from('labour')
+        .insert([{
+          name: tempWorkerName.trim(),
+          phone: 'TEMPORARY',
+          type: tempWorkerType,
+          gender: tempWorkerType.toLowerCase().includes('women') ? 'Female' : 'Male',
+          daily_rate: Number.parseFloat(tempWorkerRate || '0')
+        }])
+        .select()
+        .single()
+
+      if (error) throw error
+
+      if (newWorker) {
+        // Add worker to the active week grid
+        setGridData(prev => ({
+          ...prev,
+          [newWorker.id]: {
+            worker_id: newWorker.id,
+            name: newWorker.name,
+            type: newWorker.type,
+            default_rate: newWorker.daily_rate,
+            custom_rate: newWorker.daily_rate,
+            phone: 'TEMPORARY',
+            days: {}
+          }
+        }))
+        toast.success('Temporary worker added to grid')
+        // Close dialog and reset form
+        setShowAddTempWorker(false)
+        setTempWorkerName('')
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to add temporary worker')
+    } finally {
+      setAddingTemp(false)
+    }
+  }
+
+  const handlePromoteWorker = async () => {
+    if (!promoteWorkerId) return
+    if (!promotePhone.trim() || promotePhone.trim().length < 10) {
+      toast.error('Please enter a valid 10-digit mobile number')
+      return
+    }
+    setPromoting(true)
+    try {
+      // 1. Update worker's phone number in labour table
+      const { error: updErr } = await supabase
+        .from('labour')
+        .update({ phone: promotePhone.trim() })
+        .eq('id', promoteWorkerId)
+
+      if (updErr) throw updErr
+
+      // 2. Add to contacts
+      const { error: cntErr } = await supabase
+        .from('contacts')
+        .insert([{
+          name: promoteName,
+          phone: promotePhone.trim(),
+          type: promoteType
+        }])
+
+      if (cntErr) throw cntErr
+
+      // 3. Update local gridData phone
+      setGridData(prev => {
+        const next = { ...prev }
+        if (next[promoteWorkerId]) {
+          next[promoteWorkerId].phone = promotePhone.trim()
+        }
+        return next
+      })
+
+      toast.success('Worker successfully promoted to permanent contact!')
+      setShowPromoteModal(false)
+      setPromoteWorkerId(null)
+      setPromotePhone('')
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to promote worker')
+    } finally {
+      setPromoting(false)
+    }
   }
 
   const removeWorkerFromGrid = (workerId: string) => {
@@ -326,7 +457,7 @@ export default function AttendancePage() {
         const newDays = { ...next[wId].days }
         weekDates.forEach(d => {
           const dateStr = format(d, 'yyyy-MM-dd')
-          const currentDay = newDays[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0 }
+          const currentDay = newDays[dateStr] || { status: '', paid_amount: 0 }
           if (currentDay.status === '') {
             newDays[dateStr] = { ...currentDay, status: 'P' }
           }
@@ -347,7 +478,7 @@ export default function AttendancePage() {
         weekDates.forEach(d => {
           const dateStr = format(d, 'yyyy-MM-dd')
           if (newDays[dateStr]) {
-            newDays[dateStr] = { ...newDays[dateStr], status: '', overtime_amount: 0, advance_amount: 0 }
+            newDays[dateStr] = { ...newDays[dateStr], status: '', paid_amount: 0 }
           }
         })
         next[wId] = { ...next[wId], days: newDays }
@@ -356,60 +487,78 @@ export default function AttendancePage() {
     })
   }
 
-  const copyPreviousWeek = async () => {
+  const copyYesterdayAttendance = async () => {
     if (!selectedProject) return
-    setLoading(true)
-    const prevStart = subWeeks(currentWeekStart, 1)
-    const startStr = format(prevStart, 'yyyy-MM-dd')
-    const endStr = format(endOfWeek(prevStart, { weekStartsOn: 0 }), 'yyyy-MM-dd')
+    const todayStr = format(new Date(), 'yyyy-MM-dd')
+    const yesterdayDate = subDays(new Date(), 1)
+    const yesterdayStr = format(yesterdayDate, 'yyyy-MM-dd')
 
-    const { data } = await supabase
-      .from('attendance')
-      .select('*, labour(name, type, daily_rate)')
-      .eq('project_id', selectedProject)
-      .gte('date', startStr)
-      .lte('date', endStr)
-
-    if (data && data.length > 0) {
-      setGridData(prev => {
-        const next = { ...prev }
-        data.forEach((r: any) => {
-          const wId = r.labour_id
-          if (!next[wId]) {
-            next[wId] = {
-              worker_id: wId,
-              name: r.labour?.name || 'Unknown',
-              type: r.labour?.type || 'Worker',
-              default_rate: r.labour?.daily_rate || 0,
-              custom_rate: r.custom_rate || r.labour?.daily_rate || 0,
-              days: {}
-            }
-          }
-          
-          const prevDateObj = new Date(r.date)
-          const dayIndex = prevDateObj.getDay()
-          const targetDateStr = format(weekDates[dayIndex], 'yyyy-MM-dd')
-
-          let status: AttendanceStatus = ''
-          if (r.days_worked === 1) status = 'P'
-          else if (r.days_worked === 0.5) status = 'H'
-          else if (r.days_worked === 0 && r.overtime_amount === 0) status = 'A'
-
-          if (!next[wId].days[targetDateStr] || next[wId].days[targetDateStr].status === '') {
-            next[wId].days[targetDateStr] = {
-              status,
-              overtime_amount: Number(r.overtime_amount) || 0,
-              advance_amount: Number(r.advance_amount) || 0
-            }
-          }
-        })
-        return next
-      })
-      toast.success('Previous week patterns copied')
-    } else {
-      toast.error('No data found in previous week')
+    // Find if today is in the current weekDates
+    const hasToday = weekDates.some(d => format(d, 'yyyy-MM-dd') === todayStr)
+    if (!hasToday) {
+      toast.error("Today's date is not in the currently displayed week.")
+      return
     }
-    setLoading(false)
+
+    setLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('labour_id, days_worked, notes')
+        .eq('project_id', selectedProject)
+        .eq('date', yesterdayStr)
+
+      if (error) throw error
+
+      if (data && data.length > 0) {
+        setGridData(prev => {
+          const next = { ...prev }
+          data.forEach((r: any) => {
+            const wId = r.labour_id
+            if (next[wId]) {
+              let status: AttendanceStatus = ''
+              if (r.days_worked === 1) status = 'P'
+              else if (r.days_worked === 0.5) status = 'H'
+              else if (r.days_worked === 0) status = 'A'
+
+              if (!next[wId].days[todayStr]) {
+                next[wId].days[todayStr] = { status: '', paid_amount: 0 }
+              }
+              next[wId].days[todayStr].status = status
+            }
+          })
+          return next
+        })
+        toast.success(`Copied yesterday's (${format(yesterdayDate, 'dd MMM')}) attendance to today`)
+      } else {
+        toast.error(`No attendance records found for yesterday (${format(yesterdayDate, 'dd MMM')})`)
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to copy yesterday's attendance")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const copyPreviousDayColumn = (targetDateStr: string) => {
+    const targetDate = parseISO(targetDateStr)
+    const prevDate = subDays(targetDate, 1)
+    const prevDateStr = format(prevDate, 'yyyy-MM-dd')
+
+    setGridData(prev => {
+      const next = { ...prev }
+      Object.keys(next).forEach(wId => {
+        const prevCell = next[wId].days[prevDateStr]
+        const status = prevCell ? prevCell.status : ''
+        
+        if (!next[wId].days[targetDateStr]) {
+          next[wId].days[targetDateStr] = { status: '', paid_amount: 0 }
+        }
+        next[wId].days[targetDateStr].status = status
+      })
+      return next
+    })
+    toast.success(`Copied attendance from ${format(prevDate, 'EEE')} to ${format(targetDate, 'EEE')}`)
   }
 
   // Save Logic
@@ -436,11 +585,20 @@ export default function AttendancePage() {
         .gte('date', startStr)
         .lte('date', endStr)
 
+      // Delete payments for this week and project's workers
+      await supabase.from('payments')
+        .delete()
+        .in('labour_id', workerIds)
+        .gte('date', startStr)
+        .lte('date', endStr)
+
       const inserts: any[] = []
+      const paymentInserts: any[] = []
+
       Object.values(gridData).forEach(row => {
         weekDates.forEach(d => {
           const dateStr = format(d, 'yyyy-MM-dd')
-          const cell = row.days[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0 }
+          const cell = row.days[dateStr] || { status: '', paid_amount: 0 }
           // All workers on same day share the same grouped note
           const sharedNote = dailyNotes[dateStr] || null
           
@@ -451,17 +609,32 @@ export default function AttendancePage() {
             date: dateStr,
             days_worked: cell.status === 'P' ? 1 : cell.status === 'H' ? 0.5 : 0,
             overtime_hours: 0,
-            overtime_amount: cell.overtime_amount || 0,
+            overtime_amount: 0,
             custom_rate: row.custom_rate,
-            advance_amount: cell.advance_amount || 0,
+            advance_amount: 0,
             notes: sharedNote
           })
+
+          if (cell.paid_amount && cell.paid_amount > 0) {
+            paymentInserts.push({
+              labour_id: row.worker_id,
+              amount: cell.paid_amount,
+              date: dateStr,
+              payment_type: 'REGULAR',
+              notes: `Spot payment for work on ${dateStr}`
+            })
+          }
         })
       })
 
       if (inserts.length > 0) {
         const { error } = await supabase.from('attendance').insert(inserts)
         if (error) throw error
+      }
+
+      if (paymentInserts.length > 0) {
+        const { error: payErr } = await supabase.from('payments').insert(paymentInserts)
+        if (payErr) throw payErr
       }
 
       toast.success('Week saved successfully')
@@ -475,25 +648,23 @@ export default function AttendancePage() {
   // Calculations
   const calcRowGross = (row: WorkerRow) => {
     let days = 0
-    let ot = 0
     Object.values(row.days).forEach(d => {
       if (d.status === 'P') days += 1
       else if (d.status === 'H') days += 0.5
-      ot += d.overtime_amount || 0
     })
-    return (days * row.custom_rate) + ot
+    return days * row.custom_rate
   }
 
-  const calcRowAdvance = (row: WorkerRow) => {
-    let adv = 0
+  const calcRowPaid = (row: WorkerRow) => {
+    let paid = 0
     Object.values(row.days).forEach(d => {
-      adv += d.advance_amount || 0
+      paid += d.paid_amount || 0
     })
-    return adv
+    return paid
   }
 
   const calcRowGiveable = (row: WorkerRow) => {
-    return calcRowGross(row) - calcRowAdvance(row)
+    return calcRowGross(row) - calcRowPaid(row)
   }
 
   // Weekly tasks summary is now date-based (grouped, not per worker)
@@ -514,16 +685,16 @@ export default function AttendancePage() {
     let mDays = 0 // Mistry
     let lDays = 0 // Labour
     let pDays = 0 // Parakadu
-    let ot = 0
-    let cost = 0 // Net cost
+    let cost = 0 // Net due cost
     let grossCost = 0 // Gross cost
+    let totalPaid = 0
 
     Object.values(gridData).forEach(row => {
       let activeInWeek = false
       const type = (row.type || '').toLowerCase()
       
       Object.values(row.days).forEach(d => {
-        if (d.status !== '' || d.overtime_amount > 0 || d.advance_amount > 0) activeInWeek = true
+        if (d.status !== '' || (d.paid_amount && d.paid_amount > 0)) activeInWeek = true
         
         let dayVal = 0
         if (d.status === 'P') dayVal = 1
@@ -532,15 +703,14 @@ export default function AttendancePage() {
         if (type.includes('mistry') || type.includes('skilled')) mDays += dayVal
         else if (type.includes('women') || type.includes('labour')) lDays += dayVal
         else pDays += dayVal
-
-        ot += d.overtime_amount || 0
       })
       if (activeInWeek) wCount++
       cost += calcRowGiveable(row)
       grossCost += calcRowGross(row)
+      totalPaid += calcRowPaid(row)
     })
 
-    return { wCount, mDays, lDays, pDays, ot, cost, grossCost }
+    return { wCount, mDays, lDays, pDays, ot: 0, cost, grossCost, totalPaid }
   }, [gridData])
 
   // UI Styles
@@ -613,6 +783,9 @@ export default function AttendancePage() {
           <button onClick={() => setShowAddWorker(true)} className="whitespace-nowrap h-11 px-4 rounded-xl text-xs font-black uppercase bg-[#1a1f2e] text-white border border-[#1e2435] flex items-center gap-2 hover:bg-[#23293b] transition-colors">
             <Plus size={16} /> Add Worker
           </button>
+          <button onClick={() => setShowAddTempWorker(true)} className="whitespace-nowrap h-11 px-4 rounded-xl text-xs font-black uppercase bg-[#1a1f2e] text-amber-500 border border-[#1e2435] flex items-center gap-2 hover:bg-[#23293b] transition-colors">
+            <Zap size={16} /> + Temp Worker
+          </button>
           <button onClick={handleSave} disabled={saving || !selectedProject} className="whitespace-nowrap h-11 px-6 rounded-xl text-xs font-black uppercase bg-blue-500 text-white flex items-center gap-2 disabled:opacity-50 hover:bg-blue-600 shadow-[0_4px_14px_rgba(59,130,246,0.3)] transition-all">
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Week
           </button>
@@ -622,13 +795,12 @@ export default function AttendancePage() {
       {viewMode === 'grid' ? (
         <>
           {/* Week Summary Panel */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Active Workers', value: totals.wCount },
-          { label: 'Man-Days (M,L,P)', value: `M-${totals.mDays}, L-${totals.lDays}, P-${totals.pDays}` },
-          { label: 'Total Overtime', value: `₹${totals.ot.toLocaleString('en-IN')}` },
-          { label: 'Week Labour Cost (Gross)', value: `₹${totals.grossCost.toLocaleString('en-IN')}` },
-          { label: 'Week Net Payable (Giveable)', value: `₹${totals.cost.toLocaleString('en-IN')}` }
+          { label: 'Grand Total (Earned)', value: `₹${totals.grossCost.toLocaleString('en-IN')}` },
+          { label: 'Spot Paid This Week', value: `₹${totals.totalPaid.toLocaleString('en-IN')}` },
+          { label: 'Net Outstanding Due', value: `₹${totals.cost.toLocaleString('en-IN')}` }
         ].map((stat, i) => (
           <div key={i} style={PANEL} className="p-4 flex flex-col justify-center shadow-lg">
             <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{stat.label}</p>
@@ -640,7 +812,7 @@ export default function AttendancePage() {
       {/* Quick Actions & Controls */}
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={() => markFullWeekPresent()} className="px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-[10px] font-black uppercase tracking-widest border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors">Mark All Present</button>
-        <button onClick={copyPreviousWeek} className="px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-500 text-[10px] font-black uppercase tracking-widest border border-blue-500/20 hover:bg-blue-500/20 flex items-center gap-1 transition-colors"><Copy size={12}/> Copy Prev Week</button>
+        <button onClick={copyYesterdayAttendance} className="px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-500 text-[10px] font-black uppercase tracking-widest border border-blue-500/20 hover:bg-blue-500/20 flex items-center gap-1 transition-colors"><Copy size={12}/> Copy Yesterday</button>
       </div>
 
       {/* Dynamic Grid */}
@@ -660,14 +832,27 @@ export default function AttendancePage() {
             <thead>
               <tr className="border-b border-[#1e2435] bg-[#0d1018]">
                 <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 sticky left-0 bg-[#0d1018] z-10 min-w-[200px]">Worker Details</th>
-                {weekDates.map(d => (
-                  <th key={d.toISOString()} className="py-4 px-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-center min-w-[55px]">
-                    {format(d, 'EEE')}<br/><span className="text-[9px] font-bold text-zinc-600 tracking-normal">{format(d, 'd MMM')}</span>
-                  </th>
-                ))}
+                {weekDates.map(d => {
+                  const dateStr = format(d, 'yyyy-MM-dd')
+                  return (
+                    <th key={d.toISOString()} className="py-2 px-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-center min-w-[65px] group/col hover:bg-white/[0.01] transition-colors relative">
+                      <div className="flex flex-col items-center justify-between h-14">
+                        <span>{format(d, 'EEE')}</span>
+                        <span className="text-[9px] font-bold text-zinc-600 tracking-normal">{format(d, 'd MMM')}</span>
+                        <button
+                          onClick={() => copyPreviousDayColumn(dateStr)}
+                          title={`Copy attendance from previous day to ${format(d, 'EEEE')}`}
+                          className="opacity-0 group-hover/col:opacity-100 px-1 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-[7px] text-blue-400 font-bold transition-all uppercase tracking-wider whitespace-nowrap mt-1 cursor-pointer"
+                        >
+                          Copy Prev
+                        </button>
+                      </div>
+                    </th>
+                  )
+                })}
                 <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-right min-w-[100px]">Custom Rate</th>
                 <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-right min-w-[110px]">Grand Total (₹)</th>
-                <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-right min-w-[90px]">Advance (₹)</th>
+                <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-right min-w-[110px]">Spot Paid (₹)</th>
                 <th className="py-4 px-4 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-right min-w-[110px]">Giveable (₹)</th>
               </tr>
             </thead>
@@ -689,18 +874,40 @@ export default function AttendancePage() {
                   <td className="py-3 px-4 sticky left-0 bg-[#111520] group-hover:bg-[#1a1f2e] transition-colors z-10">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-bold text-white whitespace-nowrap">{row.name}</p>
+                        <p className="text-sm font-bold text-white whitespace-nowrap flex items-center gap-1.5">
+                          {row.name}
+                          {row.phone === 'TEMPORARY' && (
+                            <span className="text-[8px] bg-amber-500/10 border border-amber-500/30 text-amber-500 px-1 py-0.5 rounded font-black uppercase tracking-wider shrink-0">Temp</span>
+                          )}
+                        </p>
                         <p className="text-[10px] text-zinc-500 uppercase font-black tracking-wider mt-0.5">{row.type}</p>
                       </div>
-                      <button onClick={() => removeWorkerFromGrid(row.worker_id)} className="opacity-0 group-hover:opacity-100 p-1.5 text-red-500/50 hover:text-red-500 hover:bg-red-500/10 rounded transition-all">
-                        <Trash2 size={14}/>
-                      </button>
+                      <div className="flex items-center gap-1">
+                        {row.phone === 'TEMPORARY' && (
+                          <button 
+                            onClick={() => {
+                              setPromoteWorkerId(row.worker_id)
+                              setPromoteName(row.name)
+                              setPromoteType(row.type)
+                              setPromotePhone('')
+                              setShowPromoteModal(true)
+                            }}
+                            title="Promote to Contact"
+                            className="opacity-0 group-hover:opacity-100 p-1.5 text-amber-500/60 hover:text-amber-500 hover:bg-amber-500/10 rounded transition-all"
+                          >
+                            <Zap size={14}/>
+                          </button>
+                        )}
+                        <button onClick={() => removeWorkerFromGrid(row.worker_id)} className="opacity-0 group-hover:opacity-100 p-1.5 text-red-500/50 hover:text-red-500 hover:bg-red-500/10 rounded transition-all">
+                          <Trash2 size={14}/>
+                        </button>
+                      </div>
                     </div>
                   </td>
                   
                   {weekDates.map(d => {
                     const dateStr = format(d, 'yyyy-MM-dd')
-                    const cell = row.days[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0 }
+                    const cell = row.days[dateStr] || { status: '', paid_amount: 0 }
                     
                     return (
                       <td key={dateStr} className="py-2 px-1 text-center">
@@ -718,17 +925,10 @@ export default function AttendancePage() {
                             <span className="text-sm font-black leading-none">
                               {cell.status || '-'}
                             </span>
-                            {cell.advance_amount > 0 && (
-                              <span className="text-[9px] font-bold text-red-500 mt-0.5 leading-none">
-                                {cell.advance_amount}
-                              </span>
-                            )}
-                            {cell.overtime_amount > 0 && (
-                              <span className="text-[9px] font-bold text-amber-500 mt-0.5 leading-none">
-                                +{cell.overtime_amount}
-                              </span>
-                            )}
                           </div>
+                          {cell.paid_amount && cell.paid_amount > 0 ? (
+                            <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_4px_rgba(16,185,129,0.5)]" title={`Spot Paid: ₹${cell.paid_amount}`} />
+                          ) : null}
                         </div>
                       </td>
                     )
@@ -745,10 +945,10 @@ export default function AttendancePage() {
                   <td className="py-3 px-4 text-right text-sm font-black text-blue-400 whitespace-nowrap">
                     ₹{Math.round(calcRowGross(row)).toLocaleString('en-IN')}
                   </td>
-                  <td className="py-3 px-4 text-right text-sm font-black text-red-500 whitespace-nowrap">
-                    {calcRowAdvance(row) > 0 ? `₹${Math.round(calcRowAdvance(row)).toLocaleString('en-IN')}` : '—'}
-                  </td>
                   <td className="py-3 px-4 text-right text-sm font-black text-emerald-400 whitespace-nowrap">
+                    {calcRowPaid(row) > 0 ? `₹${Math.round(calcRowPaid(row)).toLocaleString('en-IN')}` : '—'}
+                  </td>
+                  <td className="py-3 px-4 text-right text-sm font-black text-amber-500 whitespace-nowrap">
                     ₹{Math.round(calcRowGiveable(row)).toLocaleString('en-IN')}
                   </td>
                 </tr>
@@ -824,15 +1024,24 @@ export default function AttendancePage() {
                   <div key={dateStr} className="space-y-1">
                     <div className="flex items-center justify-between">
                       <label className="text-[9px] font-black uppercase tracking-widest text-zinc-500">{format(d, 'EEE dd MMM')}</label>
-                      {hasNote && (
-                        <button
-                          onClick={() => setDailyNotes(prev => ({ ...prev, [dateStr]: '' }))}
-                          title="Clear note"
-                          className="flex items-center gap-0.5 text-[8px] font-black uppercase text-red-400/60 hover:text-red-400 transition-colors"
+                      <div className="flex items-center gap-1.5">
+                        <button 
+                          onClick={() => copyPreviousDayColumn(dateStr)}
+                          title={`Copy attendance from previous day to this day`}
+                          className="text-[8px] font-black uppercase text-blue-400 hover:text-blue-300 transition-colors"
                         >
-                          <X size={9} /> Clear
+                          Copy Prev
                         </button>
-                      )}
+                        {hasNote && (
+                          <button
+                            onClick={() => setDailyNotes(prev => ({ ...prev, [dateStr]: '' }))}
+                            title="Clear note"
+                            className="flex items-center gap-0.5 text-[8px] font-black uppercase text-red-400/60 hover:text-red-400 transition-colors"
+                          >
+                            <X size={9} /> Clear
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <button
                       onClick={() => {
@@ -861,10 +1070,30 @@ export default function AttendancePage() {
             <div key={row.worker_id} style={PANEL} className="p-4 space-y-4">
               <div className="flex justify-between items-start border-b border-[#1e2435] pb-3">
                 <div>
-                  <p className="text-sm font-black text-white">{row.name}</p>
+                  <p className="text-sm font-black text-white flex items-center gap-1.5">
+                    {row.name}
+                    {row.phone === 'TEMPORARY' && (
+                      <span className="text-[8px] bg-amber-500/10 border border-amber-500/30 text-amber-500 px-1 py-0.5 rounded font-black uppercase tracking-wider shrink-0">Temp</span>
+                    )}
+                  </p>
                   <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mt-1">{row.type}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {row.phone === 'TEMPORARY' && (
+                    <button 
+                      onClick={() => {
+                        setPromoteWorkerId(row.worker_id)
+                        setPromoteName(row.name)
+                        setPromoteType(row.type)
+                        setPromotePhone('')
+                        setShowPromoteModal(true)
+                      }}
+                      title="Promote to Contact"
+                      className="p-2 text-amber-500/70 hover:text-amber-500 bg-amber-500/5 rounded-lg transition-colors"
+                    >
+                      <Zap size={14}/>
+                    </button>
+                  )}
                   <input 
                     type="number" 
                     placeholder="Rate"
@@ -881,7 +1110,7 @@ export default function AttendancePage() {
               <div className="grid grid-cols-4 gap-2">
                 {weekDates.map(d => {
                   const dateStr = format(d, 'yyyy-MM-dd')
-                  const cell = row.days[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0 }
+                  const cell = row.days[dateStr] || { status: '', overtime_amount: 0, advance_amount: 0, paid_amount: 0 }
                   return (
                     <div key={dateStr} className="flex flex-col items-center gap-1">
                       <span className="text-[8px] font-black text-zinc-600 uppercase">{format(d, 'EEE')}</span>
@@ -896,12 +1125,9 @@ export default function AttendancePage() {
                         )}
                       >
                         <span className="text-xs font-black">{cell.status || '-'}</span>
-                        {(cell.advance_amount > 0 || cell.overtime_amount > 0) && (
-                          <div className="absolute -top-2 -right-1 flex flex-col items-end">
-                             {cell.overtime_amount > 0 && <span className="text-[8px] font-black text-amber-500 bg-[#0d1018] px-1 rounded">+{cell.overtime_amount}</span>}
-                             {cell.advance_amount > 0 && <span className="text-[8px] font-black text-red-500 bg-[#0d1018] px-1 rounded">-{cell.advance_amount}</span>}
-                          </div>
-                        )}
+                        {cell.paid_amount && cell.paid_amount > 0 ? (
+                          <div className="absolute top-0.5 right-0.5 w-1 h-1 bg-emerald-500 rounded-full" title={`Spot Paid: ₹${cell.paid_amount}`} />
+                        ) : null}
                       </div>
                     </div>
                   )
@@ -909,23 +1135,23 @@ export default function AttendancePage() {
               </div>
 
               {/* Totals Row */}
-              <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-[#1e2435]/50">
+              <div className="grid grid-cols-3 gap-1.5 mt-3 pt-3 border-t border-[#1e2435]/50">
                 <div className="flex flex-col items-center gap-1">
-                  <span className="text-[8px] font-black text-zinc-500 uppercase">Grand Total</span>
+                  <span className="text-[8px] font-black text-zinc-500 uppercase">Gross</span>
                   <div className="w-full h-9 rounded-lg bg-blue-500/5 border border-blue-500/20 flex items-center justify-center">
-                    <span className="text-[10px] font-black text-blue-400">₹{Math.round(calcRowGross(row)).toLocaleString('en-IN')}</span>
+                    <span className="text-[9px] font-black text-blue-400">₹{Math.round(calcRowGross(row)).toLocaleString('en-IN')}</span>
                   </div>
                 </div>
                 <div className="flex flex-col items-center gap-1">
-                  <span className="text-[8px] font-black text-zinc-500 uppercase">Advance</span>
-                  <div className="w-full h-9 rounded-lg bg-red-500/5 border border-red-500/20 flex items-center justify-center">
-                    <span className="text-[10px] font-black text-red-400">₹{Math.round(calcRowAdvance(row)).toLocaleString('en-IN')}</span>
-                  </div>
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <span className="text-[8px] font-black text-zinc-500 uppercase">Giveable</span>
+                  <span className="text-[8px] font-black text-zinc-500 uppercase">Paid</span>
                   <div className="w-full h-9 rounded-lg bg-emerald-500/5 border border-emerald-500/20 flex items-center justify-center">
-                    <span className="text-[10px] font-black text-emerald-400">₹{Math.round(calcRowGiveable(row)).toLocaleString('en-IN')}</span>
+                    <span className="text-[9px] font-black text-emerald-400">₹{Math.round(calcRowPaid(row)).toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-[8px] font-black text-zinc-500 uppercase">Net Due</span>
+                  <div className="w-full h-9 rounded-lg bg-amber-500/5 border border-amber-500/20 flex items-center justify-center">
+                    <span className="text-[9px] font-black text-amber-500 font-mono">₹{Math.round(calcRowGiveable(row)).toLocaleString('en-IN')}</span>
                   </div>
                 </div>
               </div>
@@ -1140,30 +1366,16 @@ export default function AttendancePage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">OT (₹)</label>
-                  <input 
-                    type="number" 
-                    disabled={popupData.status === 'P'}
-                    value={popupData.overtime_amount || ''}
-                    onChange={e => setPopupData({ ...popupData, overtime_amount: parseFloat(e.target.value) || 0 })}
-                    className={cn("w-full h-11 text-center font-bold rounded-xl outline-none transition-all", popupData.status === 'P' && "opacity-20")}
-                    style={INPUT_ST} 
-                    placeholder="0"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Deduction (₹)</label>
-                  <input 
-                    type="number" 
-                    value={popupData.advance_amount || ''}
-                    onChange={e => setPopupData({ ...popupData, advance_amount: parseFloat(e.target.value) || 0 })}
-                    className="w-full h-11 text-center font-bold rounded-xl outline-none text-red-500" 
-                    style={INPUT_ST} 
-                    placeholder="0"
-                  />
-                </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Spot Payment (₹)</label>
+                <input 
+                  type="number" 
+                  value={popupData.paid_amount || ''}
+                  onChange={e => setPopupData({ ...popupData, paid_amount: parseFloat(e.target.value) || 0 })}
+                  className="w-full h-11 text-center font-black rounded-xl outline-none text-emerald-500 font-mono text-lg" 
+                  style={INPUT_ST} 
+                  placeholder="0"
+                />
               </div>
 
             </div>
@@ -1276,6 +1488,119 @@ export default function AttendancePage() {
                 className="flex-1 h-11 rounded-xl text-xs font-black uppercase bg-blue-600 text-white hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20"
               >
                 Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddTempWorker && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowAddTempWorker(false)}>
+          <div className="rounded-2xl p-6 w-full max-w-[340px] space-y-4 shadow-2xl animate-in zoom-in-95" style={PANEL} onClick={e => e.stopPropagation()}>
+            <div className="text-center space-y-1 border-b border-[#1e2435] pb-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Casual Labour</p>
+              <p className="text-sm font-bold text-white">Add Temporary Worker</p>
+              <p className="text-[9px] text-zinc-500">This worker will only exist in this attendance grid</p>
+            </div>
+            
+            <div className="space-y-3.5 text-xs">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Worker Name</label>
+                <input 
+                  type="text" 
+                  value={tempWorkerName}
+                  onChange={e => setTempWorkerName(e.target.value)}
+                  className="w-full h-11 px-3 bg-[#0d1018] border border-[#1e2435] rounded-xl text-white outline-none font-bold"
+                  placeholder="e.g. Raju Helper"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Worker Type</label>
+                <select 
+                  value={tempWorkerType}
+                  onChange={e => setTempWorkerType(e.target.value)}
+                  className="w-full h-11 px-3 bg-[#0d1018] border border-[#1e2435] rounded-xl text-white outline-none font-bold"
+                >
+                  <option value="Mistry (Skilled)">Mistry (Skilled)</option>
+                  <option value="Labour (Women)">Labour (Women)</option>
+                  <option value="Helper (Unskilled)">Helper (Unskilled)</option>
+                  <option value="Parakadu (Skilled)">Parakadu (Skilled)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Daily Rate (₹)</label>
+                <input 
+                  type="number" 
+                  value={tempWorkerRate}
+                  onChange={e => setTempWorkerRate(e.target.value)}
+                  className="w-full h-11 px-3 bg-[#0d1018] border border-[#1e2435] rounded-xl text-white outline-none font-bold"
+                  placeholder="800"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button 
+                onClick={() => setShowAddTempWorker(false)} 
+                className="flex-1 h-11 rounded-xl text-xs font-black uppercase bg-zinc-800 text-white hover:bg-zinc-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleAddTempWorker} 
+                disabled={addingTemp}
+                className="flex-1 h-11 rounded-xl text-xs font-black uppercase bg-amber-500 text-black hover:bg-amber-400 transition-colors font-bold flex items-center justify-center gap-1 shadow-lg shadow-amber-500/10"
+              >
+                {addingTemp ? <Loader2 size={14} className="animate-spin" /> : null} Add Worker
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPromoteModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowPromoteModal(false)}>
+          <div className="rounded-2xl p-6 w-full max-w-[340px] space-y-4 shadow-2xl animate-in zoom-in-95" style={PANEL} onClick={e => e.stopPropagation()}>
+            <div className="text-center space-y-1 border-b border-[#1e2435] pb-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Promote to Contact</p>
+              <p className="text-sm font-bold text-white">Convert to Regular Worker</p>
+              <p className="text-[9px] text-zinc-500">Attendance history will carry over automatically</p>
+            </div>
+            
+            <div className="space-y-3.5 text-xs">
+              <div className="p-3 bg-[#0d1018] rounded-xl border border-[#1e2435]">
+                <p className="font-bold text-white text-xs">{promoteName}</p>
+                <p className="text-[9px] font-black text-zinc-500 uppercase mt-0.5">{promoteType}</p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Mobile Phone Number</label>
+                <input 
+                  type="text" 
+                  maxLength={10}
+                  value={promotePhone}
+                  onChange={e => setPromotePhone(e.target.value.replace(/\D/g, ''))}
+                  className="w-full h-11 px-3 bg-[#0d1018] border border-[#1e2435] rounded-xl text-white outline-none font-bold"
+                  placeholder="Enter 10 digit number"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button 
+                onClick={() => setShowPromoteModal(false)} 
+                className="flex-1 h-11 rounded-xl text-xs font-black uppercase bg-zinc-800 text-white hover:bg-zinc-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handlePromoteWorker} 
+                disabled={promoting}
+                className="flex-1 h-11 rounded-xl text-xs font-black uppercase bg-emerald-600 text-white hover:bg-emerald-500 transition-colors font-bold flex items-center justify-center gap-1 shadow-lg shadow-emerald-500/10"
+              >
+                {promoting ? <Loader2 size={14} className="animate-spin" /> : null} Save Contact
               </button>
             </div>
           </div>

@@ -9,7 +9,7 @@ import AnalogueTimePicker from '@/components/ui/AnalogueTimePicker'
 import {
   Fingerprint, ShieldCheck, Trash2, Loader2, Briefcase,
   Bell, BellOff, Vibrate, Settings, CheckCircle2, Clock,
-  CalendarCheck, Building2, LogOut, FileText
+  CalendarCheck, Building2, LogOut, FileText, Sun, Moon
 } from 'lucide-react'
 
 const PANEL: React.CSSProperties = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
@@ -340,6 +340,15 @@ export default function SettingsPage() {
     window.dispatchEvent(new Event('ssc_settings_updated'))
   }
 
+  // ── Appearance / Theme settings ──────────────────────
+  const [mobileTheme, setMobileTheme] = useState<'dark' | 'light'>('dark')
+  const handleMobileThemeChange = (newTheme: 'dark' | 'light') => {
+    setMobileTheme(newTheme)
+    localStorage.setItem('ssc_mobile_theme', newTheme)
+    window.dispatchEvent(new Event('ssc_mobile_theme_changed'))
+    toast.success(`Mobile theme updated to ${newTheme.toUpperCase()}`)
+  }
+
   // ── Section D: Haptic feedback settings ──────────────
   const [hapticEnabled, setHapticEnabled] = useState(true)
   const toggleHaptic = (val: boolean) => {
@@ -359,6 +368,8 @@ export default function SettingsPage() {
     loadNotifPrefs()
     const saved = localStorage.getItem('ssc_haptic_enabled')
     setHapticEnabled(saved !== 'false')
+    const savedMobileTheme = localStorage.getItem('ssc_mobile_theme') as 'dark' | 'light' || 'dark'
+    setMobileTheme(savedMobileTheme)
     const savedDefault = localStorage.getItem('ssc_default_project_id')
     if (savedDefault) setDefaultProjectId(savedDefault)
 
@@ -955,6 +966,53 @@ export default function SettingsPage() {
               {weeklyReportEnabled && <span className="ml-2 text-purple-400">· Active</span>}
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* ── Section C.5: Appearance ───────────────── */}
+      <div style={PANEL} className="p-6 space-y-5">
+        <div className="flex items-center gap-3 pb-4 border-b border-[#1e2435]">
+          <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center">
+            <Sun size={18} className="text-blue-400" />
+          </div>
+          <div>
+            <p className="text-sm font-black text-white uppercase tracking-wide">Appearance</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest mt-0.5" style={{ color: DIM }}>
+              Switch between default Dark and Light clay themes (Mobile/PWA only)
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <button
+            onClick={() => handleMobileThemeChange('dark')}
+            className={`flex flex-col items-center gap-3 p-4 rounded-xl border text-center transition-all cursor-pointer ${
+              mobileTheme === 'dark'
+                ? "bg-blue-500/10 border-blue-500/50 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.15)]"
+                : "bg-[#0d1018] border-[#1e2435] text-zinc-500 hover:border-zinc-700"
+            }`}
+          >
+            <Moon size={24} className={mobileTheme === 'dark' ? "text-blue-400" : "text-zinc-600"} />
+            <div>
+              <p className="text-xs font-black uppercase tracking-wider">Dark Theme</p>
+              <p className="text-[8px] font-semibold text-zinc-600 mt-0.5">Classic Dark Navy</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleMobileThemeChange('light')}
+            className={`flex flex-col items-center gap-3 p-4 rounded-xl border text-center transition-all cursor-pointer ${
+              mobileTheme === 'light'
+                ? "bg-blue-500/10 border-blue-500/50 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.15)]"
+                : "bg-[#0d1018] border-[#1e2435] text-zinc-500 hover:border-zinc-700"
+            }`}
+          >
+            <Sun size={24} className={mobileTheme === 'light' ? "text-blue-400" : "text-zinc-600"} />
+            <div>
+              <p className="text-xs font-black uppercase tracking-wider">Light Theme</p>
+              <p className="text-[8px] font-semibold text-zinc-600 mt-0.5">Premium Light Clay</p>
+            </div>
+          </button>
         </div>
       </div>
 

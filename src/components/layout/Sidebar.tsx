@@ -32,23 +32,23 @@ import { toast } from 'sonner'
 import { useEffect } from 'react'
 
 const menuItems = [
-  { label: 'Overview', href: '/', icon: LayoutDashboard },
-  { label: 'Projects', href: '/projects', icon: Briefcase },
-  { label: 'Progress Updates', href: '/progress', icon: TrendingUp },
-  { label: 'Client Chat', href: '/chat', icon: MessageCircle },
-  { label: 'Workforce', href: '/labour', icon: Users },
-  { label: 'Attendance', href: '/attendance', icon: CalendarCheck },
-  { label: 'Materials', href: '/materials', icon: Package },
-  { label: 'Agreements', href: '/agreements', icon: FileText },
-  { label: 'Important Dates', href: '/important-dates', icon: CalendarCheck },
-  { label: 'Payments', href: '/payments', icon: Wallet },
-  { label: 'Reports', href: '/reports', icon: BarChart3 },
-  { label: 'Export Calculation', href: '/export-calculation', icon: Calculator },
-  { label: 'Revenue', href: '/income', icon: TrendingUp },
-  { label: 'Subcontracts', href: '/contractor-payments', icon: HardHat },
-  { label: 'Contacts', href: '/contacts', icon: Phone },
-  { label: 'Personal Expenses', href: '/personal-expenses', icon: Wallet },
-  { label: 'Settings', href: '/settings', icon: Settings },
+  { label: 'Overview', href: '/', icon: LayoutDashboard, iconColor: '#3b82f6' }, // blue
+  { label: 'Projects', href: '/projects', icon: Briefcase, iconColor: '#10b981' }, // green/emerald
+  { label: 'Progress Updates', href: '/progress', icon: TrendingUp, iconColor: '#8b5cf6' }, // purple
+  { label: 'Client Chat', href: '/chat', icon: MessageCircle, iconColor: '#ec4899' }, // pink
+  { label: 'Workforce', href: '/labour', icon: Users, iconColor: '#06b6d4' }, // cyan
+  { label: 'Attendance', href: '/attendance', icon: CalendarCheck, iconColor: '#10b981' }, // emerald
+  { label: 'Materials', href: '/materials', icon: Package, iconColor: '#f59e0b' }, // amber
+  { label: 'Agreements', href: '/agreements', icon: FileText, iconColor: '#3b82f6' }, // blue
+  { label: 'Important Dates', href: '/important-dates', icon: CalendarCheck, iconColor: '#ef4444' }, // red
+  { label: 'Payments', href: '/payments', icon: Wallet, iconColor: '#10b981' }, // emerald
+  { label: 'Reports', href: '/reports', icon: BarChart3, iconColor: '#8b5cf6' }, // purple
+  { label: 'Export Calculation', href: '/export-calculation', icon: Calculator, iconColor: '#f59e0b' }, // amber
+  { label: 'Revenue', href: '/income', icon: TrendingUp, iconColor: '#10b981' }, // green
+  { label: 'Subcontracts', href: '/contractor-payments', icon: HardHat, iconColor: '#f59e0b' }, // orange/amber
+  { label: 'Contacts', href: '/contacts', icon: Phone, iconColor: '#3b82f6' }, // blue
+  { label: 'Personal Expenses', href: '/personal-expenses', icon: Wallet, iconColor: '#ef4444' }, // red
+  { label: 'Settings', href: '/settings', icon: Settings, iconColor: '#6b7280' }, // grey
 ]
 
 export default function Sidebar() {
@@ -252,8 +252,8 @@ export default function Sidebar() {
               const activeMenuItems = [
                 ...menuItems,
                 ...(isAdminUser ? [
-                  { label: 'Sub Requests', href: '/admin/subscription-requests', icon: ShieldCheck },
-                  { label: 'All Contractors', href: '/admin/all-contractors', icon: Users },
+                  { label: 'Sub Requests', href: '/admin/subscription-requests', icon: ShieldCheck, iconColor: '#ef4444' },
+                  { label: 'All Contractors', href: '/admin/all-contractors', icon: Users, iconColor: '#8b5cf6' },
                 ] : [])
               ]
               return activeMenuItems.map((item, idx) => {
@@ -279,7 +279,11 @@ export default function Sidebar() {
                     } : undefined}
                   >
                     <div className="relative flex items-center shrink-0">
-                      <Icon size={18} className={cn(isActive ? 'text-[#0a0c12]' : 'text-zinc-500 group-hover:text-blue-400')} />
+                      <Icon 
+                        size={18} 
+                        className={cn(isActive ? 'text-[#0a0c12]' : 'transition-all duration-200 group-hover:scale-110')} 
+                        style={!isActive ? { color: (item as any).iconColor || '#3b82f6' } : undefined}
+                      />
                       {!showExpanded && item.label === 'Client Chat' && chatUnreadCount > 0 && (
                         <span className="absolute -top-1.5 -right-1.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-[#0d1018]" />
                       )}

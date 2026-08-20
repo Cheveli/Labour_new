@@ -1,10 +1,11 @@
 'use client'
 
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import ClientSidebar from '@/components/layout/ClientSidebar'
 import ClientMobileHeader from '@/components/layout/ClientMobileHeader'
 import ClientMobileBottomNav from '@/components/layout/ClientMobileBottomNav'
+import { cn } from '@/lib/utils'
 
 export default function ClientLayout({
   children,
@@ -13,6 +14,22 @@ export default function ClientLayout({
 }) {
   const pathname = usePathname()
   const isLoginPage = pathname === '/client/login'
+
+  const [mobileTheme, setMobileTheme] = useState<'dark' | 'light'>('dark')
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('ssc_mobile_theme') as 'dark' | 'light' || 'dark'
+      setMobileTheme(saved)
+
+      const handleThemeChange = () => {
+        const updated = localStorage.getItem('ssc_mobile_theme') as 'dark' | 'light' || 'dark'
+        setMobileTheme(updated)
+      }
+      window.addEventListener('ssc_mobile_theme_changed', handleThemeChange)
+      return () => window.removeEventListener('ssc_mobile_theme_changed', handleThemeChange)
+    }
+  }, [])
 
   if (isLoginPage) {
     return (
@@ -25,7 +42,7 @@ export default function ClientLayout({
   }
 
   return (
-    <div className="h-screen flex flex-col lg:flex-row overflow-hidden" style={{ backgroundColor: '#0a0c12' }}>
+    <div className={cn("h-screen flex flex-col lg:flex-row overflow-hidden", mobileTheme === 'light' && "mobile-light-clay")} style={{ backgroundColor: '#0a0c12' }}>
       
       {/* Client Sidebar */}
       <ClientSidebar />

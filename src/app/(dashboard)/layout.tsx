@@ -10,12 +10,13 @@ import { Zap, LayoutDashboard, CalendarCheck, Package, Wallet, CalendarDays } fr
 import { usePathname } from 'next/navigation'
 import { haptic } from '@/lib/haptic'
 import Link from 'next/link'
+import { cn } from '@/lib/utils'
 
 const categories = [
-  { label: 'Dashboard', href: '/', Icon: LayoutDashboard },
-  { label: 'Attendance', href: '/attendance', Icon: CalendarCheck },
-  { label: 'Materials', href: '/materials', Icon: Package },
-  { label: 'Payments', href: '/payments', Icon: Wallet },
+  { label: 'Dashboard', href: '/', Icon: LayoutDashboard, color: '#3b82f6' }, // blue
+  { label: 'Attendance', href: '/attendance', Icon: CalendarCheck, color: '#10b981' }, // green/emerald
+  { label: 'Materials', href: '/materials', Icon: Package, color: '#f59e0b' }, // amber
+  { label: 'Payments', href: '/payments', Icon: Wallet, color: '#ec4899' }, // pink
 ]
 
 export default function DashboardLayout({
@@ -26,6 +27,22 @@ export default function DashboardLayout({
   const [isQuickMaterialOpen, setIsQuickMaterialOpen] = useState(false)
   const pathname = usePathname()
   const isDashboard = pathname === '/'
+
+  const [mobileTheme, setMobileTheme] = useState<'dark' | 'light'>('dark')
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('ssc_mobile_theme') as 'dark' | 'light' || 'dark'
+      setMobileTheme(saved)
+
+      const handleThemeChange = () => {
+        const updated = localStorage.getItem('ssc_mobile_theme') as 'dark' | 'light' || 'dark'
+        setMobileTheme(updated)
+      }
+      window.addEventListener('ssc_mobile_theme_changed', handleThemeChange)
+      return () => window.removeEventListener('ssc_mobile_theme_changed', handleThemeChange)
+    }
+  }, [])
 
   // Register Service Worker for PWA notifications
   useEffect(() => {
@@ -170,7 +187,7 @@ export default function DashboardLayout({
   }, [pathname])
 
   return (
-    <div suppressHydrationWarning className="h-screen flex flex-col lg:flex-row overflow-hidden" style={{ backgroundColor: '#0a0c12' }}>
+    <div suppressHydrationWarning className={cn("h-screen flex flex-col lg:flex-row overflow-hidden", mobileTheme === 'light' && "mobile-light-clay")} style={{ backgroundColor: '#0a0c12' }}>
 
       {/* Desktop sidebar */}
       <Sidebar />
@@ -195,15 +212,40 @@ export default function DashboardLayout({
               href={c.href}
               className={`active-chip flex-1 flex flex-col items-center justify-center mx-0.5 transition-all duration-300 ${
                 isActive
-                  ? 'h-[56px] bg-[#0a0c12] border-t border-x border-[#1e2435] text-blue-400 rounded-t-xl rounded-b-none relative z-10 -mb-[1px] pb-1 shadow-[0_-4px_12px_rgba(59,130,246,0.05)]'
-                  : 'h-[46px] mb-[8px] bg-[#111520] border border-[#1e2435] text-zinc-500 hover:text-white rounded-xl'
+                  ? 'h-[56px] bg-[#0a0c12] border-t border-x border-[#1e2435] rounded-t-xl rounded-b-none relative z-10 -mb-[1px] pb-1 shadow-[0_-4px_12px_rgba(59,130,246,0.05)]'
+                  : 'h-[46px] mb-[8px] bg-[#111520] border border-[#1e2435] rounded-xl'
               }`}
+              style={
+                isActive
+                  ? (mobileTheme === 'light'
+                      ? {
+                          backgroundColor: '#ffffff',
+                          borderTop: `2px solid ${c.color}`,
+                          borderLeft: '1px solid #e9edf5',
+                          borderRight: '1px solid #e9edf5',
+                          boxShadow: `0 -4px 12px ${c.color}15`,
+                        }
+                      : { borderTop: `2px solid ${c.color}` })
+                  : undefined
+              }
             >
               <Icon 
                 size={14} 
-                className={`transition-transform duration-300 ${isActive ? 'text-blue-400 scale-110' : 'text-zinc-500'}`} 
+                className={cn("transition-transform duration-300", isActive && "scale-110")}
+                style={{
+                  color: isActive 
+                    ? c.color 
+                    : (mobileTheme === 'light' ? `${c.color}aa` : '#71717a')
+                }}
               />
-              <span className={`text-[8px] font-black uppercase tracking-wider mt-1 text-center truncate w-full px-0.5 ${isActive ? 'text-blue-400' : 'text-zinc-500'}`}>
+              <span 
+                className="text-[8px] font-black uppercase tracking-wider mt-1 text-center truncate w-full px-0.5"
+                style={{
+                  color: isActive 
+                    ? c.color 
+                    : (mobileTheme === 'light' ? '#64748b' : '#71717a')
+                }}
+              >
                 {c.label}
               </span>
             </Link>
