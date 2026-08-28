@@ -398,9 +398,24 @@ export default function ReportsPage() {
 
   const exportProjectPDF = () => {
     if (!reportData) return
-    const { project, days, workers, notesByDate } = reportData
+    const { project, days, workers, notesByDate, bandDaysSet } = reportData
     const doc = new jsPDF({ orientation: 'landscape' })
     
+    // Analytics
+    const totalPossibleDays = days.length - (bandDaysSet ? bandDaysSet.size : 0)
+    let totalPresentDays = 0
+    workers.forEach((w: any) => {
+       days.forEach((d: any) => {
+         const dateStr = format(d, 'yyyy-MM-dd')
+         if (bandDaysSet && bandDaysSet.has(dateStr)) return
+         const att = w.attendance[dateStr]
+         if (att && att.days_worked > 0) totalPresentDays += att.days_worked
+       })
+    })
+    const attPercentage = totalPossibleDays > 0 && workers.length > 0 
+      ? ((totalPresentDays / (totalPossibleDays * workers.length)) * 100).toFixed(1)
+      : '0.0'
+
     drawPremiumHeader(doc, 'PROJECT WEEKLY REPORT', '(ALL WORKERS)')
     
     let y = 54
@@ -408,14 +423,18 @@ export default function ReportsPage() {
     doc.setFontSize(8)
     doc.setFont('helvetica', 'bold'); doc.text('Project Name', 14, y); doc.setFont('helvetica', 'normal'); doc.text(`: ${project?.name || 'All Projects'}`, 40, y)
     doc.setFont('helvetica', 'bold'); doc.text('Week Range', 14, y + 6); doc.setFont('helvetica', 'normal'); doc.text(`: ${startDate} to ${endDate}`, 40, y + 6)
-
+    
+    doc.setFont('helvetica', 'bold'); doc.text('Band Days', 110, y); doc.setFont('helvetica', 'normal'); doc.text(`: ${bandDaysSet ? bandDaysSet.size : 0}`, 135, y)
+    doc.setFont('helvetica', 'bold'); doc.text('Avg Attendance', 110, y + 6); doc.setFont('helvetica', 'normal'); doc.text(`: ${attPercentage}%`, 135, y + 6)
     const head = [['S.No', 'Worker Name', 'Role', ...days.map((d: any) => format(d, 'EEE (dd)')), 'Days', 'Total Payment', 'Reductions', 'Giveable Amount']]
     const body = workers.map((w: any, i: number) => [
       i + 1,
       w.worker.name,
       w.worker.type || '-',
       ...days.map((d: any) => {
-        const att = w.attendance[format(d, 'yyyy-MM-dd')]
+        const dateStr = format(d, 'yyyy-MM-dd')
+        if (bandDaysSet && bandDaysSet.has(dateStr)) return 'B'
+        const att = w.attendance[dateStr]
         if (!att) return 'A'
         return att.days_worked === 1 ? 'P' : att.days_worked === 0.5 ? 'H' : 'A'
       }),
@@ -428,7 +447,10 @@ export default function ReportsPage() {
     // Append a dedicated "Work Done (All Workers)" row at the bottom of the table
     const workDoneRow = [
       '', 'WORK DONE (ALL WORKERS)', '',
-      ...days.map((d: any) => notesByDate[format(d, 'yyyy-MM-dd')] || '-'),
+      ...days.map((d: any) => {
+        const dStr = format(d, 'yyyy-MM-dd');
+        return bandDaysSet && bandDaysSet.has(dStr) ? '🔴 BAND DAY' : (notesByDate[dStr] || '-');
+      }),
       '', '', '', ''
     ]
 
@@ -450,6 +472,10 @@ export default function ReportsPage() {
         if (data.section === 'body' && data.column.index > 2 && data.column.index < 3 + days.length) {
           if (data.cell.text[0] === 'A') data.cell.styles.textColor = PDF_COLORS.RED
           if (data.cell.text[0] === 'P') data.cell.styles.textColor = PDF_COLORS.GREEN
+          if (data.cell.text[0] === 'B') {
+            data.cell.styles.textColor = PDF_COLORS.MUTED
+            data.cell.styles.fontStyle = 'bold'
+          }
         }
       }
     })
@@ -868,13 +894,15 @@ export default function ReportsPage() {
                               <TableCell className="py-5 pl-8 font-bold text-white text-sm sticky left-0 bg-[#111520] z-10 border-r border-zinc-800">{w.worker.name}</TableCell>
                               <TableCell className="py-5 text-xs text-zinc-500">{w.worker.type || '-'}</TableCell>
                               {reportData.days.map((d: any) => {
-                                const att = w.attendance[format(d, 'yyyy-MM-dd')]
-                                const status = att ? (att.days_worked === 1 ? 'P' : att.days_worked === 0.5 ? 'H' : 'A') : 'A'
+                                const dateStr = format(d, 'yyyy-MM-dd')
+                                const isBandDay = reportData.bandDaysSet && reportData.bandDaysSet.has(dateStr)
+                                const att = w.attendance[dateStr]
+                                const status = isBandDay ? 'B' : (att ? (att.days_worked === 1 ? 'P' : att.days_worked === 0.5 ? 'H' : 'A') : 'A')
                                 return (
                                   <TableCell key={d.toString()} className="py-5 text-center">
                                      <span className={cn(
                                        "text-[10px] font-black",
-                                       status === 'P' ? "text-emerald-500" : status === 'H' ? "text-amber-500" : "text-zinc-700"
+                                       status === 'P' ? "text-emerald-500" : status === 'H' ? "text-amber-500" : status === 'B' ? "text-zinc-600" : "text-red-500"
                                      )}>
                                        {status}
                                      </span>
@@ -930,12 +958,14 @@ export default function ReportsPage() {
                         </div>
                         <div className="flex justify-between mt-1">
                           {reportData.days.map((d: any) => {
-                            const att = w.attendance[format(d, 'yyyy-MM-dd')]
-                            const status = att ? (att.days_worked === 1 ? 'P' : att.days_worked === 0.5 ? 'H' : 'A') : 'A'
+                            const dateStr = format(d, 'yyyy-MM-dd')
+                            const isBandDay = reportData.bandDaysSet && reportData.bandDaysSet.has(dateStr)
+                            const att = w.attendance[dateStr]
+                            const status = isBandDay ? 'B' : (att ? (att.days_worked === 1 ? 'P' : att.days_worked === 0.5 ? 'H' : 'A') : 'A')
                             return (
                               <div key={d.toString()} className="flex flex-col items-center">
                                 <p className="text-[8px] font-bold text-zinc-500 uppercase">{format(d, 'EE')}</p>
-                                <div className={cn("w-6 h-6 rounded flex items-center justify-center mt-1 text-[10px] font-black", status === 'P' ? "bg-emerald-500/20 text-emerald-400" : status === 'H' ? "bg-amber-500/20 text-amber-500" : "bg-zinc-800 text-zinc-600")}>
+                                <div className={cn("w-6 h-6 rounded flex items-center justify-center mt-1 text-[10px] font-black", status === 'P' ? "bg-emerald-500/20 text-emerald-400" : status === 'H' ? "bg-amber-500/20 text-amber-500" : status === 'B' ? "bg-zinc-800 text-zinc-500" : "bg-red-500/20 text-red-500")}>
                                   {status}
                                 </div>
                               </div>

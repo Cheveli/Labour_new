@@ -342,11 +342,11 @@ export default function SettingsPage() {
 
   // ── Appearance / Theme settings ──────────────────────
   const [mobileTheme, setMobileTheme] = useState<'dark' | 'light'>('dark')
-  const handleMobileThemeChange = (newTheme: 'dark' | 'light') => {
+  const handleThemeChange = (newTheme: 'dark' | 'light') => {
     setMobileTheme(newTheme)
     localStorage.setItem('ssc_mobile_theme', newTheme)
     window.dispatchEvent(new Event('ssc_mobile_theme_changed'))
-    toast.success(`Mobile theme updated to ${newTheme.toUpperCase()}`)
+    toast.success(`Theme updated to ${newTheme.toUpperCase()}`)
   }
 
   // ── Section D: Haptic feedback settings ──────────────
@@ -978,14 +978,14 @@ export default function SettingsPage() {
           <div>
             <p className="text-sm font-black text-white uppercase tracking-wide">Appearance</p>
             <p className="text-[10px] font-bold uppercase tracking-widest mt-0.5" style={{ color: DIM }}>
-              Switch between default Dark and Light clay themes (Mobile/PWA only)
+              Switch between default Dark and Light clay themes
             </p>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <button
-            onClick={() => handleMobileThemeChange('dark')}
+            onClick={() => handleThemeChange('dark')}
             className={`flex flex-col items-center gap-3 p-4 rounded-xl border text-center transition-all cursor-pointer ${
               mobileTheme === 'dark'
                 ? "bg-blue-500/10 border-blue-500/50 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.15)]"
@@ -1000,7 +1000,7 @@ export default function SettingsPage() {
           </button>
 
           <button
-            onClick={() => handleMobileThemeChange('light')}
+            onClick={() => handleThemeChange('light')}
             className={`flex flex-col items-center gap-3 p-4 rounded-xl border text-center transition-all cursor-pointer ${
               mobileTheme === 'light'
                 ? "bg-blue-500/10 border-blue-500/50 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.15)]"

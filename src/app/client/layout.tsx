@@ -21,10 +21,20 @@ export default function ClientLayout({
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('ssc_mobile_theme') as 'dark' | 'light' || 'dark'
       setMobileTheme(saved)
+      if (saved === 'light') {
+        document.documentElement.classList.add('mobile-light-clay')
+      } else {
+        document.documentElement.classList.remove('mobile-light-clay')
+      }
 
       const handleThemeChange = () => {
         const updated = localStorage.getItem('ssc_mobile_theme') as 'dark' | 'light' || 'dark'
         setMobileTheme(updated)
+        if (updated === 'light') {
+          document.documentElement.classList.add('mobile-light-clay')
+        } else {
+          document.documentElement.classList.remove('mobile-light-clay')
+        }
       }
       window.addEventListener('ssc_mobile_theme_changed', handleThemeChange)
       return () => window.removeEventListener('ssc_mobile_theme_changed', handleThemeChange)

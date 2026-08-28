@@ -41,6 +41,7 @@ export default function PaymentsPage() {
   const [loading, setLoading] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [workerData, setWorkerData] = useState<any>(null)
+  const [bandDaysSet, setBandDaysSet] = useState<Set<string>>(new Set())
 
   // UI Styles
   const PANEL = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
@@ -88,6 +89,18 @@ export default function PaymentsPage() {
       .gte('date', startStr)
       .lte('date', endStr)
       .order('date', { ascending: true })
+
+    const { data: bandData } = await supabase
+      .from('project_day_status')
+      .select('*')
+      .eq('project_id', selectedProjectId)
+      .eq('status', 'BAND')
+      .gte('date', startStr)
+      .lte('date', endStr)
+      
+    const bandSet = new Set<string>(bandData?.map((b: any) => b.date) || [])
+    setBandDaysSet(bandSet)
+
 
     if (data) {
       // Unique workers for dropdown
@@ -183,7 +196,9 @@ export default function PaymentsPage() {
       const advAmt = Number(att?.advance_amount || 0)
       
       let status = '-'
-      if (att) {
+      if (bandDaysSet.has(dateStr)) {
+        status = 'B'
+      } else if (att) {
         status = daysWorked === 1 ? 'P' : daysWorked === 0.5 ? 'H' : 'A'
       } else if (dateStr < maxDate) {
         status = 'A'
@@ -307,6 +322,7 @@ export default function PaymentsPage() {
             if (val === 'P') cellData.cell.styles.textColor = [34, 197, 94] // Emerald 500
             else if (val === 'A') cellData.cell.styles.textColor = [239, 68, 68] // Red 500
             else if (val === 'H') cellData.cell.styles.textColor = [245, 158, 11] // Amber 500
+            else if (val === 'B') cellData.cell.styles.textColor = [161, 161, 170] // Zinc 400
             cellData.cell.styles.fontStyle = 'bold'
           }
           if (cellData.column.index === deductionColIdx) {
@@ -414,6 +430,46 @@ export default function PaymentsPage() {
     doc.setTextColor(...PDF_COLORS.NAVY); doc.setFontSize(8); doc.setFont('helvetica', 'italic')
     doc.text(`Amount in words: ${numberToWords(Math.abs(data.netPayable))}`, 14, summaryEndY + 6)
 
+    // Legends
+    let legendY = summaryEndY + 14
+    let legendX = 14
+    
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    
+    // B - Band Day
+    doc.setTextColor(161, 161, 170)
+    doc.text('B', legendX, legendY)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.text(' - Band Day', legendX + 3, legendY)
+    
+    // P - Present
+    legendX += 25
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(34, 197, 94)
+    doc.text('P', legendX, legendY)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.text(' - Present', legendX + 3, legendY)
+    
+    // H - Half Day
+    legendX += 25
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(245, 158, 11)
+    doc.text('H', legendX, legendY)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.text(' - Half Day', legendX + 3, legendY)
+    
+    // A - Absent
+    legendX += 25
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(239, 68, 68)
+    doc.text('A', legendX, legendY)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.text(' - Absent', legendX + 3, legendY)
 
     // Signatory Area
     const sigY = H - 48
@@ -535,6 +591,9 @@ export default function PaymentsPage() {
         s.name,
         ...weekDays.map(d => {
           const dateStr = format(d, 'yyyy-MM-dd')
+          const isBandDay = bandDaysSet.has(dateStr)
+          if (isBandDay) return 'B'
+          
           const day = s.days[dateStr]
           if (!day) {
             return dateStr < s.maxDate ? 'A' : '-'
@@ -573,7 +632,7 @@ export default function PaymentsPage() {
 
     const columnStyles: any = {
       0: { cellWidth: 8 }, // #
-      1: { cellWidth: 35, halign: 'left', fontStyle: 'bold' }, // Name
+      1: { halign: 'left', fontStyle: 'bold' }, // Name
       ...Object.fromEntries(Array.from({ length: 7 }, (_, i) => [i + 2, { cellWidth: 16 }])), // Days
       9: { cellWidth: 12 }, // Days count
     }
@@ -604,6 +663,7 @@ export default function PaymentsPage() {
           if (val === 'P') cellData.cell.styles.textColor = [34, 197, 94]
           else if (val === 'A') cellData.cell.styles.textColor = [239, 68, 68]
           else if (val === 'H') cellData.cell.styles.textColor = [245, 158, 11]
+          else if (val === 'B') cellData.cell.styles.textColor = [161, 161, 170]
           cellData.cell.styles.fontStyle = 'bold'
         }
 
@@ -643,14 +703,61 @@ export default function PaymentsPage() {
       }
     })
 
-    const finalY = (doc as any).lastAutoTable.finalY + 15
-    if (finalY < H - 25) {
-      doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(...PDF_COLORS.MUTED)
-      doc.text(`Total Amount in Words: ${numberToWords(Math.abs(grandNet))}`, 14, finalY)
+    let finalY = (doc as any).lastAutoTable.finalY + 10
+
+    if (finalY > H - 35) {
+      doc.addPage()
+      drawPremiumHeader(doc, 'WEEKLY LABOUR REGISTER (CONT.)', 'SIGNATURE PAGE')
+      drawPremiumFooter(doc)
+      finalY = 55
     }
 
+    doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(...PDF_COLORS.MUTED)
+    doc.text(`Total Amount in Words: ${numberToWords(Math.abs(grandNet))}`, 14, finalY)
+
+    // Legends
+    let legendY = finalY + 8
+    let legendX = 14
+    
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    
+    // B - Band Day
+    doc.setTextColor(161, 161, 170)
+    doc.text('B', legendX, legendY)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.text(' - Band Day', legendX + 3, legendY)
+    
+    // P - Present
+    legendX += 25
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(34, 197, 94)
+    doc.text('P', legendX, legendY)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.text(' - Present', legendX + 3, legendY)
+    
+    // H - Half Day
+    legendX += 25
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(245, 158, 11)
+    doc.text('H', legendX, legendY)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.text(' - Half Day', legendX + 3, legendY)
+    
+    // A - Absent
+    legendX += 25
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(239, 68, 68)
+    doc.text('A', legendX, legendY)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...PDF_COLORS.NAVY)
+    doc.text(' - Absent', legendX + 3, legendY)
+
     // Signatory Area in Weekly Register
-    let sigY = finalY + 10
+    let sigY = legendY + 15
     if (sigY > H - 35) {
       doc.addPage()
       drawPremiumHeader(doc, 'WEEKLY LABOUR REGISTER (CONT.)', 'SIGNATURE PAGE')
@@ -816,13 +923,14 @@ export default function PaymentsPage() {
                       <td className="py-3 px-4 font-bold text-white sticky left-0 bg-[#111520]">{s.name}</td>
                       {weekDates.map(d => {
                         const dateStr = format(d, 'yyyy-MM-dd')
+                        const isBandDay = bandDaysSet.has(dateStr)
                         const day = s.days[dateStr]
-                        const status = day ? day.status : (dateStr < s.maxDate ? 'A' : '-')
+                        const status = isBandDay ? 'B' : (day ? day.status : (dateStr < s.maxDate ? 'A' : '-'))
                         
                         return (
                           <td key={d.toISOString()} className="py-3 px-2 text-center align-top">
                             <div className="space-y-0.5">
-                              <span className={cn("font-black", status === 'A' ? "text-red-500" : status === '-' ? "text-zinc-700" : "text-emerald-500")}>
+                              <span className={cn("font-black", status === 'A' ? "text-red-500" : status === '-' ? "text-zinc-700" : status === 'B' ? "text-zinc-500" : "text-emerald-500")}>
                                 {status}
                               </span>
                               {day?.ot > 0 && <p className="text-[8px] font-bold text-amber-500 leading-none">+{day.ot}</p>}

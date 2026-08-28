@@ -132,6 +132,13 @@ export default function AttendancePage() {
   const [activeNotePopup, setActiveNotePopup] = useState<{ date: string } | null>(null)
   const [noteDraft, setNoteDraft] = useState<string>('')
 
+  // Band Day & Calendar States
+  const [bandDays, setBandDays] = useState<Record<string, { status: string, reason: string | null }>>({})
+  const [calendarEvents, setCalendarEvents] = useState<Record<string, any>>({})
+  const [showBandModal, setShowBandModal] = useState<{ date: string, isAmavasya: boolean } | null>(null)
+  const [bandReason, setBandReason] = useState('Amavasya')
+  const [bandCustomReason, setBandCustomReason] = useState('')
+
   const supabase = createClient()
 
   const weekDates = useMemo(() => {
@@ -273,13 +280,49 @@ export default function AttendancePage() {
       })
     }
 
+    // Load Band Days
+    const { data: bandData } = await supabase
+      .from('project_day_status')
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('status', 'BAND')
+      .gte('date', startStr)
+      .lte('date', endStr)
+
+    const newBandDays: Record<string, { status: string, reason: string | null }> = {}
+    if (bandData) {
+      bandData.forEach((b: any) => {
+        newBandDays[b.date] = { status: b.status, reason: b.reason }
+      })
+    }
+
+    // Load Calendar Events
+    const { data: calData } = await supabase
+      .from('calendar_events')
+      .select('*')
+      .gte('date', startStr)
+      .lte('date', endStr)
+
+    const newCalendarEvents: Record<string, any> = {}
+    if (calData) {
+      calData.forEach((c: any) => {
+        newCalendarEvents[c.date] = c
+      })
+    }
+
     setGridData(newGrid)
     setDailyNotes(notesByDate)
+    setBandDays(newBandDays)
+    setCalendarEvents(newCalendarEvents)
     setLoading(false)
   }
 
   // Interactions
   const handleCellClick = (workerId: string, dateStr: string) => {
+    if (bandDays[dateStr]?.status === 'BAND') {
+      toast.error('Cannot mark attendance on a BAND DAY. Unmark it first.')
+      return
+    }
     const current = gridData[workerId]?.days[dateStr] || { status: '', paid_amount: 0 }
     setPopupData({
       status: current.status,
@@ -561,7 +604,91 @@ export default function AttendancePage() {
     toast.success(`Copied attendance from ${format(prevDate, 'EEE')} to ${format(targetDate, 'EEE')}`)
   }
 
-  // Save Logic
+  
+  // Band Day Actions
+  const handleMarkBandDay = async () => {
+    if (!showBandModal || !selectedProject) return
+    const { date, isAmavasya } = showBandModal
+    const finalReason = bandReason === 'Other' ? bandCustomReason : bandReason
+    
+    try {
+      setSaving(true)
+      
+      // Upsert into project_day_status
+      const { error: upsertErr } = await supabase
+        .from('project_day_status')
+        .upsert({
+          project_id: selectedProject,
+          date,
+          status: 'BAND',
+          reason: finalReason,
+          source: isAmavasya ? 'CALENDAR' : 'MANUAL'
+        }, { onConflict: 'project_id,date' })
+        
+      if (upsertErr) throw upsertErr
+
+      // Delete any existing attendance records for this date to clear 'A' or accidental marks
+      await supabase
+        .from('attendance')
+        .delete()
+        .eq('project_id', selectedProject)
+        .eq('date', date)
+
+      // Clear local state for this date
+      setGridData(prev => {
+        const next = { ...prev }
+        Object.keys(next).forEach(wId => {
+          if (next[wId].days[date]) {
+            next[wId].days[date] = { status: '', paid_amount: 0 }
+          }
+        })
+        return next
+      })
+
+      setBandDays(prev => ({
+        ...prev,
+        [date]: { status: 'BAND', reason: finalReason }
+      }))
+
+      setShowBandModal(null)
+      setBandReason('Amavasya')
+      setBandCustomReason('')
+      toast.success(`${format(parseISO(date), 'dd MMM')} marked as BAND DAY.`)
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to mark Band Day')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleUnmarkBandDay = async (date: string) => {
+    if (!selectedProject) return
+    if (!confirm('Are you sure you want to unmark this Band Day?')) return
+    
+    try {
+      setSaving(true)
+      const { error } = await supabase
+        .from('project_day_status')
+        .delete()
+        .eq('project_id', selectedProject)
+        .eq('date', date)
+        
+      if (error) throw error
+      
+      setBandDays(prev => {
+        const next = { ...prev }
+        delete next[date]
+        return next
+      })
+      toast.success('Band Day removed. You can now mark attendance.')
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to unmark Band Day')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+// Save Logic
   const handleSave = async () => {
     if (!selectedProject) return
     
@@ -601,6 +728,9 @@ export default function AttendancePage() {
           const cell = row.days[dateStr] || { status: '', paid_amount: 0 }
           // All workers on same day share the same grouped note
           const sharedNote = dailyNotes[dateStr] || null
+          
+          // Do not save attendance if it's a BAND day
+          if (bandDays[dateStr]?.status === 'BAND') return;
           
           // Save every day. If not P or H, it defaults to 0 (Absent)
           inserts.push({
@@ -836,9 +966,31 @@ export default function AttendancePage() {
                   const dateStr = format(d, 'yyyy-MM-dd')
                   return (
                     <th key={d.toISOString()} className="py-2 px-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 text-center min-w-[65px] group/col hover:bg-white/[0.01] transition-colors relative">
-                      <div className="flex flex-col items-center justify-between h-14">
+                      <div className="flex flex-col items-center justify-between min-h-[56px]">
                         <span>{format(d, 'EEE')}</span>
-                        <span className="text-[9px] font-bold text-zinc-600 tracking-normal">{format(d, 'd MMM')}</span>
+                        <span className="text-[9px] font-bold text-zinc-600 tracking-normal flex flex-col items-center">
+                          {format(d, 'd MMM')}
+                          {calendarEvents[dateStr] && calendarEvents[dateStr].event_type === 'AMAVASYA' && (
+                            <span title="Amavasya Today" className="mt-0.5 text-[8px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1 py-0.5 rounded cursor-help">
+                              🌑 AMAVASYA
+                            </span>
+                          )}
+                        </span>
+                        {bandDays[dateStr]?.status === 'BAND' ? (
+                          <button
+                            onClick={() => handleUnmarkBandDay(dateStr)}
+                            className="mt-1 px-1.5 py-0.5 rounded bg-red-500/20 text-[7px] text-red-400 font-bold uppercase whitespace-nowrap hover:bg-red-500 hover:text-white transition-all"
+                          >
+                            🔴 UNMARK
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setShowBandModal({ date: dateStr, isAmavasya: !!calendarEvents[dateStr] })}
+                            className="opacity-0 group-hover/col:opacity-100 mt-1 px-1.5 py-0.5 rounded bg-zinc-800/50 hover:bg-red-500/20 text-[7px] text-zinc-500 hover:text-red-400 font-bold transition-all uppercase whitespace-nowrap"
+                          >
+                            Mark Band
+                          </button>
+                        )}
                         <button
                           onClick={() => copyPreviousDayColumn(dateStr)}
                           title={`Copy attendance from previous day to ${format(d, 'EEEE')}`}
@@ -923,7 +1075,7 @@ export default function AttendancePage() {
                         >
                           <div className="flex flex-col items-center">
                             <span className="text-sm font-black leading-none">
-                              {cell.status || '-'}
+                              {bandDays[dateStr]?.status === 'BAND' ? 'B' : (cell.status || '-')}
                             </span>
                           </div>
                           {cell.paid_amount && cell.paid_amount > 0 ? (
@@ -1023,7 +1175,25 @@ export default function AttendancePage() {
                 return (
                   <div key={dateStr} className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <label className="text-[9px] font-black uppercase tracking-widest text-zinc-500">{format(d, 'EEE dd MMM')}</label>
+                      <div className="flex items-center gap-2">
+                          <label className="text-[9px] font-black uppercase tracking-widest text-zinc-500">
+                            {format(d, 'EEE dd MMM')}
+                          </label>
+                          {calendarEvents[dateStr] && calendarEvents[dateStr].event_type === 'AMAVASYA' && (
+                            <span className="text-[8px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1 py-0.5 rounded">
+                              🌑 AMAVASYA
+                            </span>
+                          )}
+                          {bandDays[dateStr]?.status === 'BAND' ? (
+                            <button onClick={() => handleUnmarkBandDay(dateStr)} className="text-[8px] font-bold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">
+                              🔴 UNMARK
+                            </button>
+                          ) : (
+                            <button onClick={() => setShowBandModal({ date: dateStr, isAmavasya: !!calendarEvents[dateStr] })} className="text-[8px] font-bold text-zinc-500 hover:text-red-400 bg-zinc-800/50 px-1.5 py-0.5 rounded transition-colors">
+                              MARK BAND
+                            </button>
+                          )}
+                        </div>
                       <div className="flex items-center gap-1.5">
                         <button 
                           onClick={() => copyPreviousDayColumn(dateStr)}
@@ -1124,7 +1294,7 @@ export default function AttendancePage() {
                           "bg-[#0d1018] border-[#1e2435] text-zinc-700"
                         )}
                       >
-                        <span className="text-xs font-black">{cell.status || '-'}</span>
+                        <span className="text-xs font-black">{bandDays[dateStr]?.status === 'BAND' ? 'B' : (cell.status || '-')}</span>
                         {cell.paid_amount && cell.paid_amount > 0 ? (
                           <div className="absolute top-0.5 right-0.5 w-1 h-1 bg-emerald-500 rounded-full" title={`Spot Paid: ₹${cell.paid_amount}`} />
                         ) : null}
@@ -1606,6 +1776,69 @@ export default function AttendancePage() {
           </div>
         </div>
       )}
-    </div>
+    
+      {/* Band Day Modal */}
+      {showBandModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#111520] border border-[#1e2435] rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
+            <button onClick={() => setShowBandModal(null)} className="absolute top-4 right-4 text-zinc-500 hover:text-white transition-colors">
+              <X size={20} />
+            </button>
+            <h3 className="text-lg font-black text-white mb-2">🔴 Mark BAND DAY</h3>
+            <p className="text-xs text-zinc-400 mb-6 leading-relaxed">
+              Are you sure you want to mark <strong>{format(parseISO(showBandModal.date), 'dd MMM yyyy')}</strong> as a Band Day? 
+              This means the site is closed and no attendance records will be saved.
+            </p>
+
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block mb-2">Reason</label>
+                <select 
+                  value={bandReason}
+                  onChange={e => setBandReason(e.target.value)}
+                  className="w-full bg-[#0d1018] border border-[#1e2435] rounded-lg px-3 py-2 text-sm font-bold text-white outline-none focus:border-blue-500"
+                >
+                  <option value="Amavasya">Amavasya</option>
+                  <option value="Festival">Festival</option>
+                  <option value="Heavy Rain">Heavy Rain</option>
+                  <option value="Material Delay">Material Delay</option>
+                  <option value="Labour Unavailable">Labour Unavailable</option>
+                  <option value="Site Closed">Site Closed</option>
+                  <option value="Personal Reason">Personal Reason</option>
+                  <option value="Other">Other...</option>
+                </select>
+              </div>
+
+              {bandReason === 'Other' && (
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block mb-2">Custom Reason</label>
+                  <input 
+                    type="text"
+                    value={bandCustomReason}
+                    onChange={e => setBandCustomReason(e.target.value)}
+                    placeholder="Enter reason..."
+                    className="w-full bg-[#0d1018] border border-[#1e2435] rounded-lg px-3 py-2 text-sm font-bold text-white outline-none focus:border-blue-500"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowBandModal(null)} className="px-5 py-2.5 rounded-xl text-xs font-black uppercase text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
+                Cancel
+              </button>
+              <button 
+                onClick={handleMarkBandDay}
+                disabled={saving || (bandReason === 'Other' && !bandCustomReason.trim())}
+                className="px-5 py-2.5 rounded-xl text-xs font-black uppercase bg-red-500/20 text-red-500 border border-red-500/30 hover:bg-red-500 hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving ? <Loader2 size={16} className="animate-spin" /> : null}
+                Confirm BAND DAY
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+</div>
   )
 }
