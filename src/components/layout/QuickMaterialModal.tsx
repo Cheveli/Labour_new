@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import { ArrowLeft, Loader2, Save, X, Zap } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface MaterialConfig {
   id: string

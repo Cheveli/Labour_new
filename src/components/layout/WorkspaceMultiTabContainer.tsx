@@ -475,7 +475,7 @@ export default function WorkspaceMultiTabContainer({ children }: WorkspaceMultiT
                 if (panes.length === 1) {
                   const m1 = panes[0].moduleId
                   const m2 = m1 === 'attendance' ? 'materials' : 'attendance'
-                  const m3 = (m1 !== 'payments' && m2 !== 'payments') ? 'payments' : 'reports'
+                  const m3 = m1 !== 'payments' ? 'payments' : 'reports'
                   setPanes([
                     panes[0],
                     { id: `pane-${Date.now()}-2`, moduleId: m2, key: Date.now() + 1 },
