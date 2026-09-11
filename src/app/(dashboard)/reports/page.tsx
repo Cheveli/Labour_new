@@ -408,13 +408,13 @@ export default function ReportsPage() {
           fillColor: [248, 250, 255]
         },
         columnStyles: {
-          0: { cellWidth: 10, halign: 'center', fontStyle: 'bold' }, // S.No
-          1: { cellWidth: 22 },                                      // Date
+          0: { cellWidth: 9, halign: 'center', fontStyle: 'bold' }, // S.No
+          1: { cellWidth: 19 },                                      // Date
           2: { cellWidth: 44, fontStyle: 'bold' },                   // Material & Brand
-          3: { cellWidth: 34 },                                      // Supplier
+          3: { cellWidth: 26 },                                      // Supplier
           4: { cellWidth: 38 },                                      // Cost breakdown
-          5: { cellWidth: 22 },                                      // Remarks
-          6: { cellWidth: 16, halign: 'right', fontStyle: 'bold' }   // Total
+          5: { cellWidth: 24 },                                      // Remarks
+          6: { cellWidth: 26, halign: 'right', fontStyle: 'bold' }   // Total (wide enough to guarantee single line)
         },
         margin: { left: 12, right: 12, top: 48, bottom: 24 },
         didParseCell: (cellData) => {
