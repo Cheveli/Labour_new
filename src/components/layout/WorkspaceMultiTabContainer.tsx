@@ -50,7 +50,7 @@ const DashboardView = dynamic(() => import('@/app/(dashboard)/page'), {
 const ProjectsView = dynamic(() => import('@/app/(dashboard)/projects/page'), {
   loading: () => <PaneLoading title="Projects & Sites" color="#06b6d4" />
 })
-const WorkersView = dynamic(() => import('@/app/(dashboard)/workers/page'), {
+const WorkersView = dynamic(() => import('@/app/(dashboard)/labour/page'), {
   loading: () => <PaneLoading title="Workers Directory" color="#14b8a6" />
 })
 const ContractorPaymentsView = dynamic(() => import('@/app/(dashboard)/contractor-payments/page'), {
@@ -130,9 +130,9 @@ export const WORKSPACE_MODULES: WorkspaceModule[] = [
   },
   {
     id: 'workers',
-    name: 'Workers',
+    name: 'Workforce',
     teluguName: 'కూలీలు',
-    path: '/workers',
+    path: '/labour',
     icon: Users,
     color: '#14b8a6',
     description: 'Worker registry, default rates & contacts'

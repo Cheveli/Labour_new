@@ -4085,6 +4085,10 @@ export default function MaterialsPage() {
                 {transferLoading ? <Loader2 size={12} className="animate-spin" /> : null} Confirm Transfer
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
       {/* QUICK PRICE SETTLEMENT MODAL */}
       {showSettleModal && settleItem && (
         <div 
