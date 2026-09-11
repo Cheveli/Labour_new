@@ -191,6 +191,92 @@ export default function ReportsPage() {
     setLoading(false)
   }
 
+  const parseMaterialInfo = (r: any) => {
+    const notesStr = r.notes || ''
+    const totalAmount = Number(r.total_amount || 0)
+    
+    if (notesStr && typeof notesStr === 'string' && notesStr.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(notesStr)
+        if (parsed.is_erp_v3 || parsed.purchase_id || parsed.supplier) {
+          const trans = Number(parsed.transportation_cost || 0)
+          const loading = Number(parsed.loading_cost || 0)
+          const disc = Number(parsed.discount || 0)
+          const finalAmt = Number(parsed.final_paid_amount || parsed.calculated_total || totalAmount)
+          const base = Math.max(0, finalAmt - trans - loading + disc)
+          
+          let rem = parsed.remarks
+          if (rem === null || rem === 'null' || rem === undefined || rem === '-') rem = ''
+          
+          let supp = parsed.supplier
+          if (supp === '-' || supp === 'null' || !supp) supp = '—'
+
+          let br = parsed.brand
+          if (br === '-' || br === 'null' || !br) br = ''
+
+          let pId = parsed.purchase_id
+          if (pId === '-' || pId === 'null' || !pId) pId = ''
+          
+          return {
+            purchaseId: pId,
+            supplier: supp,
+            supplierPhone: parsed.supplier_phone || '',
+            brand: br,
+            transportationCost: trans,
+            loadingCost: loading,
+            discount: disc,
+            baseCost: base,
+            totalAmount: finalAmt > 0 ? finalAmt : totalAmount,
+            remarks: rem ? String(rem).trim() : '',
+            receiptUrl: parsed.receipt_url || null
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Legacy regex parsing
+    const sMatch = notesStr.match(/Supplier:\s(.*?)(?:\s\(|\s\||$)/)
+    const sPhoneMatch = notesStr.match(/\((\d{10,})\)/)
+    const mMatch = notesStr.match(/Material Amount:\sRs\.([\d,.]+)/)
+    const tMatch = notesStr.match(/Transportation:\sRs\.([\d,.]+)/)
+    const hMatch = notesStr.match(/Hamali:\sRs\.([\d,.]+)/)
+    const dMatch = notesStr.match(/Discount:\sRs\.([\d,.]+)/)
+    const receiptMatch = notesStr.match(/Receipt:\s(.*?)(?:\s\||$)/)
+
+    const rawSupp = sMatch ? sMatch[1].trim() : '—'
+    const supplier = rawSupp !== '-' && rawSupp !== '' ? rawSupp : '—'
+    const supplierPhone = sPhoneMatch ? sPhoneMatch[1].trim() : ''
+    const trans = tMatch ? parseFloat(tMatch[1].replace(/,/g, '')) || 0 : 0
+    const loading = hMatch ? parseFloat(hMatch[1].replace(/,/g, '')) || 0 : 0
+    const discount = dMatch ? parseFloat(dMatch[1].replace(/,/g, '')) || 0 : 0
+    const baseCost = mMatch ? parseFloat(mMatch[1].replace(/,/g, '')) || (totalAmount - trans - loading + discount) : (totalAmount - trans - loading + discount)
+
+    const cleanRemarks = notesStr
+      .replace(/Supplier:\s(.*?)(?:\s\(|\s\||$)/, '')
+      .replace(/\(\d+\)/, '')
+      .replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+      .replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+      .replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+      .replace(/Discount:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+      .replace(/Receipt:\s(.*?)(?:\s\||$)/, '')
+      .replace(/^[\s\|]+|[\s\|]+$/g, '')
+      .trim()
+
+    return {
+      purchaseId: '',
+      supplier,
+      supplierPhone,
+      brand: '',
+      transportationCost: trans,
+      loadingCost: loading,
+      discount,
+      baseCost: Math.max(0, baseCost),
+      totalAmount,
+      remarks: cleanRemarks,
+      receiptUrl: receiptMatch ? receiptMatch[1].trim() : null
+    }
+  }
+
   const getTotal = () => data.reduce((s, r) => s + (r.amount || r.total_amount || 0), 0)
 
   const getLabel = (r: any) => {
@@ -202,52 +288,287 @@ export default function ReportsPage() {
   }
 
   const exportPDF = async () => {
-    const doc = new jsPDF()
-    const titles: Record<ReportType, string> = { labour: 'LABOUR PAYMENTS', materials: 'MATERIALS REPORT', revenue: 'REVENUE REPORT', subcontracts: 'SUBCONTRACTS & MILESTONES REPORT', attendance_cost: 'ATTENDANCE COST REPORT' }
-    const subtitle = 'ALL TIME REPORT'
-    drawPremiumHeader(doc, titles[reportType], subtitle)
-    
-    let head = [['#', 'Date', 'Description', 'Notes', 'Amount']]
-    let body = data.map((r, i) => [i + 1, format(new Date(r.date), 'dd/MM/yyyy'), getLabel(r), r.notes || '—', `Rs.${Number(r.amount || r.total_amount || 0).toLocaleString('en-IN')}`])
-    let foot = [['', '', '', 'TOTAL', `Rs.${getTotal().toLocaleString('en-IN')}`]]
+    const doc = new jsPDF({
+      orientation: 'p',
+      unit: 'mm',
+      format: 'a4'
+    })
+    const W = doc.internal.pageSize.getWidth()
+    const H = doc.internal.pageSize.getHeight()
 
+    const titles: Record<ReportType, string> = {
+      labour: 'LABOUR PAYMENTS',
+      materials: 'MATERIALS REPORT',
+      revenue: 'REVENUE REPORT',
+      subcontracts: 'SUBCONTRACTS & MILESTONES REPORT',
+      attendance_cost: 'ATTENDANCE COST REPORT'
+    }
+    const currentProjectObj = projects.find(p => p.id === projectId)
+    const projName = currentProjectObj ? currentProjectObj.name : 'All Projects'
+    const periodStr = (reportType === 'labour' || reportType === 'attendance_cost')
+      ? `${format(new Date(startDate), 'dd MMM yyyy')} — ${format(new Date(endDate), 'dd MMM yyyy')}`
+      : 'ALL TIME REGISTER'
+
+    drawPremiumHeader(doc, titles[reportType], periodStr)
+
+    // ── MATERIALS REPORT SPECIFIC ULTRA-PROFESSIONAL TEMPLATE ──
     if (reportType === 'materials') {
-      head = [['S.No', 'Date', 'Project', 'Material', 'Supplier', 'Cost', 'Remarks', 'Total']]
-      body = data.map((r, i) => {
-        const notes = r.notes || ''
-        const sMatch = notes.match(/Supplier:\s(.*?)(?:\s\(|$)/)
-        const sPhoneMatch = notes.match(/\((\d+)\)/)
-        const mMatch = notes.match(/Material Amount:\sRs\.([\d,.]+)/)
-        const tMatch = notes.match(/Transportation:\sRs\.([\d,.]+)/)
-        const hMatch = notes.match(/Hamali:\sRs\.([\d,.]+)/)
-        
-        const supplier = sMatch ? sMatch[1] : '—'
-        const supplierPhone = sPhoneMatch ? sPhoneMatch[1] : ''
-        const supplierDisplay = supplier !== '—' ? (supplierPhone ? `${supplier} (${supplierPhone})` : supplier) : '—'
-        const matAmt = mMatch ? `Material: Rs.${mMatch[1]}` : ''
-        const tr = tMatch ? `Transport: Rs.${tMatch[1]}` : ''
-        const ha = hMatch ? `Hamali: Rs.${hMatch[1]}` : ''
-        const cost = [matAmt, tr, ha].filter(Boolean).join('\n') || '—'
-        
-        const cleanNotes = notes
-          .replace(/Supplier:\s(.*?)(?:\s\(|$)/, '')
-          .replace(/\(\d+\)/, '')
-          .replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '')
-          .replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '')
-          .replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '')
-          .replace(/Receipt:\s(.*?)(?:\s\||$)/, '')
-          .replace(/^[\s\|]+|[\s\|]+$/g, '')
-          .trim()
-        
-        const materialQty = `${r.name} ${r.quantity > 0 ? `(${r.quantity} ${r.unit})` : ''}`
-        const project = r.projects?.name || '—'
+      const grandTotal = getTotal()
+      const totalCount = data.length
 
-        return [i + 1, format(new Date(r.date), 'dd/MM/yyyy'), project, materialQty, supplierDisplay, cost, cleanNotes || '—', `Rs.${Number(r.total_amount || 0).toLocaleString('en-IN')}`]
+      // Top Executive Summary Metrics (Page 1)
+      doc.setFillColor(245, 248, 255)
+      doc.setDrawColor(218, 226, 240)
+      doc.roundedRect(12, 49, W - 24, 15, 2, 2, 'FD')
+
+      // 4 Metric columns
+      const colW = (W - 24) / 4
+
+      // Col 1: Total Spend
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7)
+      doc.setTextColor(...PDF_COLORS.MUTED)
+      doc.text('TOTAL EXPENDITURE', 16, 54)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(10)
+      doc.setTextColor(...PDF_COLORS.BLUE)
+      doc.text(`Rs. ${grandTotal.toLocaleString('en-IN')}`, 16, 60.5)
+
+      // Col 2: Total Items
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7)
+      doc.setTextColor(...PDF_COLORS.MUTED)
+      doc.text('ENTRIES LOGGED', 12 + colW + 4, 54)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(10)
+      doc.setTextColor(...PDF_COLORS.NAVY)
+      doc.text(`${totalCount} Records`, 12 + colW + 4, 60.5)
+
+      // Col 3: Project
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7)
+      doc.setTextColor(...PDF_COLORS.MUTED)
+      doc.text('PROJECT FILTER', 12 + colW * 2 + 4, 54)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9)
+      doc.setTextColor(...PDF_COLORS.NAVY)
+      const projTrunc = projName.length > 18 ? projName.substring(0, 18) + '...' : projName
+      doc.text(projTrunc, 12 + colW * 2 + 4, 60.5)
+
+      // Col 4: Generated Date
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7)
+      doc.setTextColor(...PDF_COLORS.MUTED)
+      doc.text('GENERATED ON', 12 + colW * 3 + 4, 54)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9)
+      doc.setTextColor(...PDF_COLORS.NAVY)
+      doc.text(format(new Date(), 'dd/MM/yyyy'), 12 + colW * 3 + 4, 60.5)
+
+      // Prepare Rows
+      const parsedItems = data.map((r, i) => {
+        const p = parseMaterialInfo(r)
+        const qtyText = r.quantity > 0 ? ` (${r.quantity} ${r.unit || ''})` : ''
+        const brandText = p.brand ? `\nBrand: ${p.brand}` : ''
+        const matDisplay = `${r.name || '—'}${qtyText}${brandText}`
+        const suppDisplay = p.supplier !== '—' 
+          ? `${p.supplier}${p.purchaseId ? `\nPO: ${p.purchaseId}` : ''}` 
+          : (p.purchaseId ? `PO: ${p.purchaseId}` : '—')
+
+        const costParts: string[] = []
+        if (p.baseCost > 0 && (p.loadingCost > 0 || p.transportationCost > 0)) {
+          costParts.push(`Base: Rs.${p.baseCost.toLocaleString('en-IN')}`)
+        }
+        if (p.loadingCost > 0) costParts.push(`Loading: Rs.${p.loadingCost.toLocaleString('en-IN')}`)
+        if (p.transportationCost > 0) costParts.push(`Trans: Rs.${p.transportationCost.toLocaleString('en-IN')}`)
+        if (p.discount > 0) costParts.push(`Disc: -Rs.${p.discount.toLocaleString('en-IN')}`)
+
+        const costDisplay = costParts.length > 0 ? costParts.join('\n') : (p.baseCost > 0 ? `Base: Rs.${p.baseCost.toLocaleString('en-IN')}` : '—')
+
+        return {
+          index: i + 1,
+          date: format(new Date(r.date), 'dd/MM/yyyy'),
+          project: r.projects?.name || '—',
+          material: matDisplay,
+          supplier: suppDisplay,
+          cost: costDisplay,
+          remarks: p.remarks || '—',
+          amountNum: p.totalAmount,
+          total: `Rs. ${p.totalAmount.toLocaleString('en-IN')}`
+        }
       })
-      foot = [['', '', '', '', '', '', 'TOTAL', `Rs.${getTotal().toLocaleString('en-IN')}`]]
+
+      const head = [['S.No', 'Date', 'Project', 'Material & Brand', 'Supplier / PO', 'Cost Breakdown', 'Remarks', 'Total (Rs.)']]
+      const body = parsedItems.map(p => [
+        p.index,
+        p.date,
+        p.project,
+        p.material,
+        p.supplier,
+        p.cost,
+        p.remarks,
+        p.total
+      ])
+
+      const pageSubtotals: Record<number, number> = {}
+
+      autoTable(doc, {
+        startY: 68,
+        head: head,
+        body: body,
+        theme: 'grid',
+        headStyles: {
+          fillColor: PDF_COLORS.BLUE,
+          textColor: 255,
+          fontStyle: 'bold',
+          fontSize: 8,
+          halign: 'left',
+          valign: 'middle'
+        },
+        bodyStyles: {
+          textColor: PDF_COLORS.NAVY,
+          fontSize: 7.5,
+          cellPadding: 2.2,
+          valign: 'middle'
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 255]
+        },
+        columnStyles: {
+          0: { cellWidth: 10, halign: 'center', fontStyle: 'bold' }, // S.No
+          1: { cellWidth: 18 },                                      // Date
+          2: { cellWidth: 24, fontStyle: 'bold' },                   // Project
+          3: { cellWidth: 35 },                                      // Material & Brand
+          4: { cellWidth: 28 },                                      // Supplier
+          5: { cellWidth: 26 },                                      // Cost breakdown
+          6: { cellWidth: 25 },                                      // Remarks
+          7: { cellWidth: 20, halign: 'right', fontStyle: 'bold' }   // Total
+        },
+        margin: { left: 12, right: 12, top: 48, bottom: 24 },
+        didDrawCell: (cellData) => {
+          if (cellData.section === 'body' && cellData.column.index === 0) {
+            const rowIndex = cellData.row.index
+            const pageNum = cellData.pageNumber
+            const rowItem = parsedItems[rowIndex]
+            if (rowItem) {
+              pageSubtotals[pageNum] = (pageSubtotals[pageNum] || 0) + rowItem.amountNum
+            }
+          }
+        },
+        didDrawPage: (pageData) => {
+          // Continuation Header
+          if (pageData.pageNumber > 1) {
+            drawPremiumHeader(doc, 'MATERIALS REPORT (CONT.)', periodStr)
+          }
+
+          // Draw Page Subtotal Bar right above footer on every page
+          const subtotal = pageSubtotals[pageData.pageNumber] || 0
+          doc.setFillColor(241, 245, 254)
+          doc.setDrawColor(200, 215, 240)
+          doc.roundedRect(12, H - 22, W - 24, 6.5, 1, 1, 'FD')
+          
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(7.5)
+          doc.setTextColor(...PDF_COLORS.NAVY)
+          doc.text(`PAGE ${pageData.pageNumber} SUB-TOTAL:`, 16, H - 17.8)
+          
+          doc.setTextColor(...PDF_COLORS.BLUE)
+          doc.text(`Rs. ${subtotal.toLocaleString('en-IN')}`, W - 16, H - 17.8, { align: 'right' })
+
+          // Footer
+          drawPremiumFooter(doc)
+        }
+      })
+
+      // Calculate final summary aggregates
+      const totalTrans = parsedItems.reduce((sum, _, i) => sum + parseMaterialInfo(data[i]).transportationCost, 0)
+      const totalLoading = parsedItems.reduce((sum, _, i) => sum + parseMaterialInfo(data[i]).loadingCost, 0)
+      const totalBase = parsedItems.reduce((sum, _, i) => sum + parseMaterialInfo(data[i]).baseCost, 0)
+
+      let finalY = (doc as any).lastAutoTable.finalY + 6
+      const summaryBlockH = 42
+
+      // Check if we need a new page for Grand Summary and Signatures
+      if (finalY + summaryBlockH > H - 24) {
+        doc.addPage()
+        drawPremiumHeader(doc, 'MATERIALS REPORT (SUMMARY)', periodStr)
+        drawPremiumFooter(doc)
+        finalY = 52
+      }
+
+      // Grand Summary Box
+      doc.setFillColor(243, 247, 255)
+      doc.setDrawColor(...PDF_COLORS.BLUE)
+      doc.setLineWidth(0.4)
+      doc.roundedRect(12, finalY, W - 24, 20, 2, 2, 'FD')
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8)
+      doc.setTextColor(...PDF_COLORS.NAVY)
+      doc.text('EXECUTIVE COST BREAKDOWN', 16, finalY + 5.5)
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7.5)
+      doc.setTextColor(...PDF_COLORS.MUTED)
+      doc.text(`Base Materials: Rs. ${totalBase.toLocaleString('en-IN')}  |  Loading/Hamali: Rs. ${totalLoading.toLocaleString('en-IN')}  |  Transport: Rs. ${totalTrans.toLocaleString('en-IN')}`, 16, finalY + 10.5)
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(7)
+      doc.setTextColor(80, 90, 110)
+      doc.text(`Total Records: ${totalCount} Material Logs`, 16, finalY + 15.5)
+
+      // Right Side: Grand Total Highlight
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8)
+      doc.setTextColor(...PDF_COLORS.MUTED)
+      doc.text('GRAND TOTAL AMOUNT', W - 16, finalY + 6, { align: 'right' })
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(13)
+      doc.setTextColor(22, 163, 74) // Emerald Green
+      doc.text(`Rs. ${grandTotal.toLocaleString('en-IN')}`, W - 16, finalY + 14, { align: 'right' })
+
+      // Signatures
+      const sigY = finalY + 28
+      doc.setDrawColor(180, 195, 215)
+      doc.setLineWidth(0.3)
+
+      const sigW = 48
+      // Sig 1
+      doc.line(16, sigY + 8, 16 + sigW, sigY + 8)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(7)
+      doc.setTextColor(...PDF_COLORS.NAVY)
+      doc.text('PREPARED BY (ACCOUNTS)', 16 + sigW / 2, sigY + 12, { align: 'center' })
+
+      // Sig 2
+      const sig2X = (W - sigW) / 2
+      doc.line(sig2X, sigY + 8, sig2X + sigW, sigY + 8)
+      doc.text('SITE SUPERVISOR / ENGINEER', sig2X + sigW / 2, sigY + 12, { align: 'center' })
+
+      // Sig 3
+      const sig3X = W - 16 - sigW
+      doc.line(sig3X, sigY + 8, sig3X + sigW, sigY + 8)
+      doc.text('AUTHORIZED CONTRACTOR', sig3X + sigW / 2, sigY + 12, { align: 'center' })
+
+      const fileNameSuffix = projectId ? `${projName.toLowerCase().replace(/\s+/g, '_')}` : 'all_projects'
+      doc.save(`materials_report_${fileNameSuffix}_${format(new Date(), 'yyyyMMdd')}.pdf`)
+      toast.success('Professional Materials Report Exported!')
+      return
     }
 
-    const options: any = {
+    // ── GENERIC PDF HANDLER (FOR LABOUR, REVENUE, SUBCONTRACTS) ──
+    let head = [['#', 'Date', 'Description', 'Notes', 'Amount']]
+    let body = data.map((r, i) => [
+      i + 1,
+      format(new Date(r.date), 'dd/MM/yyyy'),
+      getLabel(r),
+      r.notes || '—',
+      `Rs. ${Number(r.amount || r.total_amount || 0).toLocaleString('en-IN')}`
+    ])
+    let foot = [['', '', '', 'TOTAL', `Rs. ${getTotal().toLocaleString('en-IN')}`]]
+
+    autoTable(doc, {
       startY: 54,
       head: head,
       body: body,
@@ -257,25 +578,16 @@ export default function ReportsPage() {
       bodyStyles: { textColor: PDF_COLORS.NAVY, fontSize: 8 },
       footStyles: { fillColor: PDF_COLORS.NAVY, textColor: 255, fontStyle: 'bold', fontSize: 8 },
       alternateRowStyles: { fillColor: PDF_COLORS.LIGHT },
-      styles: { cellPadding: 2.5 }
-    }
+      styles: { cellPadding: 2.5 },
+      didDrawPage: (pageData) => {
+        if (pageData.pageNumber > 1) {
+          drawPremiumHeader(doc, `${titles[reportType]} (CONT.)`, periodStr)
+        }
+        drawPremiumFooter(doc)
+      },
+      margin: { top: 50, left: 14, right: 14, bottom: 20 }
+    })
 
-    if (reportType === 'materials') {
-      options.columnStyles = {
-        0: { cellWidth: 10, halign: 'center' }, // S.No
-        1: { cellWidth: 20 },                  // Date
-        2: { cellWidth: 32 },                  // Project
-        3: { cellWidth: 32 },                  // Material
-        4: { cellWidth: 21 },                  // Supplier
-        5: { cellWidth: 25 },                  // Cost
-        6: { cellWidth: 32 },                  // Remarks
-        7: { cellWidth: 18, halign: 'right' }  // Total
-      }
-    }
-
-    autoTable(doc, options)
-    drawPremiumFooter(doc)
-    
     const fileNameSuffix = reportType === 'labour' ? `${startDate}-to-${endDate}` : 'all-time'
     doc.save(`${reportType}-report-${fileNameSuffix}.pdf`)
     toast.success('PDF exported')
@@ -298,27 +610,29 @@ export default function ReportsPage() {
     { value: 'materials', label: 'Materials' },
     { value: 'revenue', label: 'Revenue' },
     { value: 'subcontracts', label: 'Subcontracts' },
+    { value: 'labour', label: 'Labour Payments' },
+    { value: 'attendance_cost', label: 'Attendance Cost' }
   ]
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
       <div>
-        <h1 className="text-2xl font-black text-white tracking-tight">Reports</h1>
-        <p className="text-sm mt-1" style={{ color: DIM }}>Filter by type, project and date range. Export to PDF or Excel.</p>
+        <h1 className="text-2xl font-black text-white tracking-tight">Reports & Material Logs</h1>
+        <p className="text-sm mt-1" style={{ color: DIM }}>Filter by project, dates, and export executive-ready PDF registers with page subtotals.</p>
       </div>
 
       {/* Filters */}
       <div className="rounded-2xl p-5 space-y-4" style={PANEL}>
         <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Filter Options</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className={`col-span-2 md:col-span-1 space-y-1.5 ${(reportType !== 'labour' && reportType !== 'attendance_cost') ? 'md:col-span-2' : ''}`}>
+          <div className={`col-span-2 md:col-span-1 space-y-1.5`}>
             <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Report Type</label>
             <select value={reportType} onChange={e => setReportType(e.target.value as ReportType)}
               className="w-full h-10 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST}>
               {reportTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </div>
-          <div className={`space-y-1.5 md:col-span-3`}>
+          <div className={`col-span-2 md:col-span-3 space-y-1.5`}>
             <label className="text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Project (optional)</label>
             <select value={projectId} onChange={e => setProjectId(e.target.value)}
               className="w-full h-10 px-3 rounded-xl text-sm font-semibold outline-none" style={INPUT_ST}>
@@ -328,21 +642,22 @@ export default function ReportsPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 pt-1">
-
           <button onClick={fetchReport} disabled={loading}
-            className="h-10 px-6 rounded-xl text-sm font-black uppercase flex items-center gap-2 disabled:opacity-50"
+            className="h-10 px-6 rounded-xl text-sm font-black uppercase flex items-center gap-2 disabled:opacity-50 transition-all hover:brightness-110"
             style={{ backgroundColor: GOLD, color: '#0a0c12' }}>
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Filter size={14} />} Generate Report
           </button>
           {data.length > 0 && (
             <>
-              <button onClick={exportPDF} className="h-10 px-5 rounded-xl text-sm font-black uppercase flex items-center gap-2" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>
-                <FileText size={14} /> PDF
+              <button onClick={exportPDF} className="h-10 px-5 rounded-xl text-sm font-black uppercase flex items-center gap-2 hover:bg-white/[0.05] transition-all" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>
+                <FileText size={14} className="text-blue-400" /> Export PDF
               </button>
-              <button onClick={exportExcel} className="h-10 px-5 rounded-xl text-sm font-black uppercase flex items-center gap-2" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>
-                <Download size={14} /> Excel
+              <button onClick={exportExcel} className="h-10 px-5 rounded-xl text-sm font-black uppercase flex items-center gap-2 hover:bg-white/[0.05] transition-all" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>
+                <Download size={14} className="text-emerald-400" /> Excel
               </button>
-              <span className="text-xs font-bold ml-auto" style={{ color: DIM }}>{data.length} records · Total: <span className="text-white font-black">₹{getTotal().toLocaleString('en-IN')}</span></span>
+              <span className="text-xs font-bold ml-auto" style={{ color: DIM }}>
+                {data.length} records · Total: <span className="text-emerald-400 font-black">₹{getTotal().toLocaleString('en-IN')}</span>
+              </span>
             </>
           )}
         </div>
@@ -350,130 +665,168 @@ export default function ReportsPage() {
 
       {/* Results Table */}
       {data.length > 0 && (
-        <div className="rounded-2xl overflow-hidden" style={PANEL}>
+        <div className="rounded-2xl overflow-hidden border border-[#1e2435]" style={PANEL}>
+          {/* Header Bar */}
+          <div className="p-4 border-b border-[#1e2435] flex flex-wrap items-center justify-between gap-3 bg-[#0d1018]">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
+              <p className="text-xs font-black uppercase tracking-wider text-white">
+                {reportTypes.find(t => t.value === reportType)?.label} Register
+              </p>
+              <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/5 text-gray-400 font-bold border border-white/10">
+                {data.length} items
+              </span>
+            </div>
+            <div className="text-xs font-bold text-gray-400">
+              Grand Total: <span className="text-emerald-400 font-black text-sm ml-1">₹{getTotal().toLocaleString('en-IN')}</span>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead style={{ backgroundColor: '#0d1018' }}>
-                <tr style={{ borderBottom: '1px solid #1e2435' }}>
-                  <th className="px-6 py-3 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>#</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Date</th>
+            <table className="w-full text-sm text-left">
+              <thead className="bg-[#090b10] border-b border-[#1e2435]">
+                <tr>
+                  <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest w-12" style={{ color: DIM }}>#</th>
+                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest whitespace-nowrap" style={{ color: DIM }}>Date</th>
                   {reportType === 'materials' ? (
                     <>
-                      <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Supplier</th>
-                      <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Project</th>
-                      <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Material / Qty</th>
-                      <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Cost</th>
+                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Material & Details</th>
+                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Project</th>
+                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Supplier / PO</th>
+                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Cost Breakdown</th>
                     </>
                   ) : (
-                    <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Description</th>
+                    <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Description</th>
                   )}
-                  <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Notes</th>
-                  <th className="px-6 py-3 text-right text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>{reportType === 'materials' ? 'Grand Total' : 'Amount'}</th>
+                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Remarks</th>
+                  <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest whitespace-nowrap" style={{ color: DIM }}>Total Amount</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-[#1e2435]">
                 {data.slice(page * 15, page * 15 + 15).map((r, i) => {
                   if (reportType === 'materials') {
-                    const notes = r.notes || ''
-                    const sMatch = notes.match(/Supplier:\s(.*?)(?:\s\||$)/)
-                    const mMatch = notes.match(/Material Amount:\sRs\.([\d,.]+)/)
-                    const tMatch = notes.match(/Transportation:\sRs\.([\d,.]+)/)
-                    const hMatch = notes.match(/Hamali:\sRs\.([\d,.]+)/)
-                    const receiptMatch = notes.match(/Receipt:\s(.*?)(?:\s\||$)/)
-                    
-                    const supp = sMatch ? sMatch[1] : '—'
-                    const matAmt = mMatch ? `Material Amount: ₹${mMatch[1]}` : ''
-                    const tr = tMatch ? `Transport: ₹${tMatch[1]}` : ''
-                    const ha = hMatch ? `Hamali: ₹${hMatch[1]}` : ''
-                    
-                    const cleanNotes = notes
-                      .replace(/Supplier:\s(.*?)(?:\s\||$)/, '')
-                      .replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '')
-                      .replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '')
-                      .replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '')
-                      .replace(/Receipt:\s(.*?)(?:\s\||$)/, '')
-                      .replace(/^[\s\|]+|[\s\|]+$/g, '')
-                      .trim()
-
-                    const receiptUrl = receiptMatch ? receiptMatch[1] : null
-                    let attachmentLabel = ''
-                    if (receiptUrl) {
-                      const lower = receiptUrl.toLowerCase()
-                      if (lower.endsWith('.pdf')) {
-                        attachmentLabel = '[1 pdf attached]'
-                      } else {
-                        attachmentLabel = '[1 image attached]'
-                      }
-                    }
+                    const p = parseMaterialInfo(r)
 
                     return (
-                      <tr key={i} style={{ borderBottom: '1px solid #1e2435' }} className="hover:bg-white/[0.02] transition-colors">
-                        <td className="px-6 py-3 text-xs font-bold" style={{ color: DIM }}>{page * 15 + i + 1}</td>
-                        <td className="px-4 py-3 text-xs font-bold" style={{ color: DIM }}>{format(new Date(r.date), 'dd MMM yyyy')}</td>
-                        <td className="px-4 py-3 text-sm font-bold text-white max-w-[150px] truncate">{supp}</td>
-                        <td className="px-4 py-3 text-sm font-bold text-white max-w-[150px] truncate lowercase">{r.projects?.name || '—'}</td>
-                        <td className="px-4 py-3">
-                          <p className="font-black text-gray-200 text-xs tracking-tight uppercase">{r.name}</p>
-                          <p className="font-bold text-zinc-500 text-[10px] uppercase mt-1">{r.quantity} {r.unit}</p>
+                      <tr key={i} className="hover:bg-white/[0.02] transition-colors">
+                        <td className="px-4 py-3 text-xs font-bold text-center" style={{ color: DIM }}>{page * 15 + i + 1}</td>
+                        <td className="px-4 py-3 text-xs font-bold whitespace-nowrap text-gray-300">
+                          {format(new Date(r.date), 'dd MMM yyyy')}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="text-[10px] font-bold" style={{ color: DIM }}>
-                            {matAmt && <div><span className="text-emerald-400">{matAmt}</span></div>}
-                            {tr && <div><span className="text-white">{tr}</span></div>}
-                            {ha && <div><span className="text-white">{ha}</span></div>}
-                            {!matAmt && !tr && !ha && '—'}
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-black text-white text-xs tracking-tight uppercase">
+                              {r.name}
+                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {r.quantity > 0 && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/5 text-gray-300 border border-white/10 uppercase">
+                                  {r.quantity} {r.unit || ''}
+                                </span>
+                              )}
+                              {p.brand && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase">
+                                  Brand: {p.brand}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs font-bold text-gray-300 capitalize">
+                          {r.projects?.name || '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-xs font-bold text-gray-200">
+                              {p.supplier}
+                            </span>
+                            {p.purchaseId && (
+                              <span className="text-[9px] font-mono text-zinc-500 font-bold">
+                                {p.purchaseId}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="text-[10px] font-semibold flex flex-col gap-0.5">
+                            {p.baseCost > 0 && (p.loadingCost > 0 || p.transportationCost > 0) && (
+                              <span className="text-gray-300">Base: <b className="text-white">₹{p.baseCost.toLocaleString('en-IN')}</b></span>
+                            )}
+                            {p.loadingCost > 0 && (
+                              <span className="text-amber-400/90">Loading: ₹{p.loadingCost.toLocaleString('en-IN')}</span>
+                            )}
+                            {p.transportationCost > 0 && (
+                              <span className="text-sky-400/90">Transport: ₹{p.transportationCost.toLocaleString('en-IN')}</span>
+                            )}
+                            {p.discount > 0 && (
+                              <span className="text-rose-400/90">Discount: -₹{p.discount.toLocaleString('en-IN')}</span>
+                            )}
+                            {!p.loadingCost && !p.transportationCost && (
+                              <span className="text-gray-400">Base: ₹{p.baseCost.toLocaleString('en-IN')}</span>
+                            )}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-xs" style={{ color: DIM }}>
-                          <div className="flex flex-col gap-1">
-                            {cleanNotes && <span>{cleanNotes}</span>}
-                            {attachmentLabel && (
-                              <span className="text-emerald-400 font-bold uppercase text-[9px] tracking-wide mt-0.5">
-                                📎 {attachmentLabel}
+                          <div className="flex flex-col gap-1 max-w-[200px]">
+                            {p.remarks ? (
+                              <span className="text-gray-300 text-xs break-words">{p.remarks}</span>
+                            ) : (
+                              <span className="text-zinc-600">—</span>
+                            )}
+                            {p.receiptUrl && (
+                              <span className="text-emerald-400 font-bold uppercase text-[9px] tracking-wide inline-flex items-center gap-1">
+                                📎 [Receipt Attached]
                               </span>
                             )}
-                            {!cleanNotes && !attachmentLabel && '—'}
                           </div>
                         </td>
-                        <td className="px-6 py-3 text-right font-black text-sm" style={{ color: GOLD }}>₹{Number(r.total_amount || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-5 py-3 text-right font-black text-sm whitespace-nowrap text-emerald-400">
+                          ₹{Number(p.totalAmount || 0).toLocaleString('en-IN')}
+                        </td>
                       </tr>
                     )
                   }
 
-                  // Other report types
+                  // Generic row for other reports
                   return (
-                    <tr key={i} style={{ borderBottom: '1px solid #1e2435' }} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-6 py-3 text-xs font-bold" style={{ color: DIM }}>{page * 15 + i + 1}</td>
-                      <td className="px-4 py-3 text-xs font-bold" style={{ color: DIM }}>{format(new Date(r.date), 'dd MMM yyyy')}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-white max-w-[200px] truncate">{getLabel(r)}</td>
-                      <td className="px-4 py-3 text-xs" style={{ color: DIM }}>{r.notes || '—'}</td>
-                      <td className="px-6 py-3 text-right font-black text-sm" style={{ color: GOLD }}>₹{Number(r.amount || r.total_amount || 0).toLocaleString('en-IN')}</td>
+                    <tr key={i} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="px-4 py-3 text-xs font-bold text-center" style={{ color: DIM }}>{page * 15 + i + 1}</td>
+                      <td className="px-4 py-3 text-xs font-bold whitespace-nowrap text-gray-300">{format(new Date(r.date), 'dd MMM yyyy')}</td>
+                      <td className="px-4 py-3 text-xs font-bold text-white max-w-[220px] truncate">{getLabel(r)}</td>
+                      <td className="px-4 py-3 text-xs max-w-[250px] truncate" style={{ color: DIM }}>{r.notes || '—'}</td>
+                      <td className="px-5 py-3 text-right font-black text-sm whitespace-nowrap text-emerald-400">₹{Number(r.amount || r.total_amount || 0).toLocaleString('en-IN')}</td>
                     </tr>
                   )
                 })}
               </tbody>
-              <tfoot>
-                <tr style={{ backgroundColor: '#0d1018', borderTop: '1px solid #1e2435' }}>
-                  <td colSpan={reportType === 'materials' ? 7 : 4} className="px-6 py-3 text-xs font-black uppercase tracking-widest text-right" style={{ color: DIM }}>Total</td>
-                  <td className="px-6 py-3 text-right font-black" style={{ color: '#22c55e' }}>₹{getTotal().toLocaleString('en-IN')}</td>
+              <tfoot className="bg-[#090b10] border-t-2 border-[#1e2435]">
+                <tr>
+                  <td colSpan={reportType === 'materials' ? 7 : 4} className="px-5 py-3.5 text-xs font-black uppercase tracking-widest text-right" style={{ color: DIM }}>
+                    Grand Total
+                  </td>
+                  <td className="px-5 py-3.5 text-right font-black text-base text-emerald-400 whitespace-nowrap">
+                    ₹{getTotal().toLocaleString('en-IN')}
+                  </td>
                 </tr>
               </tfoot>
             </table>
           </div>
+
           {data.length > 15 && (
-            <div className="flex items-center justify-between px-6 py-3 border-t" style={{ borderColor: '#1e2435' }}>
-              <button disabled={page === 0} onClick={() => setPage(p => p - 1)} className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
-              <span className="text-xs" style={{ color: DIM }}>Page {page + 1} / {Math.ceil(data.length / 15)}</span>
-              <button disabled={(page + 1) * 15 >= data.length} onClick={() => setPage(p => p + 1)} className="px-3 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
+            <div className="flex items-center justify-between px-6 py-3.5 border-t border-[#1e2435] bg-[#0d1018]">
+              <button disabled={page === 0} onClick={() => setPage(p => p - 1)} className="px-3.5 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40 transition-colors" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>← Prev</button>
+              <span className="text-xs font-bold" style={{ color: DIM }}>Page {page + 1} of {Math.ceil(data.length / 15)}</span>
+              <button disabled={(page + 1) * 15 >= data.length} onClick={() => setPage(p => p + 1)} className="px-3.5 py-1.5 text-xs font-bold rounded-lg disabled:opacity-40 transition-colors" style={{ backgroundColor: '#1a1f2e', color: '#f0f0f0', border: '1px solid #1e2435' }}>Next →</button>
             </div>
           )}
         </div>
       )}
 
       {!loading && data.length === 0 && (
-        <div className="text-center py-16 rounded-2xl" style={PANEL}>
-          <FileText size={40} style={{ color: DIM, opacity: 0.2, margin: '0 auto 12px' }} />
-          <p className="text-sm font-bold" style={{ color: DIM }}>Set filters above and click Generate Report</p>
+        <div className="text-center py-20 rounded-2xl border border-[#1e2435]" style={PANEL}>
+          <FileText size={44} style={{ color: DIM, opacity: 0.3, margin: '0 auto 12px' }} />
+          <p className="text-sm font-bold text-gray-300">Set filters above and click Generate Report</p>
+          <p className="text-xs mt-1 text-gray-500">View materials log, labour payments, and revenue summaries in one place.</p>
         </div>
       )}
     </div>
