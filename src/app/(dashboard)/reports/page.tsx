@@ -7,7 +7,7 @@ import { FileText, Download, Filter, Loader2, ChevronLeft, ChevronRight } from '
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
-import { drawPremiumHeader, drawPremiumFooter, PDF_COLORS, COMPANY_DETAILS } from '@/lib/report-utils'
+import { drawPremiumHeader, drawPremiumFooter, PDF_COLORS, COMPANY_DETAILS, numberToWords } from '@/lib/report-utils'
 import { toast } from 'sonner'
 
 const PANEL = { backgroundColor: '#111520', border: '1px solid #1e2435', borderRadius: '0.875rem' }
@@ -48,7 +48,9 @@ export default function ReportsPage() {
     }
   }, [data, reportType, projectId, startDate, endDate])
 
-  useEffect(() => { supabase.from('projects').select('*').order('name').then(({ data }) => setProjects(data || [])) }, [])
+  useEffect(() => { 
+    supabase.from('projects').select('*').order('name').then(({ data }) => setProjects(data || [])) 
+  }, [])
 
   // Auto-set dates
   useEffect(() => {
@@ -57,7 +59,6 @@ export default function ReportsPage() {
       setStartDate(format(import_startOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd'))
       setEndDate(format(import_endOfWeek(now, { weekStartsOn: 0 }), 'yyyy-MM-dd'))
     } else {
-      // For materials, revenue, extra work - default to project start to current date
       if (projectId && projects.length > 0) {
         const p = projects.find(x => x.id === projectId)
         if (p && p.created_at) {
@@ -79,8 +80,8 @@ export default function ReportsPage() {
   }
 
   const setPrevWeek = () => {
-    const prev = new Date();
-    prev.setDate(prev.getDate() - 7);
+    const prev = new Date()
+    prev.setDate(prev.getDate() - 7)
     setStartDate(format(import_startOfWeek(prev, { weekStartsOn: 0 }), 'yyyy-MM-dd'))
     setEndDate(format(import_endOfWeek(prev, { weekStartsOn: 0 }), 'yyyy-MM-dd'))
   }
@@ -213,12 +214,8 @@ export default function ReportsPage() {
 
           let br = parsed.brand
           if (br === '-' || br === 'null' || !br) br = ''
-
-          let pId = parsed.purchase_id
-          if (pId === '-' || pId === 'null' || !pId) pId = ''
           
           return {
-            purchaseId: pId,
             supplier: supp,
             supplierPhone: parsed.supplier_phone || '',
             brand: br,
@@ -263,7 +260,6 @@ export default function ReportsPage() {
       .trim()
 
     return {
-      purchaseId: '',
       supplier,
       supplierPhone,
       brand: '',
@@ -316,93 +312,70 @@ export default function ReportsPage() {
       const grandTotal = getTotal()
       const totalCount = data.length
 
-      // Top Executive Summary Metrics (Page 1)
-      doc.setFillColor(245, 248, 255)
-      doc.setDrawColor(218, 226, 240)
-      doc.roundedRect(12, 49, W - 24, 15, 2, 2, 'FD')
+      // Top Tabular Project & Metadata Form (matching Labour Slip styling)
+      autoTable(doc, {
+        startY: 50,
+        head: [],
+        body: [
+          ['Project Name', projName, 'Report Type', 'Materials Register'],
+          ['Period Scope', periodStr, 'Generated On', format(new Date(), 'dd/MM/yyyy hh:mm a')]
+        ],
+        theme: 'grid',
+        styles: {
+          fontSize: 8,
+          cellPadding: 2.5,
+          textColor: PDF_COLORS.NAVY,
+          lineColor: [210, 215, 225],
+          lineWidth: 0.15
+        },
+        columnStyles: {
+          0: { fontStyle: 'bold', fillColor: [243, 246, 253], cellWidth: 32 },
+          1: { cellWidth: 61, fontStyle: 'bold' },
+          2: { fontStyle: 'bold', fillColor: [243, 246, 253], cellWidth: 32 },
+          3: { cellWidth: 61 }
+        },
+        margin: { left: 12, right: 12 }
+      })
 
-      // 4 Metric columns
-      const colW = (W - 24) / 4
+      const detailsEndY = (doc as any).lastAutoTable.finalY
 
-      // Col 1: Total Spend
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7)
-      doc.setTextColor(...PDF_COLORS.MUTED)
-      doc.text('TOTAL EXPENDITURE', 16, 54)
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(10)
-      doc.setTextColor(...PDF_COLORS.BLUE)
-      doc.text(`Rs. ${grandTotal.toLocaleString('en-IN')}`, 16, 60.5)
-
-      // Col 2: Total Items
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7)
-      doc.setTextColor(...PDF_COLORS.MUTED)
-      doc.text('ENTRIES LOGGED', 12 + colW + 4, 54)
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(10)
-      doc.setTextColor(...PDF_COLORS.NAVY)
-      doc.text(`${totalCount} Records`, 12 + colW + 4, 60.5)
-
-      // Col 3: Project
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7)
-      doc.setTextColor(...PDF_COLORS.MUTED)
-      doc.text('PROJECT FILTER', 12 + colW * 2 + 4, 54)
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(9)
-      doc.setTextColor(...PDF_COLORS.NAVY)
-      const projTrunc = projName.length > 18 ? projName.substring(0, 18) + '...' : projName
-      doc.text(projTrunc, 12 + colW * 2 + 4, 60.5)
-
-      // Col 4: Generated Date
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7)
-      doc.setTextColor(...PDF_COLORS.MUTED)
-      doc.text('GENERATED ON', 12 + colW * 3 + 4, 54)
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(9)
-      doc.setTextColor(...PDF_COLORS.NAVY)
-      doc.text(format(new Date(), 'dd/MM/yyyy'), 12 + colW * 3 + 4, 60.5)
-
-      // Prepare Rows
+      // Prepare Rows (No Project Column - extra space given to Material, Cost & Supplier)
       const parsedItems = data.map((r, i) => {
         const p = parseMaterialInfo(r)
         const qtyText = r.quantity > 0 ? ` (${r.quantity} ${r.unit || ''})` : ''
         const brandText = p.brand ? `\nBrand: ${p.brand}` : ''
         const matDisplay = `${r.name || '—'}${qtyText}${brandText}`
         const suppDisplay = p.supplier !== '—' 
-          ? `${p.supplier}${p.purchaseId ? `\nPO: ${p.purchaseId}` : ''}` 
-          : (p.purchaseId ? `PO: ${p.purchaseId}` : '—')
+          ? (p.supplierPhone ? `${p.supplier}\nPh: ${p.supplierPhone}` : p.supplier)
+          : '—'
 
         const costParts: string[] = []
-        if (p.baseCost > 0 && (p.loadingCost > 0 || p.transportationCost > 0)) {
+        if (p.baseCost > 0 && (p.loadingCost > 0 || p.transportationCost > 0 || p.discount > 0)) {
           costParts.push(`Base: Rs.${p.baseCost.toLocaleString('en-IN')}`)
         }
         if (p.loadingCost > 0) costParts.push(`Loading: Rs.${p.loadingCost.toLocaleString('en-IN')}`)
         if (p.transportationCost > 0) costParts.push(`Trans: Rs.${p.transportationCost.toLocaleString('en-IN')}`)
-        if (p.discount > 0) costParts.push(`Disc: -Rs.${p.discount.toLocaleString('en-IN')}`)
+        if (p.discount > 0) costParts.push(`Discount: -Rs.${p.discount.toLocaleString('en-IN')}`)
 
         const costDisplay = costParts.length > 0 ? costParts.join('\n') : (p.baseCost > 0 ? `Base: Rs.${p.baseCost.toLocaleString('en-IN')}` : '—')
 
         return {
           index: i + 1,
           date: format(new Date(r.date), 'dd/MM/yyyy'),
-          project: r.projects?.name || '—',
           material: matDisplay,
           supplier: suppDisplay,
           cost: costDisplay,
+          hasDiscount: p.discount > 0,
           remarks: p.remarks || '—',
           amountNum: p.totalAmount,
           total: `Rs. ${p.totalAmount.toLocaleString('en-IN')}`
         }
       })
 
-      const head = [['S.No', 'Date', 'Project', 'Material & Brand', 'Supplier / PO', 'Cost Breakdown', 'Remarks', 'Total (Rs.)']]
+      const head = [['S.No', 'Date', 'Material & Brand / Qty', 'Supplier', 'Cost Breakdown', 'Remarks', 'Total (Rs.)']]
       const body = parsedItems.map(p => [
         p.index,
         p.date,
-        p.project,
         p.material,
         p.supplier,
         p.cost,
@@ -413,7 +386,7 @@ export default function ReportsPage() {
       const pageSubtotals: Record<number, number> = {}
 
       autoTable(doc, {
-        startY: 68,
+        startY: detailsEndY + 5,
         head: head,
         body: body,
         theme: 'grid',
@@ -436,15 +409,23 @@ export default function ReportsPage() {
         },
         columnStyles: {
           0: { cellWidth: 10, halign: 'center', fontStyle: 'bold' }, // S.No
-          1: { cellWidth: 18 },                                      // Date
-          2: { cellWidth: 24, fontStyle: 'bold' },                   // Project
-          3: { cellWidth: 35 },                                      // Material & Brand
-          4: { cellWidth: 28 },                                      // Supplier
-          5: { cellWidth: 26 },                                      // Cost breakdown
-          6: { cellWidth: 25 },                                      // Remarks
-          7: { cellWidth: 20, halign: 'right', fontStyle: 'bold' }   // Total
+          1: { cellWidth: 22 },                                      // Date
+          2: { cellWidth: 44, fontStyle: 'bold' },                   // Material & Brand
+          3: { cellWidth: 34 },                                      // Supplier
+          4: { cellWidth: 38 },                                      // Cost breakdown
+          5: { cellWidth: 22 },                                      // Remarks
+          6: { cellWidth: 16, halign: 'right', fontStyle: 'bold' }   // Total
         },
         margin: { left: 12, right: 12, top: 48, bottom: 24 },
+        didParseCell: (cellData) => {
+          if (cellData.section === 'body') {
+            // Total Column Color
+            if (cellData.column.index === 6) {
+              cellData.cell.styles.textColor = [22, 163, 74] // Emerald Green
+              cellData.cell.styles.fontStyle = 'bold'
+            }
+          }
+        },
         didDrawCell: (cellData) => {
           if (cellData.section === 'body' && cellData.column.index === 0) {
             const rowIndex = cellData.row.index
@@ -484,11 +465,12 @@ export default function ReportsPage() {
       const totalTrans = parsedItems.reduce((sum, _, i) => sum + parseMaterialInfo(data[i]).transportationCost, 0)
       const totalLoading = parsedItems.reduce((sum, _, i) => sum + parseMaterialInfo(data[i]).loadingCost, 0)
       const totalBase = parsedItems.reduce((sum, _, i) => sum + parseMaterialInfo(data[i]).baseCost, 0)
+      const totalDiscount = parsedItems.reduce((sum, _, i) => sum + parseMaterialInfo(data[i]).discount, 0)
 
       let finalY = (doc as any).lastAutoTable.finalY + 6
-      const summaryBlockH = 42
+      const summaryBlockH = totalDiscount > 0 ? 34 : 28
 
-      // Check if we need a new page for Grand Summary and Signatures
+      // Check if we need a new page for Summary Table
       if (finalY + summaryBlockH > H - 24) {
         doc.addPage()
         drawPremiumHeader(doc, 'MATERIALS REPORT (SUMMARY)', periodStr)
@@ -496,64 +478,59 @@ export default function ReportsPage() {
         finalY = 52
       }
 
-      // Grand Summary Box
-      doc.setFillColor(243, 247, 255)
-      doc.setDrawColor(...PDF_COLORS.BLUE)
-      doc.setLineWidth(0.4)
-      doc.roundedRect(12, finalY, W - 24, 20, 2, 2, 'FD')
+      // ── Tabular Summary Table (matching Labour slip format, no signatures) ──
+      const summaryRows: any[][] = [
+        ['Total Base Material Cost', `Rs. ${totalBase.toLocaleString('en-IN')}`, 'Total Items Logged', `${totalCount} Records`],
+        ['Total Transportation Cost', `Rs. ${totalTrans.toLocaleString('en-IN')}`, 'Total Loading / Hamali', `Rs. ${totalLoading.toLocaleString('en-IN')}`]
+      ]
+      if (totalDiscount > 0) {
+        summaryRows.push(['Total Discounts Applied', `-Rs. ${totalDiscount.toLocaleString('en-IN')}`, 'Project Filter', projName])
+      }
+      summaryRows.push(['GRAND TOTAL EXPENDITURE', `Rs. ${grandTotal.toLocaleString('en-IN')}`, 'Amount in Words', numberToWords(grandTotal)])
 
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(8)
-      doc.setTextColor(...PDF_COLORS.NAVY)
-      doc.text('EXECUTIVE COST BREAKDOWN', 16, finalY + 5.5)
-
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7.5)
-      doc.setTextColor(...PDF_COLORS.MUTED)
-      doc.text(`Base Materials: Rs. ${totalBase.toLocaleString('en-IN')}  |  Loading/Hamali: Rs. ${totalLoading.toLocaleString('en-IN')}  |  Transport: Rs. ${totalTrans.toLocaleString('en-IN')}`, 16, finalY + 10.5)
-
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(7)
-      doc.setTextColor(80, 90, 110)
-      doc.text(`Total Records: ${totalCount} Material Logs`, 16, finalY + 15.5)
-
-      // Right Side: Grand Total Highlight
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(8)
-      doc.setTextColor(...PDF_COLORS.MUTED)
-      doc.text('GRAND TOTAL AMOUNT', W - 16, finalY + 6, { align: 'right' })
-
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(13)
-      doc.setTextColor(22, 163, 74) // Emerald Green
-      doc.text(`Rs. ${grandTotal.toLocaleString('en-IN')}`, W - 16, finalY + 14, { align: 'right' })
-
-      // Signatures
-      const sigY = finalY + 28
-      doc.setDrawColor(180, 195, 215)
-      doc.setLineWidth(0.3)
-
-      const sigW = 48
-      // Sig 1
-      doc.line(16, sigY + 8, 16 + sigW, sigY + 8)
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(7)
-      doc.setTextColor(...PDF_COLORS.NAVY)
-      doc.text('PREPARED BY (ACCOUNTS)', 16 + sigW / 2, sigY + 12, { align: 'center' })
-
-      // Sig 2
-      const sig2X = (W - sigW) / 2
-      doc.line(sig2X, sigY + 8, sig2X + sigW, sigY + 8)
-      doc.text('SITE SUPERVISOR / ENGINEER', sig2X + sigW / 2, sigY + 12, { align: 'center' })
-
-      // Sig 3
-      const sig3X = W - 16 - sigW
-      doc.line(sig3X, sigY + 8, sig3X + sigW, sigY + 8)
-      doc.text('AUTHORIZED CONTRACTOR', sig3X + sigW / 2, sigY + 12, { align: 'center' })
+      autoTable(doc, {
+        startY: finalY,
+        head: [],
+        body: summaryRows,
+        theme: 'grid',
+        styles: {
+          fontSize: 8,
+          cellPadding: 2.6,
+          textColor: PDF_COLORS.NAVY,
+          lineColor: [210, 215, 225],
+          lineWidth: 0.15
+        },
+        columnStyles: {
+          0: { fontStyle: 'bold', fillColor: [243, 246, 253], cellWidth: 46 },
+          1: { cellWidth: 47, fontStyle: 'bold' },
+          2: { fontStyle: 'bold', fillColor: [243, 246, 253], cellWidth: 46 },
+          3: { cellWidth: 47 }
+        },
+        margin: { left: 12, right: 12 },
+        didParseCell: (cellData) => {
+          // Highlight Grand Total row
+          if (cellData.row.index === summaryRows.length - 1) {
+            if (cellData.column.index === 0) {
+              cellData.cell.styles.fillColor = PDF_COLORS.BLUE
+              cellData.cell.styles.textColor = [255, 255, 255]
+              cellData.cell.styles.fontStyle = 'bold'
+            } else if (cellData.column.index === 1) {
+              cellData.cell.styles.fillColor = [236, 253, 245]
+              cellData.cell.styles.textColor = [22, 163, 74]
+              cellData.cell.styles.fontStyle = 'bold'
+              cellData.cell.styles.fontSize = 9.5
+            }
+          }
+          // Highlight discount in red
+          if (totalDiscount > 0 && cellData.row.index === 2 && cellData.column.index === 1) {
+            cellData.cell.styles.textColor = [220, 38, 38]
+          }
+        }
+      })
 
       const fileNameSuffix = projectId ? `${projName.toLowerCase().replace(/\s+/g, '_')}` : 'all_projects'
       doc.save(`materials_report_${fileNameSuffix}_${format(new Date(), 'yyyyMMdd')}.pdf`)
-      toast.success('Professional Materials Report Exported!')
+      toast.success('Materials Report PDF Exported!')
       return
     }
 
@@ -566,7 +543,7 @@ export default function ReportsPage() {
       r.notes || '—',
       `Rs. ${Number(r.amount || r.total_amount || 0).toLocaleString('en-IN')}`
     ])
-    let foot = [['', '', '', 'TOTAL', `Rs. ${getTotal().toLocaleString('en-IN')}`]]
+    let foot = [['', '', '', 'TOTAL', `Rs.${getTotal().toLocaleString('en-IN')}`]]
 
     autoTable(doc, {
       startY: 54,
@@ -692,7 +669,7 @@ export default function ReportsPage() {
                     <>
                       <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Material & Details</th>
                       <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Project</th>
-                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Supplier / PO</th>
+                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Supplier</th>
                       <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest" style={{ color: DIM }}>Cost Breakdown</th>
                     </>
                   ) : (
@@ -740,28 +717,30 @@ export default function ReportsPage() {
                             <span className="text-xs font-bold text-gray-200">
                               {p.supplier}
                             </span>
-                            {p.purchaseId && (
-                              <span className="text-[9px] font-mono text-zinc-500 font-bold">
-                                {p.purchaseId}
+                            {p.supplierPhone && (
+                              <span className="text-[10px] text-zinc-400 font-mono">
+                                Ph: {p.supplierPhone}
                               </span>
                             )}
                           </div>
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-[10px] font-semibold flex flex-col gap-0.5">
-                            {p.baseCost > 0 && (p.loadingCost > 0 || p.transportationCost > 0) && (
+                            {p.baseCost > 0 && (p.loadingCost > 0 || p.transportationCost > 0 || p.discount > 0) && (
                               <span className="text-gray-300">Base: <b className="text-white">₹{p.baseCost.toLocaleString('en-IN')}</b></span>
                             )}
                             {p.loadingCost > 0 && (
-                              <span className="text-amber-400/90">Loading: ₹{p.loadingCost.toLocaleString('en-IN')}</span>
+                              <span className="text-amber-400/90 font-medium">Loading: ₹{p.loadingCost.toLocaleString('en-IN')}</span>
                             )}
                             {p.transportationCost > 0 && (
-                              <span className="text-sky-400/90">Transport: ₹{p.transportationCost.toLocaleString('en-IN')}</span>
+                              <span className="text-sky-400/90 font-medium">Transport: ₹{p.transportationCost.toLocaleString('en-IN')}</span>
                             )}
                             {p.discount > 0 && (
-                              <span className="text-rose-400/90">Discount: -₹{p.discount.toLocaleString('en-IN')}</span>
+                              <span className="text-red-400 font-bold bg-red-500/10 px-1 py-0.5 rounded border border-red-500/20 w-fit">
+                                Discount: -₹{p.discount.toLocaleString('en-IN')}
+                              </span>
                             )}
-                            {!p.loadingCost && !p.transportationCost && (
+                            {!p.loadingCost && !p.transportationCost && !p.discount && (
                               <span className="text-gray-400">Base: ₹{p.baseCost.toLocaleString('en-IN')}</span>
                             )}
                           </div>
