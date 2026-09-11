@@ -62,6 +62,7 @@ interface ParsedMaterialNotes {
   final_paid_amount: number
   remarks: string | null
   is_erp_v3: boolean
+  is_pending_pricing: boolean
 }
 
 const parseMaterialNotes = (notesStr: string | null | undefined): ParsedMaterialNotes => {
@@ -79,7 +80,8 @@ const parseMaterialNotes = (notesStr: string | null | undefined): ParsedMaterial
           calculated_total: parsed.calculated_total || 0,
           final_paid_amount: parsed.final_paid_amount || 0,
           remarks: parsed.remarks || null,
-          is_erp_v3: true
+          is_erp_v3: true,
+          is_pending_pricing: !!parsed.is_pending_pricing || parsed.final_paid_amount === 0
         }
       }
     } catch (e) {}
@@ -90,6 +92,7 @@ const parseMaterialNotes = (notesStr: string | null | undefined): ParsedMaterial
   const supMatch = notes.match(/Supplier:\s(.*?)(?:\s\(|$)/)
   const transMatch = notes.match(/Transportation:\sRs\.([\d,.]+)/)
   const hamaliMatch = notes.match(/Hamali:\sRs\.([\d,.]+)/)
+  const isPendingInNotes = notes.toLowerCase().includes('price pending') || notes.toLowerCase().includes('pending pricing')
   
   const detailCleanNotes = notes
     .replace(/Supplier:\s(.*?)(?:\s\(|$)/, '')
@@ -97,6 +100,7 @@ const parseMaterialNotes = (notesStr: string | null | undefined): ParsedMaterial
     .replace(/Material Amount:\sRs\.([\d,.]+)(?:\s\||$)/, '')
     .replace(/Transportation:\sRs\.([\d,.]+)(?:\s\||$)/, '')
     .replace(/Hamali:\sRs\.([\d,.]+)(?:\s\||$)/, '')
+    .replace(/Price Pending.*?(\||$)/i, '')
     .replace(/^[\s\|]+|[\s\|]+$/g, '')
     .trim()
 
@@ -110,8 +114,18 @@ const parseMaterialNotes = (notesStr: string | null | undefined): ParsedMaterial
     calculated_total: 0,
     final_paid_amount: 0,
     remarks: detailCleanNotes || null,
-    is_erp_v3: false
+    is_erp_v3: false,
+    is_pending_pricing: isPendingInNotes
   }
+}
+
+const isMaterialPendingPricing = (item: any): boolean => {
+  if (!item) return false
+  const parsed = parseMaterialNotes(item.notes)
+  if (parsed.is_pending_pricing) return true
+  const paid = item.total_amount ?? item.total_cost ?? 0
+  const rate = item.cost_per_unit ?? 0
+  return paid === 0 && rate === 0
 }
 
 const getPaidAmountForMaterial = (item: any): number => {
@@ -164,26 +178,46 @@ interface MaterialCardProps {
   onEdit: (item: Material) => void
   onView: (item: Material) => void
   onTogglePayment: (item: Material) => void
+  onSettle?: (item: Material) => void
   isGroupExpanded?: boolean
   onToggleExpand?: (e: React.MouseEvent) => void
   groupItems?: Material[]
 }
 
-function MaterialCard({ item, cleanNotesVal, onDelete, onEdit, onView, onTogglePayment, groupItems, isGroupExpanded, onToggleExpand }: MaterialCardProps) {
+function MaterialCard({ item, cleanNotesVal, onDelete, onEdit, onView, onTogglePayment, onSettle, groupItems, isGroupExpanded, onToggleExpand }: MaterialCardProps) {
   const parsed = parseMaterialNotes(item.notes)
   const supplierDisplay = parsed.supplier !== '—' ? parsed.supplier : ''
+  const isPending = isMaterialPendingPricing(item)
 
   return (
     <div
-      style={{
-        backgroundColor: '#111520',
-        border: '1px solid #1e2435',
-      }}
-      className="relative rounded-xl p-4 flex flex-col gap-3 transition-all hover:scale-[1.01]"
+      style={
+        isPending
+          ? {
+              backgroundColor: '#18140c',
+              border: '1px solid rgba(245, 158, 11, 0.45)',
+              boxShadow: '0 0 20px rgba(245, 158, 11, 0.08)'
+            }
+          : {
+              backgroundColor: '#111520',
+              border: '1px solid #1e2435',
+            }
+      }
+      className={cn(
+        "relative rounded-xl p-4 flex flex-col gap-3 transition-all hover:scale-[1.01]",
+        isPending && "ring-1 ring-amber-500/20"
+      )}
     >
       <div className="flex justify-between items-start gap-2">
         <div className="flex-1 min-w-0">
-          <p className="font-bold text-white text-sm truncate">{item.projects?.name}</p>
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <p className="font-bold text-white text-sm truncate">{item.projects?.name}</p>
+            {isPending && (
+              <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 inline-flex items-center gap-1 shadow-sm animate-pulse">
+                ⏳ Price Pending / Settle Later
+              </span>
+            )}
+          </div>
           <p className="font-black text-blue-400 text-[11px] tracking-tight uppercase mt-0.5 truncate">
             {item.name}{parsed.brand ? ` (${parsed.brand})` : ''}
           </p>
@@ -196,7 +230,7 @@ function MaterialCard({ item, cleanNotesVal, onDelete, onEdit, onView, onToggleP
             <span className="text-[10px] font-bold text-zinc-500">
               {format(new Date(item.date), 'dd MMM yyyy')} · {item.quantity} {item.unit}
             </span>
-            {item.payment_system_v2 && (
+            {item.payment_system_v2 && !isPending && (
               <span
                 className={cn(
                   "px-1.5 py-0.5 rounded text-[8px] font-bold uppercase cursor-pointer border select-none transition-all",
@@ -221,20 +255,29 @@ function MaterialCard({ item, cleanNotesVal, onDelete, onEdit, onView, onToggleP
           </div>
         </div>
         <div className="text-right shrink-0">
-          <p className="font-black text-white text-sm">₹ {getPaidAmountForMaterial(item).toLocaleString('en-IN')}</p>
-          {(() => {
-            const paid = getPaidAmountForMaterial(item)
-            const saved = (item.total_amount || 0) - paid
-            if (saved > 0) {
-              return <p className="text-[8px] font-black text-emerald-400 mt-0.5">Saved ₹{saved.toLocaleString('en-IN')}</p>
-            }
-            if (item.payment_status !== 'paid' && item.payment_system_v2) {
-              return <p className="text-[8px] font-black text-red-400 mt-0.5">Unpaid</p>
-            }
-            return null
-          })()}
-          {item.cost_per_unit > 0 && (
-            <p className="text-[9px] font-bold text-zinc-500 mt-0.5">@ ₹{item.cost_per_unit}</p>
+          {isPending ? (
+            <div className="space-y-0.5">
+              <p className="font-black text-amber-400 text-sm">₹ 0.00</p>
+              <p className="text-[8px] font-black text-amber-500 uppercase tracking-wider">Pending Price</p>
+            </div>
+          ) : (
+            <>
+              <p className="font-black text-white text-sm">₹ {getPaidAmountForMaterial(item).toLocaleString('en-IN')}</p>
+              {(() => {
+                const paid = getPaidAmountForMaterial(item)
+                const saved = (item.total_amount || 0) - paid
+                if (saved > 0) {
+                  return <p className="text-[8px] font-black text-emerald-400 mt-0.5">Saved ₹{saved.toLocaleString('en-IN')}</p>
+                }
+                if (item.payment_status !== 'paid' && item.payment_system_v2) {
+                  return <p className="text-[8px] font-black text-red-400 mt-0.5">Unpaid</p>
+                }
+                return null
+              })()}
+              {item.cost_per_unit > 0 && (
+                <p className="text-[9px] font-bold text-zinc-500 mt-0.5">@ ₹{item.cost_per_unit}</p>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -244,6 +287,14 @@ function MaterialCard({ item, cleanNotesVal, onDelete, onEdit, onView, onToggleP
       ) : null}
 
       <div className="flex items-center justify-end gap-2 pt-1 border-t border-zinc-800/60">
+        {isPending && onSettle && (
+          <button
+            onClick={() => onSettle(item)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500 hover:text-black cursor-pointer shadow-sm shadow-amber-500/10"
+          >
+            <DollarSign size={10} /> Settle Price
+          </button>
+        )}
         <button
           onClick={() => onView(item)}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 bg-blue-500/10 border border-blue-500/20 text-blue-400 cursor-pointer"
@@ -646,9 +697,10 @@ export default function MaterialsPage() {
     })
     const t = parseFloat(commonTransport) || 0
     const l = parseFloat(commonLoading) || 0
-    const calculatedTotal = materialTotal + t + l
+    const directLumpSum = isPaidAmountManuallyEdited ? (parseFloat(commonPaidAmount) || 0) : 0
+    const calculatedTotal = materialTotal > 0 ? (materialTotal + t + l) : (directLumpSum > 0 ? (directLumpSum + t + l) : (t + l))
     const paid = isPaidAmountManuallyEdited ? (parseFloat(commonPaidAmount) || 0) : calculatedTotal
-    const discount = calculatedTotal - paid
+    const discount = Math.max(0, calculatedTotal - paid)
     return {
       materialTotal,
       calculatedTotal,
@@ -797,6 +849,25 @@ export default function MaterialsPage() {
     remarks: ''
   })
   const [paymentSaving, setPaymentSaving] = useState(false)
+
+  // Creation Pending Pricing Mode
+  const [isCreationPendingPricing, setIsCreationPendingPricing] = useState(false)
+
+  // Quick Settle Price Modal States
+  const [showSettleModal, setShowSettleModal] = useState(false)
+  const [settleItem, setSettleItem] = useState<Material | null>(null)
+  const [settleAmount, setSettleAmount] = useState('')
+  const [settleQty, setSettleQty] = useState('')
+  const [settleUnit, setSettleUnit] = useState('')
+  const [settleRate, setSettleRate] = useState('')
+  const [settleSupplier, setSettleSupplier] = useState('')
+  const [settleTransport, setSettleTransport] = useState('')
+  const [settleHamali, setSettleHamali] = useState('')
+  const [settleRemarks, setSettleRemarks] = useState('')
+  const [settlePaymentStatus, setSettlePaymentStatus] = useState<'paid' | 'unpaid'>('unpaid')
+  const [settlePaymentMode, setSettlePaymentMode] = useState<'cash' | 'online'>('cash')
+  const [settleAccountName, setSettleAccountName] = useState('')
+  const [settleSaving, setSettleSaving] = useState(false)
 
   // Consolidated filter modal states
   const [showFilterModal, setShowFilterModal] = useState(false)
@@ -962,6 +1033,76 @@ export default function MaterialsPage() {
     }
   }
 
+  const handleOpenSettleModal = (item: Material) => {
+    setSettleItem(item)
+    const parsed = parseMaterialNotes(item.notes)
+    setSettleAmount(String(item.total_amount || item.total_cost || ''))
+    setSettleQty(String(item.quantity || ''))
+    setSettleUnit(item.unit || 'Units')
+    setSettleRate(String(item.cost_per_unit || ''))
+    setSettleSupplier(parsed.supplier !== '—' ? parsed.supplier : '')
+    setSettleTransport(parsed.transportation_cost ? String(parsed.transportation_cost) : '')
+    setSettleHamali(parsed.loading_cost ? String(parsed.loading_cost) : '')
+    setSettleRemarks(parsed.remarks || '')
+    setSettlePaymentStatus(item.payment_status || 'unpaid')
+    setSettlePaymentMode((item.payment_mode as 'cash' | 'online') || 'cash')
+    setSettleAccountName(item.account_name || '')
+    setShowSettleModal(true)
+  }
+
+  const handleSaveSettlement = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!settleItem) return
+    setSettleSaving(true)
+    try {
+      const agreedPaid = parseFloat(settleAmount) || 0
+      const q = parseFloat(settleQty) || settleItem.quantity || 1
+      const r = parseFloat(settleRate) || (agreedPaid > 0 && q > 0 ? parseFloat((agreedPaid / q).toFixed(2)) : 0)
+      const trans = parseFloat(settleTransport) || 0
+      const load = parseFloat(settleHamali) || 0
+      const calcTotal = (q * r) + trans + load
+      const disc = Math.max(0, calcTotal - agreedPaid)
+
+      const notesJson = JSON.stringify({
+        purchase_id: 'PUR-' + Date.now(),
+        supplier: settleSupplier.trim() || 'Direct Purchase',
+        brand: null,
+        transportation_cost: trans,
+        loading_cost: load,
+        discount: disc,
+        calculated_total: calcTotal || agreedPaid,
+        final_paid_amount: agreedPaid,
+        remarks: settleRemarks.trim() || null,
+        is_erp_v3: true,
+        is_pending_pricing: false
+      })
+
+      const { error } = await supabase.from('materials').update({
+        quantity: q,
+        unit: settleUnit || settleItem.unit || 'Units',
+        cost_per_unit: r,
+        total_amount: agreedPaid,
+        notes: notesJson,
+        payment_system_v2: true,
+        payment_status: settlePaymentStatus,
+        payment_mode: settlePaymentStatus === 'paid' ? settlePaymentMode : null,
+        account_name: settlePaymentStatus === 'paid' && settlePaymentMode === 'online' ? (settleAccountName.trim() || null) : null,
+        payment_date: settlePaymentStatus === 'paid' ? format(new Date(), 'yyyy-MM-dd') : null
+      }).eq('id', settleItem.id)
+
+      if (error) throw error
+
+      toast.success(`Price settled for ${settleItem.name}: ₹${agreedPaid.toLocaleString('en-IN')}`)
+      setShowSettleModal(false)
+      setSettleItem(null)
+      fetchData()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to settle price')
+    } finally {
+      setSettleSaving(false)
+    }
+  }
+
   const handleSaveMat = async () => {
     if (!editingMat) return
     setEditSaving(true)
@@ -975,35 +1116,45 @@ export default function MaterialsPage() {
       if (editNotesParsed) {
         const trans = parseFloat(commonTransport) || 0
         const load = parseFloat(commonLoading) || 0
-        const calcTotal = cost + trans + load
-        const finalPaid = parseFloat(commonPaidAmount) || calcTotal
-        const disc = calcTotal - finalPaid
+        const calcTotal = cost > 0 ? (cost + trans + load) : (parseFloat(commonPaidAmount) || 0)
+        const finalPaid = parseFloat(commonPaidAmount) !== undefined && !isNaN(parseFloat(commonPaidAmount)) 
+          ? parseFloat(commonPaidAmount) 
+          : calcTotal
+        const disc = Math.max(0, calcTotal - finalPaid)
         finalItemPaid = finalPaid
 
         updatedNotes = JSON.stringify({
           ...editNotesParsed,
-          supplier: supplierName.trim(),
+          supplier: supplierName.trim() || 'Direct Purchase',
           transportation_cost: trans,
           loading_cost: load,
           discount: disc,
           calculated_total: calcTotal,
           final_paid_amount: finalPaid,
-          remarks: editMatData.notes.trim() || null
+          remarks: editMatData.notes.trim() || null,
+          is_pending_pricing: finalPaid === 0
         })
       } else {
-        updatedNotes = [
-          supplierName ? `Supplier: ${supplierName}` : '',
-          editMatData.notes,
-          cost > 0 ? `Material Amount: Rs.${cost}` : '',
-          commonTransport ? `Transportation: Rs.${commonTransport}` : '',
-          commonLoading ? `Hamali: Rs.${commonLoading}` : ''
-        ].filter(Boolean).join(' | ')
+        const finalPaid = parseFloat(commonPaidAmount) || cost
+        finalItemPaid = finalPaid
+        updatedNotes = JSON.stringify({
+          purchase_id: 'PUR-' + Date.now(),
+          supplier: supplierName.trim() || 'Direct Purchase',
+          transportation_cost: parseFloat(commonTransport) || 0,
+          loading_cost: parseFloat(commonLoading) || 0,
+          discount: 0,
+          calculated_total: finalPaid,
+          final_paid_amount: finalPaid,
+          remarks: editMatData.notes.trim() || null,
+          is_erp_v3: true,
+          is_pending_pricing: finalPaid === 0
+        })
       }
 
       const { error } = await supabase.from('materials').update({
         name: editMatData.name,
-        quantity: q,
-        unit: editMatData.unit,
+        quantity: q || 1,
+        unit: editMatData.unit || 'Units',
         cost_per_unit: r,
         total_amount: finalItemPaid,
         notes: updatedNotes,
@@ -1330,30 +1481,19 @@ export default function MaterialsPage() {
       toast.error('Please select a project/site location')
       return
     }
-    if (!commonSupplier.trim()) {
-      toast.error('Supplier name is required')
-      return
-    }
+    const effectiveSupplier = commonSupplier.trim() || 'Direct Purchase'
+
     if (purchaseItems.length === 0) {
       toast.error('Please add at least one material item')
       return
     }
 
-    // Verify all items have names, quantities, and rates
+    // Verify all items have names
     for (let i = 0; i < purchaseItems.length; i++) {
       const item = purchaseItems[i]
-      if (!item.name) {
+      const actualName = item.name === 'Other / Miscellaneous' ? (item.customName?.trim() || 'Other') : item.name
+      if (!actualName) {
         toast.error(`Item #${i + 1} has no material selected`)
-        return
-      }
-      const qty = parseFloat(item.quantity)
-      if (isNaN(qty) || qty <= 0) {
-        toast.error(`Please enter a valid quantity for Item #${i + 1} (${item.name})`)
-        return
-      }
-      const rate = parseFloat(item.cost_per_unit)
-      if (isNaN(rate) || rate < 0) {
-        toast.error(`Please enter a valid unit rate for Item #${i + 1} (${item.name})`)
         return
       }
     }
@@ -1379,8 +1519,9 @@ export default function MaterialsPage() {
       // Generate unique purchase ID
       const purchaseId = 'PUR-' + Date.now()
 
-      // Map rows with distributed final paid amounts to avoid floating-point/rounding errors
-      const totalPaidBill = purchaseStats.paid
+      const isPending = isCreationPendingPricing || (purchaseStats.paid === 0 && purchaseStats.calculatedTotal === 0)
+      const totalPaidBill = isPending ? 0 : purchaseStats.paid
+
       const matTotalCost = purchaseItems.reduce((acc, item) => {
         const qty = parseFloat(item.quantity) || 0
         const rate = parseFloat(item.cost_per_unit) || 0
@@ -1389,48 +1530,51 @@ export default function MaterialsPage() {
 
       let allocatedSum = 0
       const dbPayloads = purchaseItems.map((item, idx) => {
-        const qty = parseFloat(item.quantity) || 0
+        const qty = parseFloat(item.quantity) || 1
         const rate = parseFloat(item.cost_per_unit) || 0
         const cost = qty * rate
 
         let finalItemPaid = 0
-        if (idx === purchaseItems.length - 1) {
+        if (isPending) {
+          finalItemPaid = 0
+        } else if (idx === purchaseItems.length - 1) {
           // Last item absorbs any remainder to match totalPaidBill exactly
-          finalItemPaid = totalPaidBill - allocatedSum
+          finalItemPaid = Math.max(0, totalPaidBill - allocatedSum)
         } else {
-          const proportion = matTotalCost > 0 ? (cost / matTotalCost) : 0
+          const proportion = matTotalCost > 0 ? (cost / matTotalCost) : (1 / purchaseItems.length)
           finalItemPaid = Math.round(totalPaidBill * proportion)
           allocatedSum += finalItemPaid
         }
 
         const notesJson = JSON.stringify({
           purchase_id: purchaseId,
-          supplier: commonSupplier.trim(),
+          supplier: effectiveSupplier,
           brand: item.brand.trim() || null,
           transportation_cost: parseFloat(commonTransport) || 0,
           loading_cost: parseFloat(commonLoading) || 0,
-          discount: purchaseStats.discount,
-          calculated_total: purchaseStats.calculatedTotal,
-          final_paid_amount: purchaseStats.paid,
-          remarks: commonRemarks.trim() || null,
-          is_erp_v3: true
+          discount: isPending ? 0 : purchaseStats.discount,
+          calculated_total: isPending ? 0 : purchaseStats.calculatedTotal,
+          final_paid_amount: finalItemPaid,
+          remarks: commonRemarks.trim() || (isPending ? 'Pricing Pending / Settle Later' : null),
+          is_erp_v3: true,
+          is_pending_pricing: isPending
         })
 
         return {
           project_id: formData.project_id,
           name: item.name === 'Other / Miscellaneous' ? (item.customName?.trim() || 'Other') : item.name,
           quantity: qty,
-          unit: item.unit,
+          unit: item.unit || 'Units',
           cost_per_unit: rate,
           total_amount: finalItemPaid,
           date: commonDate,
           notes: notesJson,
           receipt_url: uploadedUrl,
           payment_system_v2: true,
-          payment_status: creationPaymentStatus,
-          payment_mode: creationPaymentStatus === 'paid' ? creationPaymentMode : null,
-          account_name: creationPaymentStatus === 'paid' && creationPaymentMode === 'online' ? (creationAccountName.trim() || null) : null,
-          payment_date: creationPaymentStatus === 'paid' ? commonDate : null
+          payment_status: isPending ? 'unpaid' : creationPaymentStatus,
+          payment_mode: (!isPending && creationPaymentStatus === 'paid') ? creationPaymentMode : null,
+          account_name: (!isPending && creationPaymentStatus === 'paid' && creationPaymentMode === 'online') ? (creationAccountName.trim() || null) : null,
+          payment_date: (!isPending && creationPaymentStatus === 'paid') ? commonDate : null
         }
       })
 
@@ -1438,16 +1582,20 @@ export default function MaterialsPage() {
       const { error } = await supabase.from('materials').insert(dbPayloads)
       if (error) throw error
 
-      toast.success(`Successfully logged purchase with ${purchaseItems.length} items!`)
+      toast.success(isPending 
+        ? `Logged ${purchaseItems.length} delivery items with Price Pending!`
+        : `Successfully logged purchase with ${purchaseItems.length} items!`
+      )
       
       // Reset form
-      setPurchaseItems([{ name: 'Cement', brand: '', quantity: '', unit: 'Bags', cost_per_unit: '', unitLocked: true }])
+      setPurchaseItems([{ name: 'Cement', brand: '', quantity: '', unit: 'Bags', cost_per_unit: '', unitLocked: true, customName: '' }])
       setCommonSupplier('')
       setCommonTransport('')
       setCommonLoading('')
       setCommonRemarks('')
       setCommonPaidAmount('')
       setIsPaidAmountManuallyEdited(false)
+      setIsCreationPendingPricing(false)
       setReceiptFile(null)
       setCreationPaymentStatus('unpaid')
       setCreationPaymentMode('cash')
@@ -1773,10 +1921,16 @@ export default function MaterialsPage() {
                               const isMultiple = group.items.length > 1
                               const displayName = isMultiple ? `${item.name} + ${group.items.length - 1} more` : `${item.name}${parsed.brand ? ` (${parsed.brand})` : ''}`
                               const isExpanded = !!expandedGroups[group.id]
+                              const isPending = isMaterialPendingPricing(item)
                               return (
                                 <React.Fragment key={group.id}>
                                   <TableRow 
-                                    className={cn("border-zinc-800 transition-colors hover:bg-white/5", selectedDetailItem?.id === group.id && "bg-white/5 border-l-2 border-l-blue-500", isExpanded && "bg-white/[0.02]")}
+                                    className={cn(
+                                      "border-zinc-800 transition-colors hover:bg-white/5", 
+                                      selectedDetailItem?.id === group.id && "bg-white/5 border-l-2 border-l-blue-500",
+                                      isPending && "bg-amber-950/15 border-l-2 border-l-amber-500 hover:bg-amber-950/25",
+                                      isExpanded && "bg-white/[0.02]"
+                                    )}
                                     onClick={(e) => {
                                       if (isMultiple) {
                                         toggleGroup(group.id, e)
@@ -1790,7 +1944,10 @@ export default function MaterialsPage() {
                                     </TableCell>
                                     <TableCell className="py-1.5 font-bold text-white text-sm whitespace-nowrap">
                                       <div className="flex items-center gap-2">
-                                        <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-[#1e2435] text-zinc-300">
+                                        <span className={cn(
+                                          "px-2 py-1 rounded-lg text-[10px] font-black uppercase",
+                                          isPending ? "bg-amber-500/15 text-amber-300 border border-amber-500/30" : "bg-[#1e2435] text-zinc-300"
+                                        )}>
                                           {displayName}
                                         </span>
                                         {isMultiple && (
@@ -1813,16 +1970,24 @@ export default function MaterialsPage() {
                                     )}
                                   </TableCell>
                                   <TableCell className="py-1.5 text-right px-4">
-                                    <p className="font-black text-white text-sm whitespace-nowrap">₹ {group.total_paid.toLocaleString('en-IN')}</p>
-                                    {(() => {
-                                      if (item.payment_status !== 'paid' && item.payment_system_v2) {
-                                        return <p className="text-[8px] font-black text-red-400 mt-0.5">Unpaid</p>
-                                      }
-                                      return null
-                                    })()}
+                                    {isPending ? (
+                                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 inline-flex items-center gap-1 shadow-sm animate-pulse">
+                                        ⏳ Price Pending
+                                      </span>
+                                    ) : (
+                                      <>
+                                        <p className="font-black text-white text-sm whitespace-nowrap">₹ {group.total_paid.toLocaleString('en-IN')}</p>
+                                        {(() => {
+                                          if (item.payment_status !== 'paid' && item.payment_system_v2) {
+                                            return <p className="text-[8px] font-black text-red-400 mt-0.5">Unpaid</p>
+                                          }
+                                          return null
+                                        })()}
+                                      </>
+                                    )}
                                   </TableCell>
                                   <TableCell className="py-1.5 text-center px-4">
-                                    {item.payment_system_v2 ? (
+                                    {item.payment_system_v2 && !isPending ? (
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation()
@@ -1846,26 +2011,43 @@ export default function MaterialsPage() {
                                       >
                                         {item.payment_status === 'paid' ? 'Paid' : 'Unpaid'}
                                       </button>
+                                    ) : isPending ? (
+                                      <span className="text-[9px] font-bold text-amber-500/80">Settle Price</span>
                                     ) : (
                                       <span className="text-zinc-600 text-xs font-semibold">—</span>
                                     )}
                                   </TableCell>
                                   <TableCell className="py-1.5 text-center">
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        setSelectedDetailItem(group)
-                                      }}
-                                      className={cn(
-                                        "p-1 rounded-lg transition-all cursor-pointer z-10 relative",
-                                        selectedDetailItem?.id === group.id
-                                          ? "bg-blue-600 text-white"
-                                          : "bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
+                                    <div className="flex items-center justify-center gap-1">
+                                      {isPending && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleOpenSettleModal(item)
+                                          }}
+                                          className="p-1 px-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-black text-[9px] font-black uppercase flex items-center gap-0.5 transition-all shadow-sm"
+                                          title="Settle Price"
+                                        >
+                                          <DollarSign size={10} />
+                                          <span>Settle</span>
+                                        </button>
                                       )}
-                                      title="View Details"
-                                    >
-                                      <Eye size={11} />
-                                    </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setSelectedDetailItem(group)
+                                        }}
+                                        className={cn(
+                                          "p-1 rounded-lg transition-all cursor-pointer z-10 relative",
+                                          selectedDetailItem?.id === group.id
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
+                                        )}
+                                        title="View Details"
+                                      >
+                                        <Eye size={11} />
+                                      </button>
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                                 {isMultiple && isExpanded && group.items.map((subItem, sIdx) => {
@@ -2002,6 +2184,7 @@ export default function MaterialsPage() {
                               cleanNotesVal={parsed.remarks || ''}
                               onDelete={handleDeleteMat}
                               onEdit={handleOpenEditMat}
+                              onSettle={handleOpenSettleModal}
                               onView={(item) => setSelectedDetailItem(group)}
                               onTogglePayment={(item) => {
                                 setPaymentItem(item)
@@ -2494,15 +2677,26 @@ export default function MaterialsPage() {
 
               {/* Footer Buttons */}
               <div className="flex gap-3 pt-4 border-t border-[#1e2435] shrink-0 mt-auto">
+                {isMaterialPendingPricing(primaryItem) && (
+                  <button
+                    onClick={() => {
+                      setSelectedDetailItem(null)
+                      handleOpenSettleModal(primaryItem)
+                    }}
+                    className="flex-1 h-11 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-black font-black shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
+                  >
+                    <DollarSign size={13} /> Settle Price
+                  </button>
+                )}
                 <button
                   onClick={() => handleOpenEditMat(primaryItem)}
-                  className="flex-1 h-11 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 transition-colors"
+                  className="flex-1 h-11 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 border border-blue-500/30 text-blue-400 hover:bg-blue-500/10 transition-colors cursor-pointer"
                 >
                   <Edit2 size={13} /> Edit
                 </button>
                 <button
                   onClick={() => handleDeleteMat(primaryItem.id)}
-                  className="flex-1 h-11 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors"
+                  className="flex-1 h-11 rounded-xl text-xs font-black uppercase flex items-center justify-center gap-1.5 border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                 >
                   <Trash2 size={13} /> Delete
                 </button>
@@ -2949,14 +3143,16 @@ export default function MaterialsPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-wider">Supplier Name *</label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-wider">Supplier Name (Optional)</label>
+                    <span className="text-[8px] text-zinc-500 font-bold">Direct Purchase if empty</span>
+                  </div>
                   <div className="relative">
                     <Input 
-                      placeholder="e.g. Ultratech Distributors" 
+                      placeholder="e.g. Ultratech Distributors (or blank)" 
                       value={commonSupplier} 
                       onChange={e => setCommonSupplier(e.target.value)} 
                       className="h-10 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white text-xs" 
-                      required 
                     />
                     {/* Autocomplete list */}
                     {commonSupplier.trim().length > 0 && dynamicSuppliers.some(s => s.toLowerCase().includes(commonSupplier.toLowerCase()) && s !== commonSupplier) && (
@@ -3279,36 +3475,87 @@ export default function MaterialsPage() {
                 )}
               </div>
 
-              {/* Grand Total Summary Card */}
-              <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl flex flex-col md:flex-row justify-between gap-4 items-center">
-                <div className="space-y-1 w-full md:w-auto">
-                  <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest">Calculated Purchase Total</p>
-                  <p className="text-2xl font-black text-white">₹{purchaseStats.calculatedTotal.toLocaleString('en-IN')}</p>
-                  <p className="text-[8px] text-zinc-500 font-bold">Base: ₹{purchaseStats.materialTotal.toLocaleString('en-IN')} | Logistics: +₹{(parseFloat(commonTransport) || 0) + (parseFloat(commonLoading) || 0)}</p>
+              {/* Pricing Mode Selector */}
+              <div className="p-3 bg-zinc-950/60 border border-zinc-800 rounded-xl space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">
+                    Pricing & Payment Settlement Mode
+                  </label>
                 </div>
-
-                <div className="flex flex-col gap-2 items-end w-full md:w-auto">
-                  <div className="space-y-1.5 w-full md:w-[150px]">
-                    <label className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Actual Paid Overrides</label>
-                    <Input
-                      type="number"
-                      placeholder={String(purchaseStats.calculatedTotal)}
-                      value={commonPaidAmount}
-                      onChange={e => {
-                        setCommonPaidAmount(e.target.value)
-                        setIsPaidAmountManuallyEdited(true)
-                      }}
-                      className="h-9 bg-zinc-950 border-blue-500/30 rounded-lg text-xs font-black text-blue-400 font-mono text-right"
-                    />
-                  </div>
-
-                  {purchaseStats.discount > 0 && (
-                    <div className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-lg">
-                      ₹{purchaseStats.discount.toLocaleString('en-IN')} Discount Saved!
-                    </div>
-                  )}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreationPendingPricing(false)
+                    }}
+                    className={cn(
+                      "h-10 px-3 rounded-xl text-xs font-black uppercase border transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                      !isCreationPendingPricing
+                        ? "bg-blue-600/20 border-blue-500 text-blue-400 shadow-md"
+                        : "bg-[#0d1018] border-zinc-800 text-zinc-500 hover:text-zinc-300"
+                    )}
+                  >
+                    <span>💵 Price Decided (Enter Amount)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreationPendingPricing(true)
+                      setCommonPaidAmount('0')
+                      setIsPaidAmountManuallyEdited(true)
+                    }}
+                    className={cn(
+                      "h-10 px-3 rounded-xl text-xs font-black uppercase border transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                      isCreationPendingPricing
+                        ? "bg-amber-500/20 border-amber-500 text-amber-300 shadow-md shadow-amber-500/10 animate-pulse"
+                        : "bg-[#0d1018] border-zinc-800 text-zinc-500 hover:text-amber-400"
+                    )}
+                  >
+                    <span>⏳ Settle Later / Pending Pricing</span>
+                  </button>
                 </div>
               </div>
+
+              {/* Grand Total Summary Card */}
+              {isCreationPendingPricing ? (
+                <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex flex-col md:flex-row justify-between gap-3 items-center">
+                  <div className="space-y-1">
+                    <p className="text-[9px] font-black text-amber-400 uppercase tracking-widest">Delivery Mode</p>
+                    <p className="text-base font-black text-amber-300">⏳ Pricing Pending / To Be Settled Later</p>
+                    <p className="text-[9px] text-zinc-400">Shipment will be recorded with highlighted badge in the ledger. You can set the agreed amount anytime later.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl flex flex-col md:flex-row justify-between gap-4 items-center">
+                  <div className="space-y-1 w-full md:w-auto">
+                    <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest">Calculated Purchase Total</p>
+                    <p className="text-2xl font-black text-white">₹{purchaseStats.calculatedTotal.toLocaleString('en-IN')}</p>
+                    <p className="text-[8px] text-zinc-500 font-bold">Base: ₹{purchaseStats.materialTotal.toLocaleString('en-IN')} | Logistics: +₹{(parseFloat(commonTransport) || 0) + (parseFloat(commonLoading) || 0)}</p>
+                  </div>
+
+                  <div className="flex flex-col gap-2 items-end w-full md:w-auto">
+                    <div className="space-y-1.5 w-full md:w-[170px]">
+                      <label className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Final Agreed Amount (₹)</label>
+                      <Input
+                        type="number"
+                        placeholder={String(purchaseStats.calculatedTotal)}
+                        value={commonPaidAmount}
+                        onChange={e => {
+                          setCommonPaidAmount(e.target.value)
+                          setIsPaidAmountManuallyEdited(true)
+                        }}
+                        className="h-9 bg-zinc-950 border-blue-500/40 rounded-lg text-xs font-black text-blue-400 font-mono text-right"
+                      />
+                    </div>
+
+                    {purchaseStats.discount > 0 && (
+                      <div className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-lg">
+                        ₹{purchaseStats.discount.toLocaleString('en-IN')} Discount Saved!
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Submit / Cancel Actions */}
               <div className="flex gap-3 pt-2">
@@ -3838,6 +4085,196 @@ export default function MaterialsPage() {
                 {transferLoading ? <Loader2 size={12} className="animate-spin" /> : null} Confirm Transfer
               </button>
             </div>
+      {/* QUICK PRICE SETTLEMENT MODAL */}
+      {showSettleModal && settleItem && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in-50"
+          onClick={() => setShowSettleModal(false)}
+        >
+          <div 
+            className="rounded-2xl p-6 w-full max-w-lg shadow-2xl border animate-in zoom-in-95 flex flex-col space-y-5"
+            style={{ backgroundColor: '#111520', borderColor: '#1e2435' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-[#1e2435]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold">
+                  ₹
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                    Settle Material Price / ధర నిర్ణయించండి
+                  </h3>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">
+                    {settleItem.name} · {settleItem.projects?.name || 'Site'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowSettleModal(false)} className="p-1 rounded-lg text-zinc-400 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSettlement} className="space-y-4">
+              {/* Main Final Negotiated Amount */}
+              <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
+                  Final Agreed / Paid Amount (₹) *
+                </label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="any"
+                    required
+                    placeholder="e.g. 5000"
+                    value={settleAmount}
+                    onChange={e => setSettleAmount(e.target.value)}
+                    autoFocus
+                    className="h-12 bg-zinc-950 border-emerald-500/40 rounded-xl text-xl font-black text-emerald-400 pl-8"
+                  />
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base font-black text-emerald-500">₹</span>
+                </div>
+              </div>
+
+              {/* Optional details */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-zinc-500">Quantity (Optional)</label>
+                  <Input
+                    type="number"
+                    placeholder="Qty"
+                    value={settleQty}
+                    onChange={e => setSettleQty(e.target.value)}
+                    className="h-9 bg-zinc-900 border-zinc-800 rounded-lg text-xs text-white"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-zinc-500">Unit (Optional)</label>
+                  <Input
+                    placeholder="Unit"
+                    value={settleUnit}
+                    onChange={e => setSettleUnit(e.target.value)}
+                    className="h-9 bg-zinc-900 border-zinc-800 rounded-lg text-xs text-white"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-zinc-500">Rate per Unit (Optional)</label>
+                  <Input
+                    type="number"
+                    placeholder="Rate"
+                    value={settleRate}
+                    onChange={e => setSettleRate(e.target.value)}
+                    className="h-9 bg-zinc-900 border-zinc-800 rounded-lg text-xs text-white"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-zinc-500">Supplier Name (Optional)</label>
+                  <Input
+                    placeholder="Supplier"
+                    value={settleSupplier}
+                    onChange={e => setSettleSupplier(e.target.value)}
+                    className="h-9 bg-zinc-900 border-zinc-800 rounded-lg text-xs text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Logistics */}
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-zinc-500">Transport Fee (₹)</label>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    value={settleTransport}
+                    onChange={e => setSettleTransport(e.target.value)}
+                    className="h-9 bg-zinc-900 border-zinc-800 rounded-lg text-xs text-white"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-zinc-500">Hamali Fee (₹)</label>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    value={settleHamali}
+                    onChange={e => setSettleHamali(e.target.value)}
+                    className="h-9 bg-zinc-900 border-zinc-800 rounded-lg text-xs text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Payment Status */}
+              <div className="space-y-1.5 pt-1">
+                <label className="text-[9px] font-black uppercase text-zinc-500">Payment Settlement Status</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSettlePaymentStatus('unpaid')}
+                    className={cn(
+                      "h-9 rounded-xl text-xs font-black uppercase border transition-all cursor-pointer",
+                      settlePaymentStatus === 'unpaid'
+                        ? "bg-red-500/10 border-red-500 text-red-400"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-500"
+                    )}
+                  >
+                    Mark as Unpaid
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSettlePaymentStatus('paid')}
+                    className={cn(
+                      "h-9 rounded-xl text-xs font-black uppercase border transition-all cursor-pointer",
+                      settlePaymentStatus === 'paid'
+                        ? "bg-emerald-500/10 border-emerald-500 text-emerald-400"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-500"
+                    )}
+                  >
+                    Mark as Paid
+                  </button>
+                </div>
+              </div>
+
+              {settlePaymentStatus === 'paid' && (
+                <div className="grid grid-cols-2 gap-2 animate-in slide-in-from-top-1">
+                  <button
+                    type="button"
+                    onClick={() => setSettlePaymentMode('cash')}
+                    className={cn(
+                      "h-9 rounded-lg text-[10px] font-black uppercase border",
+                      settlePaymentMode === 'cash' ? "bg-blue-600/15 border-blue-500 text-blue-400" : "bg-zinc-900 border-zinc-800 text-zinc-500"
+                    )}
+                  >
+                    💵 Cash
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSettlePaymentMode('online')}
+                    className={cn(
+                      "h-9 rounded-lg text-[10px] font-black uppercase border",
+                      settlePaymentMode === 'online' ? "bg-blue-600/15 border-blue-500 text-blue-400" : "bg-zinc-900 border-zinc-800 text-zinc-500"
+                    )}
+                  >
+                    💳 Online
+                  </button>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSettleModal(false)}
+                  className="flex-1 h-10 rounded-xl text-xs font-black uppercase bg-[#1a1f2e] text-zinc-400 border border-[#1e2435]"
+                >
+                  Cancel
+                </button>
+                <Button
+                  type="submit"
+                  disabled={settleSaving}
+                  className="flex-1 h-10 bg-emerald-500 hover:bg-emerald-600 rounded-xl text-xs font-black uppercase text-white shadow-lg shadow-emerald-500/20"
+                >
+                  {settleSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Price & Settle'}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}

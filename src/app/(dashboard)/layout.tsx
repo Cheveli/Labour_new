@@ -6,6 +6,7 @@ import MobileHeader from '@/components/layout/MobileHeader'
 import MobileBottomNav from '@/components/layout/MobileBottomNav'
 import ActiveProjectHeader from '@/components/active-project-header'
 import QuickMaterialModal from '@/components/layout/QuickMaterialModal'
+import WorkspaceMultiTabContainer from '@/components/layout/WorkspaceMultiTabContainer'
 import { Zap, LayoutDashboard, CalendarCheck, Package, Wallet, CalendarDays } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { haptic } from '@/lib/haptic'
@@ -272,10 +273,12 @@ export default function DashboardLayout({
           Mobile: pt-[124px] (52px header + 72px category selector), pb-4
           Desktop: pt-0, pb-0
         */}
-        <div className="pt-[124px] pb-4 lg:pt-0 lg:pb-0 p-3 sm:p-4 lg:p-7 max-w-[1400px] mx-auto w-full flex flex-col min-h-full">
+        <div className="pt-[124px] pb-4 lg:pt-0 lg:pb-0 p-2 sm:p-4 lg:p-5 max-w-[1920px] mx-auto w-full flex flex-col min-h-full">
           <ActiveProjectHeader />
-          <div className="flex-1">
-            {children}
+          <div className="flex-1 flex flex-col min-h-0">
+            <WorkspaceMultiTabContainer>
+              {children}
+            </WorkspaceMultiTabContainer>
           </div>
         </div>
 

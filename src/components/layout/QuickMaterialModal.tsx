@@ -145,10 +145,12 @@ export default function QuickMaterialModal({
   const [loadingProjects, setLoadingProjects] = useState(true)
 
   const [selectedMaterial, setSelectedMaterial] = useState<MaterialConfig | null>(null)
+  const [supplier, setSupplier] = useState('')
   const [qty, setQty] = useState('')
   const [rate, setRate] = useState('')
   const [transportCost, setTransportCost] = useState('')
   const [total, setTotal] = useState('')
+  const [isPendingPricing, setIsPendingPricing] = useState(false)
   const [isTotalManuallyEdited, setIsTotalManuallyEdited] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -184,16 +186,22 @@ export default function QuickMaterialModal({
   useEffect(() => {
     if (!isOpen) {
       setSelectedMaterial(null)
+      setSupplier('')
       setQty('')
       setRate('')
       setTransportCost('')
       setTotal('')
+      setIsPendingPricing(false)
       setIsTotalManuallyEdited(false)
     }
   }, [isOpen])
 
   // Auto-calculation of total amount based on material type formula
   useEffect(() => {
+    if (isPendingPricing) {
+      setTotal('0')
+      return
+    }
     if (!selectedMaterial || isTotalManuallyEdited) return
 
     const q = parseFloat(qty) || 0
@@ -205,17 +213,22 @@ export default function QuickMaterialModal({
       setTotal(String(calculated))
     } else if (t > 0 && q === 0 && r === 0) {
       setTotal(String(t))
-    } else {
-      setTotal('')
+    } else if (!isTotalManuallyEdited) {
+      // keep current or clear
+      if (q === 0 && r === 0 && t === 0) {
+        setTotal('')
+      }
     }
-  }, [qty, rate, transportCost, selectedMaterial, isTotalManuallyEdited])
+  }, [qty, rate, transportCost, selectedMaterial, isTotalManuallyEdited, isPendingPricing])
 
   const handleMaterialSelect = (mat: MaterialConfig) => {
     setSelectedMaterial(mat)
+    setSupplier('')
     setQty('')
     setRate('')
     setTransportCost('')
     setTotal('')
+    setIsPendingPricing(false)
     setIsTotalManuallyEdited(false)
   }
 
@@ -229,50 +242,50 @@ export default function QuickMaterialModal({
       toast.error('Please select a material')
       return
     }
-    const qVal = parseFloat(qty) || 0
-    const rVal = selectedMaterial.id === 'steel' ? 0 : (parseFloat(rate) || 0)
-    const tVal = selectedMaterial.hasTransport ? (parseFloat(transportCost) || 0) : 0
-    const finalTotal = parseFloat(total) || parseFloat(((qVal * rVal) + tVal).toFixed(2))
 
-    if (qVal <= 0) {
-      toast.error(selectedMaterial.id === 'steel' ? 'Please enter a valid weight (బరువు నమోదు చేయండి)' : 'Please enter a valid Quantity (పరిమాణం నమోదు చేయండి)')
-      return
-    }
-    if (selectedMaterial.id !== 'steel' && rVal <= 0) {
-      toast.error('Please enter a valid Rate (ధర నమోదు చేయండి)')
+    const qVal = parseFloat(qty) || 1
+    const rVal = isPendingPricing ? 0 : (selectedMaterial.id === 'steel' ? 0 : (parseFloat(rate) || 0))
+    const tVal = selectedMaterial.hasTransport && !isPendingPricing ? (parseFloat(transportCost) || 0) : 0
+    const finalTotal = isPendingPricing ? 0 : (parseFloat(total) || parseFloat(((qVal * rVal) + tVal).toFixed(2)) || 0)
+
+    if (!isPendingPricing && finalTotal <= 0 && qVal <= 0) {
+      toast.error('Please enter a valid amount or toggle Price Pending')
       return
     }
 
     setSaving(true)
     try {
-      const notesParts = [
-        'Quick Entry',
-        `Unit: ${selectedMaterial.unit}`
-      ]
-      if (selectedMaterial.id !== 'steel') {
-        notesParts.push(`Rate: Rs.${rVal}`)
-      }
-      if (selectedMaterial.hasTransport && tVal > 0) {
-        notesParts.push(`Transportation: Rs.${tVal}`)
+      const notesObj = {
+        is_erp_v3: true,
+        purchase_id: `PO-${Date.now().toString().slice(-6)}`,
+        supplier: supplier.trim() || 'Direct / Site Delivery',
+        brand: null,
+        transportation_cost: tVal,
+        loading_cost: 0,
+        discount: 0,
+        calculated_total: finalTotal,
+        final_paid_amount: finalTotal,
+        remarks: isPendingPricing ? 'Quick Entry · Price Pending / Settle Later' : 'Quick Entry',
+        is_pending_pricing: isPendingPricing
       }
 
       const payload = {
         project_id: selectedProjectId,
         name: selectedMaterial.name,
-        quantity: qVal,
+        quantity: parseFloat(qty) || 1,
         unit: selectedMaterial.unit,
         cost_per_unit: rVal,
         total_amount: finalTotal,
         date: new Date().toLocaleDateString('en-CA'), // YYYY-MM-DD
-        notes: notesParts.join(' | '),
+        notes: JSON.stringify(notesObj),
         payment_system_v2: true,
-        payment_status: 'unpaid'
+        payment_status: isPendingPricing ? 'pending' : 'unpaid'
       }
 
       const { error } = await supabase.from('materials').insert([payload])
       if (error) throw error
 
-      toast.success(`${selectedMaterial.name} recorded successfully!`)
+      toast.success(isPendingPricing ? `${selectedMaterial.name} recorded (Price Pending)!` : `${selectedMaterial.name} recorded successfully!`)
       
       // Close modal and notify success
       onClose()
@@ -428,24 +441,87 @@ export default function QuickMaterialModal({
             </div>
 
             {/* Entry Form */}
-            <form onSubmit={handleSave} className="space-y-5">
+            <form onSubmit={handleSave} className="space-y-4">
+              {/* Pricing Mode Toggle */}
+              <div className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                    Pricing Mode (ధర స్థితి)
+                  </span>
+                  <span className={cn(
+                    "text-[10px] font-black uppercase px-2 py-0.5 rounded-md",
+                    isPendingPricing ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                  )}>
+                    {isPendingPricing ? "⏳ Settle Later" : "💵 Price Decided"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPendingPricing(false)
+                      setIsTotalManuallyEdited(false)
+                    }}
+                    className={cn(
+                      "py-2 px-3 rounded-lg text-xs font-bold transition-all border text-left",
+                      !isPendingPricing
+                        ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300 font-black shadow-sm"
+                        : "bg-zinc-950/50 border-zinc-800 text-zinc-400 hover:text-white"
+                    )}
+                  >
+                    💵 Price Decided
+                    <div className="text-[9px] font-normal opacity-70">Log with amount</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPendingPricing(true)
+                      setRate('0')
+                      setTotal('0')
+                    }}
+                    className={cn(
+                      "py-2 px-3 rounded-lg text-xs font-bold transition-all border text-left",
+                      isPendingPricing
+                        ? "bg-amber-500/20 border-amber-500/50 text-amber-300 font-black shadow-sm"
+                        : "bg-zinc-950/50 border-zinc-800 text-zinc-400 hover:text-white"
+                    )}
+                  >
+                    ⏳ Price Pending
+                    <div className="text-[9px] font-normal opacity-70">Settle later on bill</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Optional Supplier Field */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                  Supplier / Vendor Name <span className="text-zinc-600 font-normal">(Optional)</span>
+                </label>
+                <Input
+                  placeholder="e.g. Sri Balaji Traders, Direct Site..."
+                  value={supplier}
+                  onChange={(e: any) => setSupplier(e.target.value)}
+                  className="h-10 bg-zinc-900 border-zinc-800 rounded-xl text-xs font-medium text-white placeholder:text-zinc-600"
+                />
+              </div>
+
               {/* Field 1: Quantity */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
                   {selectedMaterial.id === 'steel'
-                    ? 'Total KG (మొత్తం బరువు) *'
-                    : `Quantity (${selectedMaterial.unit === 'bags' ? 'Bags / సంచులు' : selectedMaterial.unit === 'pieces' ? 'Pieces / ముక్కలు' : selectedMaterial.unit === 'kgs' ? 'KGs / కిలోలు' : 'Tonnes / టన్నులు'}) *`}
+                    ? 'Total KG (బరువు)'
+                    : `Quantity (${selectedMaterial.unit === 'bags' ? 'Bags / సంచులు' : selectedMaterial.unit === 'pieces' ? 'Pieces / ముక్కలు' : selectedMaterial.unit === 'kgs' ? 'KGs / కిలోలు' : 'Tonnes / టన్నులు'})`}
+                  <span className="text-zinc-600 font-normal ml-1">(Optional)</span>
                 </label>
                 <div className="relative">
                   <Input
                     placeholder={selectedMaterial.id === 'steel' ? "e.g. 1500" : "e.g. 50"}
                     type="number"
                     step="any"
-                    required
                     value={qty}
                     onChange={(e: any) => setQty(e.target.value)}
                     autoFocus
-                    className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-black text-white text-lg pr-16"
+                    className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white text-base pr-16"
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-black uppercase tracking-wider text-emerald-400">
                     {selectedMaterial.unit}
@@ -453,21 +529,21 @@ export default function QuickMaterialModal({
                 </div>
               </div>
 
-              {/* Field 2: Rate Per Unit */}
-              {selectedMaterial.id !== 'steel' && (
-                <div className="space-y-1.5">
+              {/* Field 2: Rate Per Unit (When not pending) */}
+              {!isPendingPricing && selectedMaterial.id !== 'steel' && (
+                <div className="space-y-1">
                   <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-                    Rate Per {selectedMaterial.unit === 'bags' ? 'Bag' : selectedMaterial.unit === 'pieces' ? 'Piece' : selectedMaterial.unit === 'kgs' ? 'KG' : 'Tonne'} (ధర) *
+                    Rate Per {selectedMaterial.unit === 'bags' ? 'Bag' : selectedMaterial.unit === 'pieces' ? 'Piece' : selectedMaterial.unit === 'kgs' ? 'KG' : 'Tonne'} (ధర)
+                    <span className="text-zinc-600 font-normal ml-1">(Optional)</span>
                   </label>
                   <div className="relative">
                     <Input
                       placeholder="e.g. 420"
                       type="number"
                       step="any"
-                      required
                       value={rate}
                       onChange={(e: any) => setRate(e.target.value)}
-                      className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-black text-white text-lg pl-8"
+                      className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white text-base pl-8"
                     />
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-zinc-500">
                       ₹
@@ -476,9 +552,9 @@ export default function QuickMaterialModal({
                 </div>
               )}
 
-              {/* Field 3: Transport Cost (Only for Sand, Aggregate, Dust) */}
-              {selectedMaterial.hasTransport && (
-                <div className="space-y-1.5 animate-in slide-in-from-top-1 duration-150">
+              {/* Field 3: Transport Cost (Only for Sand, Aggregate, Dust when not pending) */}
+              {!isPendingPricing && selectedMaterial.hasTransport && (
+                <div className="space-y-1 animate-in slide-in-from-top-1 duration-150">
                   <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
                     Transport Cost (రవాణా ఖర్చు)
                   </label>
@@ -489,7 +565,7 @@ export default function QuickMaterialModal({
                       step="any"
                       value={transportCost}
                       onChange={(e: any) => setTransportCost(e.target.value)}
-                      className="h-12 bg-zinc-900 border-zinc-800 rounded-xl font-black text-white text-lg pl-8"
+                      className="h-11 bg-zinc-900 border-zinc-800 rounded-xl font-bold text-white text-base pl-8"
                     />
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-zinc-500">
                       ₹
@@ -498,69 +574,87 @@ export default function QuickMaterialModal({
                 </div>
               )}
 
-              {/* Field 4: Total Amount (Editable) */}
-              <div className="space-y-1.5 p-4 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl">
-                <div className="flex justify-between items-center">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                    {selectedMaterial.id === 'steel' ? 'Total Cost (మొత్తం ధర) *' : 'Total Amount (మొత్తం ధర) *'}
-                  </label>
-                  {isTotalManuallyEdited && selectedMaterial.id !== 'steel' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsTotalManuallyEdited(false)
-                        const q = parseFloat(qty) || 0
-                        const r = parseFloat(rate) || 0
-                        const t = selectedMaterial.hasTransport ? (parseFloat(transportCost) || 0) : 0
-                        setTotal(String(parseFloat(((q * r) + t).toFixed(2))))
+              {/* Field 4: Total Amount (Editable / Settle Later indicator) */}
+              {isPendingPricing ? (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center gap-3">
+                  <div className="text-xl">⏳</div>
+                  <div>
+                    <p className="text-xs font-bold text-amber-300">Amount Pending Settlement</p>
+                    <p className="text-[10px] text-amber-400/80">
+                      Entry will be saved at ₹0 with a prominent "Settle Price" badge to update once the bill arrives.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1 p-3 bg-emerald-500/5 border border-emerald-500/15 rounded-xl">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
+                      {selectedMaterial.id === 'steel' ? 'Total Cost (మొత్తం ధర)' : 'Total / Lumpsum Amount (మొత్తం ధర)'}
+                    </label>
+                    {isTotalManuallyEdited && selectedMaterial.id !== 'steel' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsTotalManuallyEdited(false)
+                          const q = parseFloat(qty) || 0
+                          const r = parseFloat(rate) || 0
+                          const t = selectedMaterial.hasTransport ? (parseFloat(transportCost) || 0) : 0
+                          setTotal(String(parseFloat(((q * r) + t).toFixed(2))))
+                        }}
+                        className="text-[9px] text-zinc-500 hover:text-emerald-400 uppercase font-black tracking-widest"
+                      >
+                        Reset Auto
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative mt-1">
+                    <Input
+                      placeholder="0.00"
+                      type="number"
+                      step="any"
+                      value={total}
+                      onChange={(e: any) => {
+                        setTotal(e.target.value)
+                        setIsTotalManuallyEdited(true)
                       }}
-                      className="text-[9px] text-zinc-500 hover:text-emerald-400 uppercase font-black tracking-widest"
-                    >
-                      Reset Auto
-                    </button>
-                  )}
+                      className="h-11 bg-zinc-950 border-emerald-500/30 rounded-xl font-black text-emerald-400 text-lg pl-8"
+                    />
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-black text-emerald-500">
+                      ₹
+                    </span>
+                  </div>
+                  <p className="text-[9px] text-zinc-500">
+                    Auto-calculated from qty × rate, or type direct total override.
+                  </p>
                 </div>
-                <div className="relative mt-1">
-                  <Input
-                    placeholder="0.00"
-                    type="number"
-                    step="any"
-                    required
-                    value={total}
-                    onChange={(e: any) => {
-                      setTotal(e.target.value)
-                      setIsTotalManuallyEdited(true)
-                    }}
-                    className="h-12 bg-zinc-950 border-emerald-500/20 rounded-xl font-black text-emerald-400 text-lg pl-8"
-                  />
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-black text-emerald-500">
-                    ₹
-                  </span>
-                </div>
-              </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setSelectedMaterial(null)}
-                  className="w-full sm:flex-1 h-12 rounded-xl text-xs font-black uppercase border border-zinc-800 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-300 transition-all cursor-pointer"
+                  className="w-full sm:flex-1 h-11 rounded-xl text-xs font-black uppercase border border-zinc-800 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-300 transition-all cursor-pointer"
                   style={{ backgroundColor: '#1a1f2e', borderColor: '#1e2435' }}
                 >
-                  Cancel
+                  Back
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="w-full sm:flex-1 h-12 rounded-xl text-xs font-black uppercase text-white hover:bg-emerald-500 flex items-center justify-center gap-2 hover:shadow-lg hover:shadow-emerald-500/10 transition-all cursor-pointer"
-                  style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}
+                  className="w-full sm:flex-1 h-11 rounded-xl text-xs font-black uppercase text-white hover:opacity-95 flex items-center justify-center gap-2 hover:shadow-lg transition-all cursor-pointer"
+                  style={{
+                    background: isPendingPricing
+                      ? 'linear-gradient(135deg, #d97706, #b45309)'
+                      : 'linear-gradient(135deg, #10b981, #059669)'
+                  }}
                 >
                   {saving ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <Save className="w-4 h-4" />
                   )}
-                  Save (సేవ్ చేయి)
+                  {isPendingPricing ? 'Save Pending (సేవ్ చేయి)' : 'Save (సేవ్ చేయి)'}
                 </button>
               </div>
             </form>
